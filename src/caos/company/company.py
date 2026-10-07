@@ -179,11 +179,12 @@ class TradeCompany:
         now: int | None = None,
     ) -> ExpansionDecision:
         trigger = self.registry.get(trigger_trader_id)
-        decision = self.capital.can_expand_from(trigger_trader_id)
-        if not decision.allowed:
-            return decision
+        treasury_shortfall = max(
+            0.0,
+            self.policy.trader_initial_bucket - self.treasury.reserve,
+        )
         if (
-            decision.released_capital > 1e-9
+            treasury_shortfall > 1e-9
             and trigger_trader_id in self.paper.accounts
             and not self.paper.positions_flat(trigger_trader_id)
         ):
@@ -192,6 +193,10 @@ class TradeCompany:
                 "trigger_trader_not_flat",
                 trigger_trader_id,
             )
+
+        decision = self.capital.can_expand_from(trigger_trader_id)
+        if not decision.allowed:
+            return decision
         if self.registry.slot_count() >= self.effective_trader_limit:
             return ExpansionDecision(
                 False,
