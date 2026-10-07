@@ -265,7 +265,10 @@ class CompanyDaemon:
                 released = self.company.capital.release_expansion_capital(
                     trader.id
                 )
-                if trader.id in self.company.paper.accounts:
+                if (
+                    released > 1e-9
+                    and trader.id in self.company.paper.accounts
+                ):
                     self.company.paper.withdraw_flat(
                         trader.id,
                         released,
@@ -273,7 +276,11 @@ class CompanyDaemon:
 
                 new_trader = self.company.capital.create_funded_trader(
                     mode=trader.mode,
-                    spawned_from=trader.id,
+                    spawned_from=(
+                        trader.id
+                        if released > 1e-9
+                        else None
+                    ),
                     note="daemon_company_expansion",
                 )
                 try:
@@ -289,16 +296,17 @@ class CompanyDaemon:
                         positions_flat=True,
                         reason="daemon_assignment_rollback",
                     )
-                    self.company.treasury.allocate(
-                        trader.id,
-                        released,
-                        note="daemon_expansion_rollback",
-                    )
-                    if trader.id in self.company.paper.accounts:
-                        self.company.paper.deposit_flat(
+                    if released > 1e-9:
+                        self.company.treasury.allocate(
                             trader.id,
                             released,
+                            note="daemon_expansion_rollback",
                         )
+                        if trader.id in self.company.paper.accounts:
+                            self.company.paper.deposit_flat(
+                                trader.id,
+                                released,
+                            )
                     raise
 
                 expansions.append(
