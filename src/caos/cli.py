@@ -18,6 +18,7 @@ from .llm import (
 )
 from .orchestrator import CAOS
 from .store import Store
+from .testnet import BybitTestnetClient, HumanTestnetExecutor
 
 
 def synthetic_bars(
@@ -213,6 +214,17 @@ def parser() -> argparse.ArgumentParser:
         ],
     )
     desk.add_argument("question", nargs="+")
+    tnet = sub.add_parser("testnet-order")
+    tnet.add_argument("--confirm", required=True)
+    tnet.add_argument("--category", choices=["linear", "inverse", "spot"], default="linear")
+    tnet.add_argument("symbol")
+    tnet.add_argument("side", choices=["Buy", "Sell"])
+    tnet.add_argument("order_type", choices=["Market", "Limit"])
+    tnet.add_argument("qty")
+    tnet.add_argument("--price")
+    tnet.add_argument("--reduce-only", action="store_true")
+    tnet.add_argument("--trigger-price")
+    tnet.add_argument("--trigger-direction", type=int, choices=[1, 2])
     dash = sub.add_parser("dashboard")
     dash.add_argument(
         "--port",
@@ -324,6 +336,41 @@ def main() -> None:
                     c.status(),
                     " ".join(args.question),
                 ),
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    elif args.cmd == "testnet-order":
+        api_key = os.getenv("BYBIT_TESTNET_API_KEY", "")
+        api_secret = os.getenv("BYBIT_TESTNET_API_SECRET", "")
+        c.compliance.human_arm_testnet(
+            confirmation=args.confirm
+        )
+        executor = HumanTestnetExecutor(
+            c.compliance,
+            BybitTestnetClient(
+                api_key=api_key,
+                api_secret=api_secret,
+            ),
+        )
+        ack = executor.place_order(
+            category=args.category,
+            symbol=args.symbol,
+            side=args.side,
+            order_type=args.order_type,
+            qty=args.qty,
+            price=args.price,
+            reduce_only=args.reduce_only,
+            trigger_price=args.trigger_price,
+            trigger_direction=args.trigger_direction,
+        )
+        print(
+            json.dumps(
+                {
+                    "order_id": ack.order_id,
+                    "order_link_id": ack.order_link_id,
+                    "environment": "BYBIT_TESTNET_ONLY",
+                },
                 indent=2,
                 ensure_ascii=False,
             )
