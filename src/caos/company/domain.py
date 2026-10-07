@@ -33,10 +33,8 @@ class OpportunityStatus(str, Enum):
 class CompanyPolicy:
     initial_company_capital: float = 10.0
     trader_initial_bucket: float = 10.0
-    spawn_threshold: float = 20.0
     trader_stop_floor: float = 3.0
-    max_trade_exposure_pct: float = 20.0
-    hard_max_active_traders: int = 6
+    default_trader_max_exposure_pct: float = 20.0
     company_max_drawdown_pct: float = 30.0
     production_market_exclusivity: bool = True
     training_market_overlap: bool = True
@@ -48,26 +46,21 @@ class CompanyPolicy:
         positive = {
             "initial_company_capital": self.initial_company_capital,
             "trader_initial_bucket": self.trader_initial_bucket,
-            "spawn_threshold": self.spawn_threshold,
             "trader_stop_floor": self.trader_stop_floor,
         }
         for name, value in positive.items():
             if value <= 0:
                 raise ValueError(f"{name} must be positive")
-        if self.spawn_threshold < self.trader_initial_bucket * 2:
-            raise ValueError(
-                "spawn_threshold must fund the current trader and one new bucket"
-            )
         if self.initial_company_capital < self.trader_initial_bucket:
             raise ValueError(
                 "initial_company_capital must fund the first trader"
             )
-        if not 0 < self.max_trade_exposure_pct <= 100:
-            raise ValueError("max_trade_exposure_pct must be in (0, 100]")
+        if not 0 < self.default_trader_max_exposure_pct <= 100:
+            raise ValueError(
+                "default_trader_max_exposure_pct must be in (0, 100]"
+            )
         if not 0 < self.company_max_drawdown_pct <= 100:
             raise ValueError("company_max_drawdown_pct must be in (0, 100]")
-        if not 1 <= self.hard_max_active_traders <= 64:
-            raise ValueError("hard_max_active_traders must be between 1 and 64")
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -81,9 +74,32 @@ class Trader:
     strategy_id: str | None = None
     market: str | None = None
     direction: Literal["long", "short"] | None = None
+    max_trade_exposure_pct: float = 20.0
+    trade_exposure_pct: float | None = None
     spawned_from: str | None = None
     generation: int = 0
     metadata: dict = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not 0 < self.max_trade_exposure_pct <= 100:
+            raise ValueError("max_trade_exposure_pct must be in (0, 100]")
+        if self.trade_exposure_pct is not None:
+            if not 0 < self.trade_exposure_pct <= self.max_trade_exposure_pct:
+                raise ValueError(
+                    "trade_exposure_pct must be in (0, max_trade_exposure_pct]"
+                )
+
+    def requested_trade_exposure_pct(self) -> float:
+        """Desired size is separate from the hard ceiling.
+
+        Until a sizing policy is attached, the legacy/default behavior is to
+        request the ceiling. A Trader/strategy may set trade_exposure_pct lower.
+        """
+        return (
+            self.max_trade_exposure_pct
+            if self.trade_exposure_pct is None
+            else self.trade_exposure_pct
+        )
 
     def to_dict(self) -> dict:
         out = asdict(self)
