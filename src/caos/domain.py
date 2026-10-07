@@ -50,10 +50,17 @@ class StrategySpec:
     slow: int
     stop_loss_pct: float = 2.0
     take_profit_pct: float = 4.0
+    threshold: float = 1.5
 
     def __post_init__(self) -> None:
         if self.fast <= 0 or self.slow <= 0 or self.fast >= self.slow:
             raise ValueError("strategy requires 0 < fast < slow")
+        if self.family not in {"trend", "mean_reversion", "breakout", "momentum"}:
+            raise ValueError("unsupported strategy family")
+        if self.stop_loss_pct <= 0 or self.take_profit_pct <= 0:
+            raise ValueError("stop/target must be positive")
+        if self.threshold < 0:
+            raise ValueError("threshold cannot be negative")
 
 
 @dataclass(slots=True)
