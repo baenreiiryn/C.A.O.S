@@ -38,6 +38,7 @@ class CompanySupervisor:
         risk: CompanyRiskGovernor,
         diversity: StrategyDiversity,
         engine: CAOSAdapter,
+        paper=None,
     ):
         self.policy = policy
         self.treasury = treasury
@@ -48,6 +49,7 @@ class CompanySupervisor:
         self.risk = risk
         self.diversity = diversity
         self.engine = engine
+        self.paper = paper
 
     def audit(self) -> CompanyAudit:
         alerts: list[dict] = []
@@ -92,6 +94,30 @@ class CompanySupervisor:
         if self.risk.state.kill_switch:
             alerts.append({"kind": "company_kill_switch", "severity": "critical"})
 
+        reconciliation = (
+            self.paper.audit_reconciliation()
+            if self.paper is not None
+            else []
+        )
+        if reconciliation:
+            alerts.append(
+                {
+                    "kind": "paper_treasury_reconciliation_mismatch",
+                    "severity": "critical",
+                    "details": reconciliation,
+                }
+            )
+
+        exposure = (
+            self.paper.exposure()
+            if self.paper is not None
+            else {
+                "gross_notional": 0.0,
+                "by_trader": {},
+                "by_symbol": {},
+            }
+        )
+
         engine_health = self.engine.health()
         if engine_health.get("kill_switch"):
             alerts.append({"kind": "caos_kill_switch", "severity": "critical"})
@@ -115,6 +141,8 @@ class CompanySupervisor:
                 "opportunities": len(self.opportunities.opportunities),
                 "assignments": len(self.market.assignments),
                 "diversity": diversity.to_dict(),
+                "exposure": exposure,
+                "reconciliation_mismatches": reconciliation,
                 "caos": engine_health,
             },
         )
