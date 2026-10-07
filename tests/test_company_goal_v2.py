@@ -67,7 +67,7 @@ def make_company(
         store=store,
     )
     caos.set_mandate(Mandate(1000, 50, max_position_pct=20))
-    policy = CompanyPolicy(initial_company_capital=capital)
+    policy = CompanyPolicy(\n        initial_company_capital=capital,\n        operational_trader_cap=operational_trader_cap,\n    )
     return caos, TradeCompany(CAOSAdapter(caos), policy, store=store)
 
 
