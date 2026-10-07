@@ -10,6 +10,7 @@ from .dashboard import serve
 from .desks import DeskCouncil
 from .domain import Mandate, MarketBar
 from .experts.registry import build_experts, recommended_stack
+from .news import NewsAnalyzer, RSSNewsClient
 from .llm import (
     OllamaClient,
     OpenAICompatClient,
@@ -74,10 +75,24 @@ def build_caos(args) -> CAOS:
     ]
     forecast_experts, sentiment_expert = build_experts(expert_names)
     store = Store(args.state_db) if args.state_db else None
+    feed_urls = [
+        x.strip()
+        for x in getattr(args, "news_feeds", "").split(",")
+        if x.strip()
+    ]
+    news_analyzer = (
+        NewsAnalyzer(
+            RSSNewsClient(feed_urls),
+            sentiment_expert=sentiment_expert,
+        )
+        if feed_urls
+        else None
+    )
     c = CAOS(
         llm,
         forecast_experts=forecast_experts,
         sentiment_expert=sentiment_expert,
+        news_analyzer=news_analyzer,
         store=store,
     )
     restored = bool(args.restore and c.restore_checkpoint())
@@ -129,6 +144,11 @@ def parser() -> argparse.ArgumentParser:
         "--experts",
         default=os.getenv("CAOS_EXPERTS", ""),
         help="Comma-separated optional specialists: kronos,chronos2,finbert",
+    )
+    p.add_argument(
+        "--news-feeds",
+        default=os.getenv("CAOS_NEWS_FEEDS", ""),
+        help="Comma-separated RSS/Atom feed URLs configured by the human operator",
     )
     p.add_argument(
         "--state-db",
