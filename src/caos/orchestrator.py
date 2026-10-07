@@ -9,8 +9,11 @@ from .broker import PaperBroker
 from .compliance import ComplianceEngine
 from .domain import Mandate, MarketBar, OrderRequest
 from .llm import LocalLLM
+from .marketdata import BybitPublicClient
+from .portfolio import build_portfolio
 from .quant import market_regime, mine_strategies
 from .risk import RiskEngine
+from .runner import PaperRunner
 
 
 class OrchestrationError(RuntimeError):
@@ -33,14 +36,17 @@ class CAOS:
         "reset_kill_switch",
     }
 
-    def __init__(self, llm: LocalLLM):
+    def __init__(self, llm: LocalLLM, market_client: BybitPublicClient | None = None):
         self.llm = llm
+        self.market_client = market_client or BybitPublicClient()
         self.mandate: Mandate | None = None
         self.risk: RiskEngine | None = None
         self.compliance = ComplianceEngine()
         self.paper: PaperBroker | None = None
         self.market_data: dict[str, list[MarketBar]] = {}
         self.approved: dict[str, list[dict]] = {}
+        self.candidate_bank: dict[str, list] = {}
+        self.portfolio = []
         self.tools: dict[str, Tool] = {}
         self._register_tools()
 
@@ -101,6 +107,22 @@ class CAOS:
         ):
             raise OrchestrationError("mandate_required")
 
+    def tool_fetch_market(
+        self,
+        symbol: str,
+        interval: str = "60",
+        limit: int = 500,
+        category: str = "linear",
+    ) -> dict:
+        bars = self.market_client.klines(symbol, interval, int(limit), category)
+        self.load_bars(symbol, bars)
+        return {
+            "symbol": symbol.upper(),
+            "bars": len(bars),
+            "first_ts": bars[0].ts if bars else None,
+            "last_ts": bars[-1].ts if bars else None,
+        }
+
     def tool_market_regime(self, symbol: str) -> dict:
         bars = self.market_data.get(symbol.upper())
         if not bars:
@@ -122,6 +144,7 @@ class CAOS:
             self.mandate,
             float(cost_bps),
         )
+        self.candidate_bank[symbol.upper()] = results
         payload = []
         for spec, bt, rb in results:
             payload.append(
@@ -137,6 +160,27 @@ class CAOS:
             "approved": len(payload),
             "strategies": payload[:10],
         }
+
+    def tool_build_portfolio(
+        self,
+        max_entries: int = 6,
+        one_per_symbol: bool = True,
+    ) -> dict:
+        self._require_mandate()
+        self.portfolio = build_portfolio(
+            self.candidate_bank,
+            max_entries=int(max_entries),
+            one_per_symbol=bool(one_per_symbol),
+        )
+        return {
+            "entries": len(self.portfolio),
+            "portfolio": [entry.to_dict() for entry in self.portfolio],
+        }
+
+    def tool_paper_cycle(self) -> dict:
+        self._require_mandate()
+        result = PaperRunner(self).cycle(self.portfolio)
+        return {"actions": result.actions, "skipped": result.skipped}
 
     def tool_paper_order(
         self,
@@ -185,6 +229,14 @@ class CAOS:
                 k: len(v)
                 for k, v in self.approved.items()
             },
+            "portfolio": [
+                {
+                    "symbol": e.symbol,
+                    "strategy": e.strategy.name,
+                    "weight": e.weight,
+                }
+                for e in self.portfolio
+            ],
             "paper": (
                 self.paper.snapshot()
                 if self.paper
