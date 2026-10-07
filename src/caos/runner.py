@@ -28,6 +28,15 @@ class PaperRunner:
             "strategy": fill.strategy,
         }
 
+    def _execution_price(self, symbol: str, side: str, mid_price: float) -> float:
+        roundtrip = float(self.caos.execution_costs.get(symbol, 0.0))
+        broker_fee = float(getattr(self.caos.paper, "fee_bps", 0.0))
+        one_way_total = roundtrip / 2.0
+        modeled_non_fee_bps = max(0.0, one_way_total - broker_fee)
+        if side == "buy":
+            return mid_price * (1.0 + modeled_non_fee_bps / 10_000.0)
+        return mid_price * (1.0 - modeled_non_fee_bps / 10_000.0)
+
     def cycle(self, portfolio: list[PortfolioEntry]) -> CycleResult:
         self.caos._require_mandate()
         actions: list[dict] = []
@@ -59,7 +68,7 @@ class PaperRunner:
                         entry.symbol,
                         "buy",
                         target,
-                        price,
+                        self._execution_price(entry.symbol, "buy", price),
                         entry.strategy.name,
                     )
                 )
@@ -75,7 +84,7 @@ class PaperRunner:
                         entry.symbol,
                         "sell",
                         open_notional,
-                        price,
+                        self._execution_price(entry.symbol, "sell", price),
                         entry.strategy.name,
                     )
                 )
