@@ -225,6 +225,38 @@ class CompanyRiskGoalTests(unittest.TestCase):
         )
         self.assertGreater(company.risk.drawdown_pct(), 0)
 
+    def test_paper_fill_uses_requested_size_below_ceiling(self):
+        _, company = make_company()
+        company.register_strategy(
+            StrategySpec(
+                "mom",
+                "momentum",
+                3,
+                21,
+                threshold=0.5,
+            )
+        )
+        publish(
+            company,
+            "btc",
+            "BTCUSDT",
+            strategies=("mom",),
+        )
+        company.bootstrap(
+            assign_best=True,
+            max_trade_exposure_pct=20,
+            trade_exposure_pct=8,
+        )
+        company.engine.load_bars("BTCUSDT", bars_up())
+
+        cycle = company.paper.cycle_trader("A")
+        self.assertEqual(cycle.action, "open_long")
+        self.assertAlmostEqual(cycle.fill["notional"], 0.8)
+        self.assertAlmostEqual(
+            company.risk.max_trade_notional("A"),
+            company.paper.marked_equity("A") * 0.20,
+        )
+
     def test_exposure_reports_per_trader_and_symbol(self):
         _, company = make_company()
         company.register_strategy(
