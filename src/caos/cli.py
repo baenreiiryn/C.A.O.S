@@ -9,6 +9,7 @@ import random
 from .dashboard import serve
 from .desks import DeskCouncil
 from .domain import Mandate, MarketBar
+from .experts.registry import build_experts, recommended_stack
 from .llm import (
     OllamaClient,
     OpenAICompatClient,
@@ -65,7 +66,17 @@ def build_caos(args) -> CAOS:
         llm = StaticLLM(
             '{"tool":"status","args":{}}'
         )
-    c = CAOS(llm)
+    expert_names = [
+        x.strip()
+        for x in getattr(args, "experts", "").split(",")
+        if x.strip()
+    ]
+    forecast_experts, sentiment_expert = build_experts(expert_names)
+    c = CAOS(
+        llm,
+        forecast_experts=forecast_experts,
+        sentiment_expert=sentiment_expert,
+    )
     c.set_mandate(
         Mandate(
             args.capital,
@@ -110,6 +121,11 @@ def parser() -> argparse.ArgumentParser:
         default=os.getenv("CAOS_BASE_URL"),
     )
     p.add_argument(
+        "--experts",
+        default=os.getenv("CAOS_EXPERTS", ""),
+        help="Comma-separated optional specialists: kronos,chronos2,finbert",
+    )
+    p.add_argument(
         "--capital",
         type=float,
         default=1000.0,
@@ -130,6 +146,20 @@ def parser() -> argparse.ArgumentParser:
     )
     sub.add_parser("status")
     sub.add_parser("demo")
+    sub.add_parser("models")
+    forecast = sub.add_parser("forecast")
+    forecast.add_argument("symbol")
+    forecast.add_argument("--expert", default="kronos")
+    forecast.add_argument("--horizon", type=int, default=12)
+    ensemble = sub.add_parser("ensemble")
+    ensemble.add_argument("symbol")
+    ensemble.add_argument("--horizon", type=int, default=12)
+    evaluate = sub.add_parser("evaluate-expert")
+    evaluate.add_argument("symbol")
+    evaluate.add_argument("--expert", default="kronos")
+    evaluate.add_argument("--horizon", type=int, default=6)
+    sentiment = sub.add_parser("sentiment")
+    sentiment.add_argument("text", nargs="+")
     chat = sub.add_parser("chat")
     chat.add_argument("message", nargs="+")
     goal = sub.add_parser("goal")
@@ -164,10 +194,61 @@ def parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = parser().parse_args()
     c = build_caos(args)
-    if args.cmd == "status":
+    if args.cmd == "models":
+        print(
+            json.dumps(
+                recommended_stack(),
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    elif args.cmd == "status":
         print(
             json.dumps(
                 c.status(),
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    elif args.cmd == "forecast":
+        print(
+            json.dumps(
+                c.tool_forecast(
+                    args.symbol,
+                    expert=args.expert,
+                    horizon=args.horizon,
+                ),
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    elif args.cmd == "ensemble":
+        print(
+            json.dumps(
+                c.tool_forecast_ensemble(
+                    args.symbol,
+                    horizon=args.horizon,
+                ),
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    elif args.cmd == "evaluate-expert":
+        print(
+            json.dumps(
+                c.tool_evaluate_forecast_expert(
+                    args.symbol,
+                    expert=args.expert,
+                    horizon=args.horizon,
+                ),
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    elif args.cmd == "sentiment":
+        print(
+            json.dumps(
+                c.tool_news_sentiment(" ".join(args.text)),
                 indent=2,
                 ensure_ascii=False,
             )
