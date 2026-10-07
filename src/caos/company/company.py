@@ -34,7 +34,7 @@ class TradeCompany:
         self.engine = engine
         self.policy = policy or CompanyPolicy()
         self.store = store if store is not None else engine.store
-        self.effective_trader_limit = self.policy.hard_max_active_traders
+        self.effective_trader_limit = self.policy.operational_trader_cap
 
         self.treasury = Treasury(self.policy.initial_company_capital)
         self.registry = TraderRegistry()
@@ -114,8 +114,8 @@ class TradeCompany:
         return key
 
     def set_effective_trader_limit(self, limit: int) -> int:
-        if not 1 <= int(limit) <= self.policy.hard_max_active_traders:
-            raise TradeCompanyError("effective_limit_outside_user_policy")
+        if not 1 <= int(limit) <= self.policy.operational_trader_cap:
+            raise TradeCompanyError("effective_limit_outside_operational_cap")
         if int(limit) < self.registry.slot_count():
             raise TradeCompanyError("effective_limit_below_current_slots")
         self.effective_trader_limit = int(limit)
@@ -128,8 +128,14 @@ class TradeCompany:
         mode: TraderMode = TraderMode.PRODUCTION,
         assign_best: bool = False,
         now: int | None = None,
+        max_trade_exposure_pct: float | None = None,
+        trade_exposure_pct: float | None = None,
     ):
-        trader = self.capital.bootstrap_first_trader(mode=mode)
+        trader = self.capital.bootstrap_first_trader(
+            mode=mode,
+            max_trade_exposure_pct=max_trade_exposure_pct,
+            trade_exposure_pct=trade_exposure_pct,
+        )
         if assign_best:
             self.assign_best(trader.id, now=now)
         self._save()
@@ -224,7 +230,10 @@ class TradeCompany:
                 )
 
         released = self.capital.release_expansion_capital(trigger_trader_id)
-        if trigger_trader_id in self.paper.accounts:
+        if (
+            released > 1e-9
+            and trigger_trader_id in self.paper.accounts
+        ):
             self.paper.withdraw_flat(trigger_trader_id, released)
 
         new_trader = self.capital.create_funded_trader(
@@ -255,7 +264,10 @@ class TradeCompany:
                 released,
                 note="expansion_rollback",
             )
-            if trigger_trader_id in self.paper.accounts:
+            if (
+                released > 1e-9
+                and trigger_trader_id in self.paper.accounts
+            ):
                 self.paper.deposit_flat(trigger_trader_id, released)
             raise
 
@@ -350,6 +362,41 @@ class TradeCompany:
         self.paper.remove_account_if_flat(trader_id)
         self._save()
         return settled
+
+    def configure_trader_exposure(
+        self,
+        trader_id: str,
+        *,
+        max_trade_exposure_pct: float,
+        trade_exposure_pct: float | None = None,
+    ) -> dict:
+        trader = self.registry.get(trader_id)
+        max_pct = float(max_trade_exposure_pct)
+        requested = (
+            float(trade_exposure_pct)
+            if trade_exposure_pct is not None
+            else None
+        )
+        if not 0 < max_pct <= 100:
+            raise TradeCompanyError("invalid_trader_exposure_ceiling")
+        if requested is not None and not 0 < requested <= max_pct:
+            raise TradeCompanyError("invalid_trader_requested_exposure")
+        trader.max_trade_exposure_pct = max_pct
+        trader.trade_exposure_pct = requested
+        account = self.paper.accounts.get(trader_id)
+        if account is not None:
+            account.risk.mandate.max_position_pct = max_pct
+        self._save()
+        return {
+            "trader_id": trader_id,
+            "max_trade_exposure_pct": max_pct,
+            "trade_exposure_pct": requested,
+            "current_equity": self.paper.marked_equity(trader_id),
+            "max_trade_notional": self.risk.max_trade_notional(trader_id),
+            "requested_trade_notional": self.risk.requested_trade_notional(
+                trader_id
+            ),
+        }
 
     def pause_trader(self, trader_id: str) -> dict:
         result = self.registry.pause(trader_id).to_dict()
