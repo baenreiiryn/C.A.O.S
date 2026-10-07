@@ -116,6 +116,10 @@ class Position:
     symbol: str
     notional: float = 0.0
     avg_price: float = 0.0
+    quantity: float = 0.0
+    fees_paid: float = 0.0
+    realized_pnl: float = 0.0
+    strategy: str = ""
 
 
 @dataclass(slots=True)
