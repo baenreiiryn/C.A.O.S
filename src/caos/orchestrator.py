@@ -17,6 +17,7 @@ from .portfolio import build_portfolio
 from .quant import market_regime, mine_strategies
 from .risk import RiskEngine
 from .runner import PaperRunner
+from .state import RuntimeCheckpoint
 
 
 class OrchestrationError(RuntimeError):
@@ -46,12 +47,14 @@ class CAOS:
         market_client: BybitPublicClient | None = None,
         forecast_experts: dict[str, Any] | None = None,
         sentiment_expert: Any | None = None,
+        store: Any | None = None,
     ):
         self.llm = llm
         self.market_client = market_client or BybitPublicClient()
         self.forecast_experts = forecast_experts or {}
         self.sentiment_expert = sentiment_expert
         self.expert_ensemble = ExpertEnsemble()
+        self.store = store
         self.mandate: Mandate | None = None
         self.risk: RiskEngine | None = None
         self.compliance = ComplianceEngine()
@@ -133,6 +136,16 @@ class CAOS:
             "Emergency stop. LLM is allowed to make the system safer.",
             self.tool_kill,
         )
+
+    def checkpoint(self) -> dict | None:
+        if self.store is None:
+            return None
+        return RuntimeCheckpoint.save(self, self.store)
+
+    def restore_checkpoint(self) -> bool:
+        if self.store is None:
+            return False
+        return RuntimeCheckpoint.restore(self, self.store)
 
     def set_mandate(self, mandate: Mandate) -> None:
         self.mandate = mandate
@@ -340,6 +353,7 @@ class CAOS:
             market_data=self.market_data,
             max_correlation=float(max_correlation),
         )
+        self.checkpoint()
         return {
             "entries": len(self.portfolio),
             "portfolio": [entry.to_dict() for entry in self.portfolio],
@@ -348,6 +362,7 @@ class CAOS:
     def tool_paper_cycle(self) -> dict:
         self._require_mandate()
         result = PaperRunner(self).cycle(self.portfolio)
+        self.checkpoint()
         return {"actions": result.actions, "skipped": result.skipped}
 
     def tool_paper_order(
@@ -371,12 +386,14 @@ class CAOS:
                 strategy,
             )
         )
+        self.checkpoint()
         return asdict(fill)
 
     def tool_kill(self) -> dict:
         self._require_mandate()
         assert self.risk is not None
         self.risk.kill()
+        self.checkpoint()
         return {"kill_switch": True}
 
     def status(self) -> dict:
