@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from .domain import BacktestResult, Fill, Mandate, Position, StrategySpec, Trade
+from .domain import (
+    BacktestResult,
+    Fill,
+    Mandate,
+    PendingOrder,
+    Position,
+    StrategySpec,
+    Trade,
+)
 from .portfolio import PortfolioEntry
 from .quant import RobustnessResult
 
@@ -101,6 +109,10 @@ class RuntimeCheckpoint:
             caos.paper.realized_trades = list(
                 paper.get("realized_trades", [])
             )
+            caos.paper.pending_orders = {
+                order_id: PendingOrder(**row)
+                for order_id, row in paper.get("pending_orders", {}).items()
+            }
 
         if caos.risk is not None and payload.get("risk"):
             risk = payload["risk"]
