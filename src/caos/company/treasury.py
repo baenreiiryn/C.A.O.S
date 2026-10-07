@@ -229,6 +229,11 @@ class Treasury:
             note=note,
         )
 
+    def restore(self, snapshot: dict) -> None:
+        restored = self.from_snapshot(snapshot)
+        self._balances = restored._balances
+        self.entries = restored.entries
+
     @classmethod
     def from_snapshot(cls, snapshot: dict) -> "Treasury":
         balances = {
