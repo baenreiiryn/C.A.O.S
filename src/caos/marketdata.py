@@ -27,6 +27,34 @@ class BybitPublicClient:
         except Exception as exc:
             raise MarketDataError(str(exc)) from exc
 
+    def orderbook(
+        self,
+        symbol: str,
+        limit: int = 50,
+        category: str = "linear",
+    ) -> dict:
+        if category in {"linear", "inverse"} and not 1 <= limit <= 200:
+            raise ValueError("linear/inverse orderbook limit must be between 1 and 200")
+        if category == "spot" and not 1 <= limit <= 50:
+            raise ValueError("spot orderbook limit must be between 1 and 50")
+        payload = self._get_json(
+            "/v5/market/orderbook",
+            {
+                "category": category,
+                "symbol": symbol.upper(),
+                "limit": limit,
+            },
+        )
+        if payload.get("retCode") != 0:
+            raise MarketDataError(str(payload.get("retMsg", "bybit error")))
+        result = payload.get("result", {})
+        return {
+            "symbol": result.get("s", symbol.upper()),
+            "bids": [[float(x[0]), float(x[1])] for x in result.get("b", [])],
+            "asks": [[float(x[0]), float(x[1])] for x in result.get("a", [])],
+            "ts": int(result.get("ts", payload.get("time", 0)) or 0),
+        }
+
     def klines(
         self,
         symbol: str,
