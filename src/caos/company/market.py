@@ -86,6 +86,39 @@ class OpportunityRegistry:
             for opportunity_id, opportunity in self.opportunities.items()
         }
 
+    def restore(self, snapshot: dict) -> None:
+        self.opportunities = {}
+        for opportunity_id, row in snapshot.items():
+            self.opportunities[opportunity_id] = Opportunity(
+                id=str(row["id"]),
+                symbol=str(row["symbol"]),
+                direction=row["direction"],
+                score=float(row["score"]),
+                regime=str(row.get("regime", "unknown")),
+                strategy_candidates=tuple(
+                    row.get("strategy_candidates", [])
+                ),
+                estimated_cost_bps=(
+                    float(row["estimated_cost_bps"])
+                    if row.get("estimated_cost_bps") is not None
+                    else None
+                ),
+                liquidity_score=(
+                    float(row["liquidity_score"])
+                    if row.get("liquidity_score") is not None
+                    else None
+                ),
+                risk_score=(
+                    float(row["risk_score"])
+                    if row.get("risk_score") is not None
+                    else None
+                ),
+                status=OpportunityStatus(row["status"]),
+                reserved_by=row.get("reserved_by"),
+                expires_at=row.get("expires_at"),
+                metadata=dict(row.get("metadata", {})),
+            )
+
 
 @dataclass(slots=True)
 class MarketAssignment:
@@ -285,4 +318,16 @@ class MarketAllocator:
         return {
             trader_id: assignment.to_dict()
             for trader_id, assignment in self.assignments.items()
+        }
+
+    def restore(self, snapshot: dict) -> None:
+        self.assignments = {
+            trader_id: MarketAssignment(
+                trader_id=str(row["trader_id"]),
+                opportunity_id=str(row["opportunity_id"]),
+                symbol=str(row["symbol"]).upper(),
+                direction=row["direction"],
+                mode=TraderMode(row["mode"]),
+            )
+            for trader_id, row in snapshot.items()
         }
