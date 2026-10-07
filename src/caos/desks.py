@@ -37,7 +37,7 @@ DESKS: dict[str, DeskSpec] = {
     "news": DeskSpec(
         "NEWS",
         "Interpret user-supplied headlines or external context. Never execute orders or alter safety state.",
-        ("news_sentiment", "status"),
+        ("news_latest", "news_sentiment", "status"),
     ),
     "risk": DeskSpec(
         "RISK",
