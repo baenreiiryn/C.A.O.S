@@ -60,6 +60,7 @@ def make_company(
     capital=10.0,
     store=None,
     bad_markets=None,
+    operational_trader_cap=6,
 ):
     caos = CAOS(
         StaticLLM('{"tool":"status","args":{}}'),
@@ -67,7 +68,10 @@ def make_company(
         store=store,
     )
     caos.set_mandate(Mandate(1000, 50, max_position_pct=20))
-    policy = CompanyPolicy(\n        initial_company_capital=capital,\n        operational_trader_cap=operational_trader_cap,\n    )
+    policy = CompanyPolicy(
+        initial_company_capital=capital,
+        operational_trader_cap=operational_trader_cap,
+    )
     return caos, TradeCompany(CAOSAdapter(caos), policy, store=store)
 
 
