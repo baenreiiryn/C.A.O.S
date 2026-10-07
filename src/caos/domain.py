@@ -112,6 +112,18 @@ class Fill:
 
 
 @dataclass(slots=True)
+class PendingOrder:
+    id: str
+    symbol: str
+    side: Literal["buy", "sell"]
+    notional: float
+    order_type: Literal["limit", "stop"]
+    trigger_price: float
+    strategy: str
+    status: str = "open"
+
+
+@dataclass(slots=True)
 class Position:
     symbol: str
     notional: float = 0.0
