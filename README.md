@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.3 local-agent paper desk**. Research, public market data, portfolio construction, local-LLM Goal orchestration and autonomous paper cycles are implemented. Live exchange execution remains deliberately human-gated and is not shipped yet.
+> Current milestone: **v0.5 specialist-assisted autonomous paper desk**. Research, public market/order-book data, multi-family strategy mining, correlation-aware portfolio construction, optional Hugging Face specialists, local-LLM Goal orchestration, crash recovery, autonomous paper cycles and a human-gated Bybit TESTNET path are implemented. Production LIVE remains deliberately unavailable.
 
 ## Why it is built this way
 
@@ -97,9 +97,41 @@ Example:
 caos --provider ollama --model qwen3:8b desk risk "audite o estado atual"
 ```
 
+## Specialist models
+
+C.A.O.S can optionally use three small local specialists as evidence:
+
+- **Kronos-small** — finance-specific OHLCV/K-line forecasting;
+- **Chronos-2** — independent general time-series forecast baseline;
+- **ModernFinBERT** — financial NEWS sentiment.
+
+They do not replace the orchestrator and cannot place orders. See [`docs/MODELS.md`](docs/MODELS.md).
+
+```bash
+caos models
+caos --experts kronos,chronos2,finbert status
+```
+
+Before forecast evidence is promoted into portfolio logic, C.A.O.S can walk-forward evaluate it against a naive last-price baseline.
+
 ## Public market data and paper automation
 
 C.A.O.S includes a public Bybit kline client that requires no API key, a local SQLite store, portfolio scoring and a deterministic paper runner/daemon. The LLM is not called on every market tick.
+
+## Bybit TESTNET
+
+TESTNET is a separate human-only execution surface. The client rejects production Bybit hosts in code and TESTNET orders require the exact confirmation `ARM TESTNET`.
+
+Set credentials in environment variables; do not pass secrets to the LLM:
+
+```bash
+# Windows PowerShell
+$env:BYBIT_TESTNET_API_KEY="..."
+$env:BYBIT_TESTNET_API_SECRET="..."
+caos --provider static testnet-order --confirm "ARM TESTNET" BTCUSDT Buy Limit 0.001 --price 50000
+```
+
+The `testnet-order` command can only target `https://api-testnet.bybit.com`.
 
 ## Dashboard
 
@@ -117,19 +149,22 @@ python -m unittest discover -s tests -v
 
 GitHub Actions executes the same suite on every push and pull request.
 
-## Safety boundaries in v0.3
+## Safety boundaries in v0.5
 
-- research and paper trading only;
+- research, paper trading and explicitly armed Bybit TESTNET only;
 - configurable position cap (20% default);
 - drawdown guard;
 - kill-switch;
-- human-only live gate exists in the architecture but no production broker adapter is shipped;
+- human-only LIVE gate exists in the architecture but no production broker adapter is shipped;
+- raw paper orders, TESTNET arming/orders and LIVE actions are excluded from the LLM tool surface;
 - LLM tool list cannot arm live, set broker secrets, or reset a kill-switch.
 
 ## Project documents
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/GOAL.md`](docs/GOAL.md)
+- [`docs/GOAL_V2.md`](docs/GOAL_V2.md)
+- [`docs/MODELS.md`](docs/MODELS.md)
 
 ## License
 
