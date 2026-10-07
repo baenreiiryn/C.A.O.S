@@ -61,3 +61,39 @@ The six visible desks are logical agents, not six mandatory LLM processes. They 
 ## v0.3 scope
 
 This milestone deliberately ships paper trading only, plus public Bybit market data, local persistence, logical desk agents, portfolio construction and bounded Goal orchestration. A real broker adapter belongs behind the same compliance boundary and should be added only after replay, fault-injection and exchange-sandbox tests exist.
+
+
+## Specialist evidence plane
+
+Optional Hugging Face specialists sit beside the deterministic engine, not above it:
+
+```text
+                  local general LLM
+                         |
+                  Goal orchestrator
+                         |
+       +-----------------+-----------------+
+       |                                   |
+deterministic tools                 specialist evidence
+QUANT/RISK/COMPLIANCE      Kronos / Chronos-2 / ModernFinBERT
+       |                                   |
+       +-----------------+-----------------+
+                         |
+             robustness / qualification
+                         |
+                 portfolio + paper
+```
+
+A forecast expert is not allowed to create an order. Its first promotion gate is a walk-forward scorecard against a naive last-price baseline. NEWS sentiment is context-only.
+
+## Execution realism
+
+Public Bybit order-book depth is sampled to estimate spread, VWAP market impact and fees. The measured round-trip cost feeds strategy mining/cost stress and the non-fee portion is applied to paper fills.
+
+## Persistence and fault isolation
+
+Runtime checkpoints store mandate, portfolio, paper positions/fills/P&L, pending orders, kill-switch and measured costs in SQLite. The daemon refreshes each symbol independently; a failed symbol is excluded from that execution cycle rather than traded with stale data.
+
+## TESTNET boundary
+
+The authenticated Bybit adapter is hard-locked to `https://api-testnet.bybit.com`. A separate `ARM TESTNET` human gate is required. The testnet executor is not registered as an LLM tool. Production LIVE has no exchange adapter in this milestone.
