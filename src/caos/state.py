@@ -68,6 +68,7 @@ class RuntimeCheckpoint:
                 else None
             ),
             "execution_costs": dict(caos.execution_costs),
+            "expert_qualifications": dict(caos.expert_qualifications),
         }
         store.set_json(cls.KEY, payload)
         store.event(
@@ -94,6 +95,9 @@ class RuntimeCheckpoint:
             str(k): float(v)
             for k, v in payload.get("execution_costs", {}).items()
         }
+        caos.expert_qualifications = dict(
+            payload.get("expert_qualifications", {})
+        )
 
         if caos.paper is not None and payload.get("paper"):
             paper = payload["paper"]
