@@ -45,6 +45,9 @@ class TradeCompany:
             self.treasury,
             self.registry,
         )
+        self.capital.set_operational_limit_provider(
+            lambda: self.effective_trader_limit
+        )
         self.market = MarketAllocator(
             self.policy,
             self.registry,
