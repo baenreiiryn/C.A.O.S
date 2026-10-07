@@ -165,6 +165,7 @@ GitHub Actions executes the same suite on every push and pull request.
 - [`docs/GOAL.md`](docs/GOAL.md)
 - [`docs/GOAL_V2.md`](docs/GOAL_V2.md)
 - [`docs/MODELS.md`](docs/MODELS.md)
+- [`docs/COMPANY_ARCHITECTURE.md`](docs/COMPANY_ARCHITECTURE.md)
 
 ## License
 
