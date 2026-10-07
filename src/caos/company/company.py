@@ -1,21 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-
 from .adapter import CAOSAdapter
 from .capital import CapitalAllocator, ExpansionDecision
 from .diversity import StrategyDiversity
-from .domain import (
-    CompanyPolicy,
-    Opportunity,
-    TraderMode,
-    TraderStatus,
-)
+from .domain import CompanyPolicy, Opportunity, TraderMode, TraderStatus
 from .improvement import ImprovementManager
 from .market import MarketAllocator, MarketAllocationError, OpportunityRegistry
+from .paper import CompanyPaperBook, CompanyPaperError
 from .registry import TraderRegistry
 from .risk import CompanyRiskGovernor
 from .scout import MarketScout
+from .state import CompanyCheckpoint
+from .strategy import CompanyStrategyRegistry
 from .supervisor import CompanySupervisor
 from .training import TrainingArena
 from .treasury import Treasury
@@ -32,14 +28,18 @@ class TradeCompany:
         self,
         engine: CAOSAdapter,
         policy: CompanyPolicy | None = None,
+        *,
+        store=None,
     ):
         self.engine = engine
         self.policy = policy or CompanyPolicy()
+        self.store = store if store is not None else engine.store
         self.effective_trader_limit = self.policy.hard_max_active_traders
 
         self.treasury = Treasury(self.policy.initial_company_capital)
         self.registry = TraderRegistry()
         self.opportunities = OpportunityRegistry()
+        self.strategies = CompanyStrategyRegistry()
         self.capital = CapitalAllocator(
             self.policy,
             self.treasury,
@@ -59,6 +59,19 @@ class TradeCompany:
         self.diversity = StrategyDiversity(self.registry)
         self.scout = MarketScout(self.engine, self.opportunities)
         self.training = TrainingArena()
+        self.paper = CompanyPaperBook(
+            self.engine,
+            self.policy,
+            self.treasury,
+            self.registry,
+            self.market,
+            self.risk,
+            self.strategies,
+        )
+        self.risk.set_equity_providers(
+            trader_equity=self.paper.marked_equity,
+            company_equity=self.marked_company_equity,
+        )
         self.supervisor = CompanySupervisor(
             self.policy,
             self.treasury,
@@ -69,8 +82,36 @@ class TradeCompany:
             self.risk,
             self.diversity,
             self.engine,
+            paper=self.paper,
         )
         self.improvement = ImprovementManager()
+
+    def _save(self) -> None:
+        if self.store is not None:
+            CompanyCheckpoint.save(self, self.store)
+
+    def checkpoint(self) -> dict | None:
+        if self.store is None:
+            return None
+        return CompanyCheckpoint.save(self, self.store)
+
+    def restore_checkpoint(self) -> bool:
+        if self.store is None:
+            return False
+        return CompanyCheckpoint.restore(self, self.store)
+
+    def marked_company_equity(self) -> float:
+        equity = self.treasury.reserve
+        for trader in self.registry.traders.values():
+            if trader.status == TraderStatus.RETIRED:
+                continue
+            equity += self.paper.marked_equity(trader.id)
+        return equity
+
+    def register_strategy(self, spec, *, strategy_id: str | None = None) -> str:
+        key = self.strategies.register(spec, strategy_id=strategy_id)
+        self._save()
+        return key
 
     def set_effective_trader_limit(self, limit: int) -> int:
         if not 1 <= int(limit) <= self.policy.hard_max_active_traders:
@@ -78,6 +119,7 @@ class TradeCompany:
         if int(limit) < self.registry.slot_count():
             raise TradeCompanyError("effective_limit_below_current_slots")
         self.effective_trader_limit = int(limit)
+        self._save()
         return self.effective_trader_limit
 
     def bootstrap(
@@ -89,13 +131,16 @@ class TradeCompany:
     ):
         trader = self.capital.bootstrap_first_trader(mode=mode)
         if assign_best:
-            self.market.assign_best(trader.id, now=now)
+            self.assign_best(trader.id, now=now)
+        self._save()
         return trader
 
     def publish_opportunity(self, opportunity: Opportunity) -> Opportunity:
         self.opportunities.add(opportunity)
         self.opportunities.validate(opportunity.id)
-        return self.opportunities.make_available(opportunity.id)
+        result = self.opportunities.make_available(opportunity.id)
+        self._save()
+        return result
 
     def assign_best(
         self,
@@ -112,12 +157,14 @@ class TradeCompany:
             if opportunity.strategy_candidates
             else None
         )
-        return self.market.assign(
+        result = self.market.assign(
             trader_id,
             opportunity.id,
             strategy_id=strategy_id,
             now=now,
         )
+        self._save()
+        return result
 
     def maybe_expand(
         self,
@@ -147,7 +194,35 @@ class TradeCompany:
                 trigger_trader_id,
             )
 
+        if trigger_trader_id in self.paper.accounts:
+            if not self.paper.positions_flat(trigger_trader_id):
+                return ExpansionDecision(
+                    False,
+                    "trigger_trader_not_flat",
+                    trigger_trader_id,
+                )
+            paper_equity = self.paper.realized_equity(trigger_trader_id)
+            treasury_equity = self.treasury.balance(trigger_trader_id)
+            if abs(paper_equity - treasury_equity) > 1e-8:
+                return ExpansionDecision(
+                    False,
+                    "reconciliation_required",
+                    trigger_trader_id,
+                )
+            if (
+                self.paper.accounts[trigger_trader_id].cash + 1e-9
+                < self.policy.trader_initial_bucket
+            ):
+                return ExpansionDecision(
+                    False,
+                    "paper_cash_insufficient_for_expansion",
+                    trigger_trader_id,
+                )
+
         released = self.capital.release_expansion_capital(trigger_trader_id)
+        if trigger_trader_id in self.paper.accounts:
+            self.paper.withdraw_flat(trigger_trader_id, released)
+
         new_trader = self.capital.create_funded_trader(
             mode=trigger.mode,
             spawned_from=trigger_trader_id,
@@ -171,8 +246,16 @@ class TradeCompany:
                 positions_flat=True,
                 reason="failed_market_assignment",
             )
+            self.treasury.allocate(
+                trigger_trader_id,
+                released,
+                note="expansion_rollback",
+            )
+            if trigger_trader_id in self.paper.accounts:
+                self.paper.deposit_flat(trigger_trader_id, released)
             raise
 
+        self._save()
         return ExpansionDecision(
             True,
             "expanded",
@@ -182,7 +265,10 @@ class TradeCompany:
         )
 
     def record_realized_pnl(self, trader_id: str, pnl: float) -> dict:
+        if trader_id in self.paper.accounts:
+            self.paper.adjust_flat_cash(trader_id, float(pnl))
         entry = self.treasury.record_pnl(trader_id, pnl)
+        self._save()
         return {
             "ledger": entry.to_dict(),
             "trader_equity": self.treasury.balance(trader_id),
@@ -191,7 +277,10 @@ class TradeCompany:
         }
 
     def record_fee(self, trader_id: str, fee: float) -> dict:
+        if trader_id in self.paper.accounts:
+            self.paper.adjust_flat_cash(trader_id, -float(fee))
         entry = self.treasury.record_fee(trader_id, fee)
+        self._save()
         return {
             "ledger": entry.to_dict(),
             "trader_equity": self.treasury.balance(trader_id),
@@ -206,20 +295,27 @@ class TradeCompany:
         reason: str = "manual_retirement",
     ) -> float:
         if not positions_flat:
-            # Keep the market reservation while positions still exist. Releasing
-            # it first could let another Trader enter the same production market
-            # before the old exposure is reconciled.
             return self.capital.settle_retired_trader(
                 trader_id,
                 positions_flat=False,
                 reason=reason,
             )
+        if (
+            trader_id in self.paper.accounts
+            and not self.paper.positions_flat(trader_id)
+        ):
+            raise CompanyPaperError("positions_not_actually_flat")
+        if trader_id in self.paper.accounts:
+            self.paper.reconcile_trader(trader_id)
         self.market.release(trader_id)
-        return self.capital.settle_retired_trader(
+        settled = self.capital.settle_retired_trader(
             trader_id,
             positions_flat=True,
             reason=reason,
         )
+        self.paper.remove_account_if_flat(trader_id)
+        self._save()
+        return settled
 
     def enforce_stop_floor(
         self,
@@ -227,24 +323,39 @@ class TradeCompany:
         *,
         positions_flat: bool,
     ) -> float | None:
-        if not self.capital.stop_floor_breached(trader_id):
+        current_equity = self.paper.marked_equity(trader_id)
+        if current_equity >= self.policy.trader_stop_floor:
             return None
         if not positions_flat:
-            return self.capital.apply_stop_floor(
-                trader_id,
-                positions_flat=False,
-            )
+            self.registry.halt(trader_id)
+            self._save()
+            raise CompanyPaperError("positions_must_be_flat_before_stop_settlement")
+        if (
+            trader_id in self.paper.accounts
+            and not self.paper.positions_flat(trader_id)
+        ):
+            raise CompanyPaperError("positions_not_actually_flat")
+        if trader_id in self.paper.accounts:
+            self.paper.reconcile_trader(trader_id)
         self.market.release(trader_id)
-        return self.capital.apply_stop_floor(
+        settled = self.capital.settle_retired_trader(
             trader_id,
             positions_flat=True,
+            reason="stop_floor",
         )
+        self.paper.remove_account_if_flat(trader_id)
+        self._save()
+        return settled
 
     def pause_trader(self, trader_id: str) -> dict:
-        return self.registry.pause(trader_id).to_dict()
+        result = self.registry.pause(trader_id).to_dict()
+        self._save()
+        return result
 
     def resume_trader(self, trader_id: str) -> dict:
-        return self.registry.resume(trader_id).to_dict()
+        result = self.registry.resume(trader_id).to_dict()
+        self._save()
+        return result
 
     def emergency_stop(self) -> dict:
         self.risk.kill()
@@ -255,6 +366,7 @@ class TradeCompany:
             engine_result = {
                 "error": f"{type(exc).__name__}: {exc}",
             }
+        self._save()
         return {
             "company_kill_switch": True,
             "caos": engine_result,
@@ -276,11 +388,16 @@ class TradeCompany:
             "policy": self.policy.to_dict(),
             "effective_trader_limit": self.effective_trader_limit,
             "treasury": self.treasury.snapshot(),
+            "marked_company_equity": self.marked_company_equity(),
             "traders": self.registry.snapshot(),
             "opportunities": self.opportunities.snapshot(),
             "assignments": self.market.snapshot(),
             "risk": self.risk.snapshot(),
             "diversity": self.diversity.audit().to_dict(),
+            "strategies": self.strategies.snapshot(),
+            "paper": self.paper.snapshot(),
+            "exposure": self.paper.exposure(),
+            "reconciliation_mismatches": self.paper.audit_reconciliation(),
             "training": self.training.snapshot(),
             "audit": audit.to_dict(),
             "caos": self.engine.health(),
