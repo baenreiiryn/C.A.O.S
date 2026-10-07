@@ -136,23 +136,22 @@ class MarketAllocator:
                     return True
         return False
 
-    def candidates(
+    def candidates_for_mode(
         self,
-        trader_id: str,
+        mode: TraderMode,
         *,
         now: int | None = None,
     ) -> list[Opportunity]:
-        trader = self.registry.get(trader_id)
         result = []
         for opportunity in self.opportunities.available(now=now):
             if (
-                trader.mode == TraderMode.PRODUCTION
+                mode == TraderMode.PRODUCTION
                 and self.policy.production_market_exclusivity
                 and self._symbol_occupied_in_production(opportunity.symbol)
             ):
                 continue
             if (
-                trader.mode == TraderMode.TRAINING
+                mode == TraderMode.TRAINING
                 and not self.policy.training_market_overlap
                 and any(
                     a.symbol == opportunity.symbol
@@ -162,6 +161,24 @@ class MarketAllocator:
                 continue
             result.append(opportunity)
         return result
+
+    def candidates(
+        self,
+        trader_id: str,
+        *,
+        now: int | None = None,
+    ) -> list[Opportunity]:
+        trader = self.registry.get(trader_id)
+        return self.candidates_for_mode(trader.mode, now=now)
+
+    def peek_best_for_mode(
+        self,
+        mode: TraderMode,
+        *,
+        now: int | None = None,
+    ) -> Opportunity | None:
+        rows = self.candidates_for_mode(mode, now=now)
+        return rows[0] if rows else None
 
     def peek_best(
         self,
