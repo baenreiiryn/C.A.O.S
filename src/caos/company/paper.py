@@ -371,16 +371,27 @@ class CompanyPaperBook:
             self.realized_equity(trader_id),
         )
 
-    def withdraw_flat(self, trader_id: str, amount: float) -> None:
+    def adjust_flat_cash(self, trader_id: str, delta: float) -> None:
         account = self.accounts.get(trader_id)
         if account is None:
             return
         if self.has_open_position(trader_id):
-            raise CompanyPaperError("cannot_withdraw_with_open_position")
-        if amount <= 0 or amount > account.cash + 1e-9:
-            raise CompanyPaperError("invalid_withdrawal")
-        account.cash -= amount
+            raise CompanyPaperError("cannot_adjust_cash_with_open_position")
+        nxt = account.cash + float(delta)
+        if nxt < -1e-9:
+            raise CompanyPaperError("paper_cash_cannot_be_negative")
+        account.cash = max(0.0, nxt)
         account.risk.set_equity(account.cash)
+
+    def withdraw_flat(self, trader_id: str, amount: float) -> None:
+        if amount <= 0:
+            raise CompanyPaperError("invalid_withdrawal")
+        self.adjust_flat_cash(trader_id, -float(amount))
+
+    def deposit_flat(self, trader_id: str, amount: float) -> None:
+        if amount <= 0:
+            raise CompanyPaperError("invalid_deposit")
+        self.adjust_flat_cash(trader_id, float(amount))
 
     def remove_account_if_flat(self, trader_id: str) -> None:
         account = self.accounts.get(trader_id)
