@@ -47,6 +47,22 @@ class CompanyControlPort:
             "effective_trader_limit": self.company.set_effective_trader_limit(limit)
         }
 
+    def set_operational_trader_limit(self, limit: int) -> dict:
+        return self.set_effective_trader_limit(limit)
+
+    def configure_trader_exposure(
+        self,
+        trader_id: str,
+        *,
+        max_trade_exposure_pct: float,
+        trade_exposure_pct: float | None = None,
+    ) -> dict:
+        return self.company.configure_trader_exposure(
+            trader_id,
+            max_trade_exposure_pct=max_trade_exposure_pct,
+            trade_exposure_pct=trade_exposure_pct,
+        )
+
     def request_improvement(self) -> list[dict]:
         return self.company.improvement_proposals()
 
