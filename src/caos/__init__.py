@@ -3,4 +3,4 @@
 Clean-room quantitative research and paper-trading platform driven by a local LLM.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
