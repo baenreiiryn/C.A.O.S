@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from .domain import CompanyPolicy, TraderStatus
 from .market import MarketAllocator
@@ -36,10 +37,31 @@ class CompanyRiskGovernor:
             kill_switch=False,
             start_equity=treasury.company_equity,
         )
+        self._trader_equity_provider: Callable[[str], float] | None = None
+        self._company_equity_provider: Callable[[], float] | None = None
+
+    def set_equity_providers(
+        self,
+        *,
+        trader_equity: Callable[[str], float] | None = None,
+        company_equity: Callable[[], float] | None = None,
+    ) -> None:
+        self._trader_equity_provider = trader_equity
+        self._company_equity_provider = company_equity
+
+    def trader_equity(self, trader_id: str) -> float:
+        if self._trader_equity_provider is not None:
+            return float(self._trader_equity_provider(trader_id))
+        return self.treasury.balance(trader_id)
+
+    def company_equity(self) -> float:
+        if self._company_equity_provider is not None:
+            return float(self._company_equity_provider())
+        return self.treasury.company_equity
 
     def max_trade_notional(self, trader_id: str) -> float:
         return (
-            self.treasury.balance(trader_id)
+            self.trader_equity(trader_id)
             * self.policy.max_trade_exposure_pct
             / 100.0
         )
@@ -50,7 +72,7 @@ class CompanyRiskGovernor:
         return max(
             0.0,
             (
-                self.state.start_equity - self.treasury.company_equity
+                self.state.start_equity - self.company_equity()
             )
             / self.state.start_equity
             * 100.0,
@@ -95,6 +117,6 @@ class CompanyRiskGovernor:
         return {
             "kill_switch": self.state.kill_switch,
             "start_equity": self.state.start_equity,
-            "current_equity": self.treasury.company_equity,
+            "current_equity": self.company_equity(),
             "drawdown_pct": self.drawdown_pct(),
         }
