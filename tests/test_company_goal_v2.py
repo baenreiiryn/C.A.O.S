@@ -434,14 +434,61 @@ class CompanyExpansionGoalTests(unittest.TestCase):
         self.assertAlmostEqual(company.treasury.balance("A"), 20)
         self.assertEqual(company.registry.get("B").status.value, "retired")
 
-    def test_hard_six_slot_limit_cannot_be_exceeded(self):
-        _, company = make_company(capital=70)
+    def test_configurable_operational_trader_cap_cannot_be_exceeded(self):
+        _, company = make_company(
+            capital=40,
+            operational_trader_cap=3,
+        )
         company.bootstrap()
-        for _ in range(5):
-            company.capital.create_funded_trader()
-        self.assertEqual(company.registry.slot_count(), 6)
+        company.capital.create_funded_trader()
+        company.capital.create_funded_trader()
+        self.assertEqual(company.registry.slot_count(), 3)
+        self.assertGreaterEqual(company.treasury.reserve, 10)
         with self.assertRaises(CapitalAllocationError):
             company.capital.create_funded_trader()
+
+    def test_treasury_can_spawn_without_harvesting_open_trader(self):
+        _, company = make_company(capital=20)
+        company.register_strategy(
+            StrategySpec(
+                "mom",
+                "momentum",
+                3,
+                21,
+                threshold=0.5,
+            )
+        )
+        publish(
+            company,
+            "btc",
+            "BTCUSDT",
+            100,
+            strategies=("mom",),
+        )
+        publish(
+            company,
+            "eth",
+            "ETHUSDT",
+            90,
+            strategies=("mom",),
+        )
+        company.bootstrap(assign_best=True)
+        company.engine.load_bars("BTCUSDT", bars_up())
+        opened = company.paper.cycle_trader("A")
+        self.assertEqual(opened.action, "open_long")
+        self.assertAlmostEqual(company.treasury.reserve, 10.0)
+
+        decision = company.maybe_expand("A")
+        self.assertTrue(decision.allowed)
+        self.assertAlmostEqual(decision.released_capital, 0.0)
+        self.assertEqual(decision.new_trader_id, "B")
+        self.assertIsNone(company.registry.get("B").spawned_from)
+        self.assertAlmostEqual(
+            company.treasury.balance("A"),
+            9.999,
+            places=6,
+        )
+        self.assertAlmostEqual(company.treasury.balance("B"), 10.0)
 
 
 if __name__ == "__main__":
