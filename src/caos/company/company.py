@@ -205,10 +205,19 @@ class TradeCompany:
         positions_flat: bool,
         reason: str = "manual_retirement",
     ) -> float:
+        if not positions_flat:
+            # Keep the market reservation while positions still exist. Releasing
+            # it first could let another Trader enter the same production market
+            # before the old exposure is reconciled.
+            return self.capital.settle_retired_trader(
+                trader_id,
+                positions_flat=False,
+                reason=reason,
+            )
         self.market.release(trader_id)
         return self.capital.settle_retired_trader(
             trader_id,
-            positions_flat=positions_flat,
+            positions_flat=True,
             reason=reason,
         )
 
@@ -220,10 +229,15 @@ class TradeCompany:
     ) -> float | None:
         if not self.capital.stop_floor_breached(trader_id):
             return None
+        if not positions_flat:
+            return self.capital.apply_stop_floor(
+                trader_id,
+                positions_flat=False,
+            )
         self.market.release(trader_id)
         return self.capital.apply_stop_floor(
             trader_id,
-            positions_flat=positions_flat,
+            positions_flat=True,
         )
 
     def pause_trader(self, trader_id: str) -> dict:
