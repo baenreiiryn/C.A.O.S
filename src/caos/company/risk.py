@@ -60,9 +60,19 @@ class CompanyRiskGovernor:
         return self.treasury.company_equity
 
     def max_trade_notional(self, trader_id: str) -> float:
+        trader = self.registry.get(trader_id)
         return (
             self.trader_equity(trader_id)
-            * self.policy.max_trade_exposure_pct
+            * trader.max_trade_exposure_pct
+            / 100.0
+        )
+
+    def requested_trade_notional(self, trader_id: str) -> float:
+        trader = self.registry.get(trader_id)
+        requested_pct = trader.requested_trade_exposure_pct()
+        return (
+            self.trader_equity(trader_id)
+            * requested_pct
             / 100.0
         )
 
