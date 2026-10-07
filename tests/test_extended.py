@@ -92,3 +92,89 @@ class OrchestratorExtendedTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+from caos.desks import DeskCouncil
+from caos.daemon import PaperDaemon
+
+
+class SequenceLLM:
+    def __init__(self, responses):
+        self.responses = list(responses)
+
+    def complete(self, system, user):
+        return self.responses.pop(0)
+
+
+class AgentAndGoalTests(unittest.TestCase):
+    def test_desk_tool_boundary(self):
+        good = StaticLLM(
+            '{"assessment":"ok","risks":[],"recommendations":[],"suggested_tool":"status"}'
+        )
+        out = DeskCouncil(good).consult(
+            "risk",
+            {"x": 1},
+            "audit",
+        )
+        self.assertEqual(out["desk"], "RISK")
+
+        bad = StaticLLM(
+            '{"assessment":"x","risks":[],"recommendations":[],"suggested_tool":"paper_order"}'
+        )
+        with self.assertRaises(ValueError):
+            DeskCouncil(bad).consult(
+                "risk",
+                {},
+                "trade",
+            )
+
+    def test_goal_loop_finishes(self):
+        llm = SequenceLLM(
+            [
+                '{"tool":"status","args":{}}',
+                '{"finish":{"summary":"status inspected"}}',
+            ]
+        )
+        c = CAOS(llm)
+        c.set_mandate(Mandate(1000, 20))
+        out = c.run_goal(
+            "inspect system",
+            max_steps=3,
+        )
+        self.assertEqual(out["status"], "completed")
+        self.assertEqual(out["steps"], 1)
+
+    def test_daemon_refreshes_portfolio_symbols(self):
+        bars = synthetic_bars(500)
+        mandate = Mandate(1000, 50)
+        spec = StrategySpec(
+            "s",
+            "trend",
+            3,
+            21,
+        )
+        bt = backtest(spec, bars)
+        rb = robustness(
+            spec,
+            bars,
+            mandate,
+        )
+        self.assertTrue(rb.passed)
+
+        c = CAOS(
+            StaticLLM('{"tool":"status","args":{}}'),
+            market_client=FakeBybit(),
+        )
+        c.set_mandate(mandate)
+        c.candidate_bank = {
+            "BTCUSDT": [(spec, bt, rb)]
+        }
+        c.tool_build_portfolio()
+        cycle = PaperDaemon(
+            c,
+            candle_limit=2,
+        ).run_once()
+        self.assertEqual(
+            cycle.refreshed["BTCUSDT"],
+            2,
+        )
