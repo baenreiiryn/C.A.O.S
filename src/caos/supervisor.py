@@ -40,3 +40,63 @@ def divergence(expected: BacktestResult, realized_pnls_pct: list[float]) -> Dive
         round(score, 4),
         status,
     )
+
+
+
+def audit_portfolio(caos) -> dict:
+    if caos.paper is None:
+        return {
+            "status": "unavailable",
+            "reports": [],
+            "alerts": [],
+        }
+
+    reports = []
+    alerts = []
+    for entry in caos.portfolio:
+        realized = [
+            float(row["pnl_pct"])
+            for row in caos.paper.realized_trades
+            if row.get("symbol") == entry.symbol
+            and row.get("strategy") == entry.strategy.name
+        ]
+        report = divergence(entry.expected, realized)
+        payload = {
+            "symbol": entry.symbol,
+            "strategy": entry.strategy.name,
+            "realized_trades": len(realized),
+            "divergence": {
+                "expected_win_rate_pct": report.expected_win_rate_pct,
+                "realized_win_rate_pct": report.realized_win_rate_pct,
+                "expected_profit_factor": report.expected_profit_factor,
+                "realized_profit_factor": report.realized_profit_factor,
+                "score": report.score,
+                "status": report.status,
+            },
+        }
+        reports.append(payload)
+        if report.status == "diverged":
+            alerts.append(
+                {
+                    "symbol": entry.symbol,
+                    "strategy": entry.strategy.name,
+                    "reason": "expected_vs_real_divergence",
+                    "score": report.score,
+                }
+            )
+
+    status = (
+        "alert"
+        if alerts
+        else "watch"
+        if any(
+            x["divergence"]["status"] == "watch"
+            for x in reports
+        )
+        else "ok"
+    )
+    return {
+        "status": status,
+        "reports": reports,
+        "alerts": alerts,
+    }
