@@ -154,12 +154,21 @@ class CompanyLifecycleTests(unittest.TestCase):
         )
 
     def test_effective_limit_cannot_exceed_operational_cap(self):
-        c = self.company
+        _, adapter = engine()
+        c = TradeCompany(
+            adapter,
+            CompanyPolicy(initial_company_capital=40),
+        )
         control = CompanyControlPort(c)
         self.assertEqual(
             control.set_effective_trader_limit(3)["effective_trader_limit"],
             3,
         )
+        c.bootstrap()
+        c.capital.create_funded_trader()
+        c.capital.create_funded_trader()
+        with self.assertRaises(CapitalAllocationError):
+            c.capital.create_funded_trader()
         with self.assertRaises(Exception):
             control.set_effective_trader_limit(7)
 
