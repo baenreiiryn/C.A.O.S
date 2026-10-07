@@ -106,3 +106,15 @@ class TrainingArena:
             experiment_id: experiment.to_dict()
             for experiment_id, experiment in self.experiments.items()
         }
+
+    def restore(self, snapshot: dict) -> None:
+        self.experiments = {
+            experiment_id: TrainingExperiment(
+                id=str(row["id"]),
+                symbol=str(row["symbol"]),
+                starting_capital=float(row["starting_capital"]),
+                cost_bps=float(row["cost_bps"]),
+                results=list(row.get("results", [])),
+            )
+            for experiment_id, row in snapshot.items()
+        }
