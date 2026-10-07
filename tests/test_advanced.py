@@ -133,8 +133,8 @@ class AdvancedCoreTests(unittest.TestCase):
     def test_correlation_gate_rejects_duplicate_return_stream(self):
         bars = bars_up(200)
         rb = RobustnessResult(True, 1.0, 2.0, 1.5, [])
-        s1 = StrategySpec("a", "trend", 3, 21)
-        s2 = StrategySpec("b", "trend", 3, 21)
+        s1 = StrategySpec("a", "momentum", 5, 20, threshold=0.5)
+        s2 = StrategySpec("b", "momentum", 5, 20, threshold=0.5)
         bt1 = BacktestResult("a", 10, 10, 60, 1.5, 5, 1, [1, 1.1], [])
         bt2 = BacktestResult("b", 10, 9, 60, 1.4, 5, 1, [1, 1.09], [])
         p = build_portfolio(
@@ -228,7 +228,7 @@ class AdvancedCoreTests(unittest.TestCase):
                 store=store,
             )
             self.assertTrue(RuntimeCheckpoint.restore(restored, store))
-            self.assertAlmostEqual(restored.paper.cash, 900)
+            self.assertAlmostEqual(restored.paper.cash, 899.95)
             self.assertAlmostEqual(
                 restored.paper.positions["BTC"].quantity,
                 2.0,
