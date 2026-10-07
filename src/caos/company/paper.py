@@ -81,7 +81,7 @@ class CompanyPaperBook:
         mandate = Mandate(
             capital=capital,
             max_drawdown_pct=self.policy.company_max_drawdown_pct,
-            max_position_pct=self.policy.max_trade_exposure_pct,
+            max_position_pct=trader.max_trade_exposure_pct,
         )
         account = PaperBroker(RiskEngine(mandate), fee_bps=self.fee_bps)
         self.accounts[trader_id] = account
@@ -242,6 +242,7 @@ class CompanyPaperBook:
 
         if signal == "long" and open_qty <= 1e-12:
             target = min(
+                self.company_risk.requested_trade_notional(trader_id),
                 self.company_risk.max_trade_notional(trader_id),
                 account.risk.max_position_notional,
             )
@@ -435,7 +436,7 @@ class CompanyPaperBook:
             mandate = Mandate(
                 capital=max(capital, 1e-9),
                 max_drawdown_pct=self.policy.company_max_drawdown_pct,
-                max_position_pct=self.policy.max_trade_exposure_pct,
+                max_position_pct=trader.max_trade_exposure_pct,
             )
             broker = PaperBroker(RiskEngine(mandate), fee_bps=self.fee_bps)
             paper = row["paper"]
