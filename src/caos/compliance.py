@@ -11,6 +11,7 @@ class ComplianceViolation(RuntimeError):
 
 @dataclass(slots=True)
 class ComplianceState:
+    testnet_armed: bool = False
     live_armed: bool = False
 
 
@@ -24,6 +25,14 @@ class ComplianceEngine:
     def __init__(self) -> None:
         self.state = ComplianceState()
 
+    def human_arm_testnet(self, *, confirmation: str) -> None:
+        if confirmation != "ARM TESTNET":
+            raise ComplianceViolation("explicit_human_confirmation_required")
+        self.state.testnet_armed = True
+
+    def human_disarm_testnet(self) -> None:
+        self.state.testnet_armed = False
+
     def human_arm_live(self, *, confirmation: str) -> None:
         if confirmation != "ARM LIVE":
             raise ComplianceViolation("explicit_human_confirmation_required")
@@ -33,5 +42,7 @@ class ComplianceEngine:
         self.state.live_armed = False
 
     def allow_mode(self, mode: Mode) -> None:
+        if mode is Mode.TESTNET and not self.state.testnet_armed:
+            raise ComplianceViolation("testnet_not_armed")
         if mode is Mode.LIVE and not self.state.live_armed:
             raise ComplianceViolation("live_not_armed")
