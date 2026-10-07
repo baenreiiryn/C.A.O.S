@@ -206,6 +206,51 @@ class Treasury:
             note="broker_fee",
         )
 
+    def reconcile_balance(
+        self,
+        trader_id: str,
+        target_equity: float,
+        *,
+        note: str = "account_reconciliation",
+    ) -> LedgerEntry | None:
+        target = _money(target_equity)
+        if target < 0:
+            raise TreasuryError("target_equity_cannot_be_negative")
+        account = self.trader_account(trader_id)
+        current = self._balances.get(account, Decimal("0"))
+        delta = target - current
+        if abs(delta) <= Decimal("0.000000001"):
+            return None
+        return self._external_adjustment(
+            kind="reconciliation",
+            account=account,
+            amount=delta,
+            trader_id=trader_id,
+            note=note,
+        )
+
+    @classmethod
+    def from_snapshot(cls, snapshot: dict) -> "Treasury":
+        balances = {
+            str(account): _money(value)
+            for account, value in snapshot.get("balances", {}).items()
+        }
+        if cls.RESERVE not in balances:
+            raise TreasuryError("treasury_reserve_missing")
+        if any(value < 0 for value in balances.values()):
+            raise TreasuryError("negative_balance_in_snapshot")
+        obj = cls.__new__(cls)
+        obj._balances = balances
+        obj.entries = [
+            LedgerEntry(**row)
+            for row in snapshot.get("ledger", [])
+        ]
+        expected = _money(snapshot.get("company_equity", sum(balances.values())))
+        actual = sum(balances.values(), Decimal("0"))
+        if abs(expected - actual) > Decimal("0.000001"):
+            raise TreasuryError("company_equity_snapshot_mismatch")
+        return obj
+
     def snapshot(self) -> dict:
         return {
             "company_equity": self.company_equity,
