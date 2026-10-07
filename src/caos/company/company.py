@@ -172,6 +172,17 @@ class TradeCompany:
         *,
         now: int | None = None,
     ) -> ExpansionDecision:
+        trigger = self.registry.get(trigger_trader_id)
+        if (
+            trigger_trader_id in self.paper.accounts
+            and not self.paper.positions_flat(trigger_trader_id)
+        ):
+            return ExpansionDecision(
+                False,
+                "trigger_trader_not_flat",
+                trigger_trader_id,
+            )
+
         decision = self.capital.can_expand_from(trigger_trader_id)
         if not decision.allowed:
             return decision
@@ -182,7 +193,6 @@ class TradeCompany:
                 trigger_trader_id,
             )
 
-        trigger = self.registry.get(trigger_trader_id)
         opportunity = self.market.peek_best_for_mode(
             trigger.mode,
             now=now,
@@ -195,12 +205,6 @@ class TradeCompany:
             )
 
         if trigger_trader_id in self.paper.accounts:
-            if not self.paper.positions_flat(trigger_trader_id):
-                return ExpansionDecision(
-                    False,
-                    "trigger_trader_not_flat",
-                    trigger_trader_id,
-                )
             paper_equity = self.paper.realized_equity(trigger_trader_id)
             treasury_equity = self.treasury.balance(trigger_trader_id)
             if abs(paper_equity - treasury_equity) > 1e-8:
