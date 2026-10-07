@@ -46,6 +46,18 @@ The local LLM never receives broker credentials. The list of LLM-callable tools 
 
 The orchestration contract is strict JSON: one tool and one argument object. Deterministic code validates every tool call.
 
-## v0.1 scope
+## Agent topology
 
-This first milestone deliberately ships paper trading only. A real broker adapter belongs behind the same compliance boundary and should be added only after replay, fault-injection and exchange-sandbox tests exist.
+The six visible desks are logical agents, not six mandatory LLM processes. They share one `LocalLLM` instance by default and receive different role prompts plus desk-specific tool allowlists. This is designed for single-GPU local deployments.
+
+## Goal loop
+
+`CAOS.run_goal()` repeatedly asks the local orchestrator for one safe next action, executes the deterministic tool, feeds state/results back, and stops when the model returns an explicit `finish` object or the bounded step budget is exhausted.
+
+## Continuous paper loop
+
+`PaperDaemon` refreshes public candles and evaluates already-approved strategies without invoking the LLM on every tick. This keeps execution deterministic and allows the supervisor/LLM to be reserved for anomalies and higher-level decisions.
+
+## v0.3 scope
+
+This milestone deliberately ships paper trading only, plus public Bybit market data, local persistence, logical desk agents, portfolio construction and bounded Goal orchestration. A real broker adapter belongs behind the same compliance boundary and should be added only after replay, fault-injection and exchange-sandbox tests exist.
