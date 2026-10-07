@@ -247,3 +247,16 @@ def market_regime(bars: list[MarketBar]) -> dict[str, float | str]:
         "trend_pct": trend,
         "volatility_pct": vol,
     }
+
+
+def current_signal(spec: StrategySpec, bars: list[MarketBar]) -> str:
+    """Return long/flat from the latest completed bar using the same MA crossover family."""
+    if len(bars) < spec.slow + 1:
+        return "flat"
+    closes = [b.close for b in bars]
+    i = len(closes) - 1
+    fast = _sma(closes, spec.fast, i)
+    slow = _sma(closes, spec.slow, i)
+    if fast is None or slow is None:
+        return "flat"
+    return "long" if fast > slow else "flat"
