@@ -30,11 +30,13 @@ class RiskEngine:
             raise ValueError("equity cannot be negative")
         self.state.current_equity = equity
 
-    def validate(self, order: OrderRequest) -> None:
-        if self.state.kill_switch:
-            raise RiskViolation("kill_switch_active")
+    def validate(self, order: OrderRequest, *, risk_reducing: bool = False) -> None:
         if order.notional <= 0 or order.price <= 0:
             raise RiskViolation("invalid_order")
+        if risk_reducing:
+            return
+        if self.state.kill_switch:
+            raise RiskViolation("kill_switch_active")
         if order.notional > self.max_position_notional + 1e-9:
             raise RiskViolation("position_limit")
         if self.state.day_start_equity > 0:
