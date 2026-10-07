@@ -289,12 +289,15 @@ class CAOS:
         self,
         max_entries: int = 6,
         one_per_symbol: bool = True,
+        max_correlation: float = 0.85,
     ) -> dict:
         self._require_mandate()
         self.portfolio = build_portfolio(
             self.candidate_bank,
             max_entries=int(max_entries),
             one_per_symbol=bool(one_per_symbol),
+            market_data=self.market_data,
+            max_correlation=float(max_correlation),
         )
         return {
             "entries": len(self.portfolio),
