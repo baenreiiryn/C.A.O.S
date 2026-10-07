@@ -68,10 +68,11 @@ class PaperBroker:
         order.status = "cancelled"
         return True
 
-    def process_bar(self, bar: MarketBar) -> list[Fill]:
+    def process_bar(self, symbol: str, bar: MarketBar) -> list[Fill]:
         fills: list[Fill] = []
+        symbol = symbol.upper()
         for order in list(self.pending_orders.values()):
-            if order.status != "open" or order.symbol != getattr(bar, "symbol", order.symbol):
+            if order.status != "open" or order.symbol.upper() != symbol:
                 continue
 
             hit = False
