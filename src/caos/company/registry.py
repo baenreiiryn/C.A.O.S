@@ -129,8 +129,27 @@ class TraderRegistry:
     def snapshot(self) -> dict:
         return {
             "slot_count": self.slot_count(),
+            "next_index": self._next_index,
             "traders": {
                 trader_id: trader.to_dict()
                 for trader_id, trader in self.traders.items()
             },
         }
+
+    def restore(self, snapshot: dict) -> None:
+        self.traders = {}
+        for trader_id, row in snapshot.get("traders", {}).items():
+            self.traders[trader_id] = Trader(
+                id=str(row["id"]),
+                status=TraderStatus(row["status"]),
+                mode=TraderMode(row["mode"]),
+                strategy_id=row.get("strategy_id"),
+                market=row.get("market"),
+                direction=row.get("direction"),
+                spawned_from=row.get("spawned_from"),
+                generation=int(row.get("generation", 0)),
+                metadata=dict(row.get("metadata", {})),
+            )
+        self._next_index = int(
+            snapshot.get("next_index", len(self.traders))
+        )
