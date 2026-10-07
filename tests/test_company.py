@@ -153,7 +153,7 @@ class CompanyLifecycleTests(unittest.TestCase):
             "A",
         )
 
-    def test_effective_limit_can_only_reduce_user_hard_limit(self):
+    def test_effective_limit_cannot_exceed_operational_cap(self):
         c = self.company
         control = CompanyControlPort(c)
         self.assertEqual(
@@ -214,7 +214,7 @@ class MarketAllocationTests(unittest.TestCase):
 
 
 class CompanyRiskTests(unittest.TestCase):
-    def test_trade_cap_is_twenty_percent_of_current_bucket(self):
+    def test_trade_cap_tracks_current_trader_equity(self):
         _, adapter = engine()
         c = TradeCompany(adapter)
         c.publish_opportunity(opportunity("btc", "BTCUSDT", 100))
@@ -225,8 +225,31 @@ class CompanyRiskTests(unittest.TestCase):
         with self.assertRaises(CompanyRiskViolation):
             c.risk.validate("A", symbol="BTCUSDT", notional=2.01)
 
-        c.record_realized_pnl("A", 2.4)
-        self.assertAlmostEqual(c.risk.max_trade_notional("A"), 2.48)
+        c.record_realized_pnl("A", 10.0)
+        self.assertAlmostEqual(c.treasury.balance("A"), 20.0)
+        self.assertAlmostEqual(c.risk.max_trade_notional("A"), 4.0)
+
+        c.record_realized_pnl("A", -10.0)
+        self.assertAlmostEqual(c.treasury.balance("A"), 10.0)
+        self.assertAlmostEqual(c.risk.max_trade_notional("A"), 2.0)
+
+    def test_trader_can_request_less_than_its_exposure_ceiling(self):
+        _, adapter = engine()
+        c = TradeCompany(adapter)
+        c.publish_opportunity(opportunity("btc", "BTCUSDT", 100))
+        c.bootstrap(assign_best=True)
+
+        out = c.configure_trader_exposure(
+            "A",
+            max_trade_exposure_pct=20,
+            trade_exposure_pct=8,
+        )
+        self.assertAlmostEqual(out["max_trade_notional"], 2.0)
+        self.assertAlmostEqual(out["requested_trade_notional"], 0.8)
+
+        c.record_realized_pnl("A", 10)
+        self.assertAlmostEqual(c.risk.max_trade_notional("A"), 4.0)
+        self.assertAlmostEqual(c.risk.requested_trade_notional("A"), 1.6)
 
     def test_company_kill_allows_risk_reducing_action_only(self):
         _, adapter = engine()
