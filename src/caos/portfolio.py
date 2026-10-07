@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-from .domain import BacktestResult, StrategySpec
-from .quant import RobustnessResult
+from .domain import BacktestResult, MarketBar, StrategySpec
+from .quant import (
+    RobustnessResult,
+    pearson_correlation,
+    strategy_return_series,
+)
 
 
 @dataclass(slots=True)
@@ -14,6 +18,7 @@ class PortfolioEntry:
     weight: float
     expected: BacktestResult
     robustness: RobustnessResult
+    max_abs_correlation: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -23,6 +28,7 @@ class PortfolioEntry:
             "weight": self.weight,
             "expected": self.expected.to_dict(),
             "robustness": asdict(self.robustness),
+            "max_abs_correlation": self.max_abs_correlation,
         }
 
 
@@ -41,7 +47,13 @@ def build_portfolio(
     ],
     max_entries: int = 6,
     one_per_symbol: bool = True,
+    market_data: dict[str, list[MarketBar]] | None = None,
+    max_correlation: float = 0.85,
+    cost_bps: float = 8.0,
 ) -> list[PortfolioEntry]:
+    if not 0 <= max_correlation <= 1:
+        raise ValueError("max_correlation must be between 0 and 1")
+
     ranked = []
     for symbol, rows in candidates.items():
         for spec, bt, rb in rows:
@@ -49,17 +61,55 @@ def build_portfolio(
                 continue
             ranked.append((strategy_score(bt, rb), symbol, spec, bt, rb))
     ranked.sort(key=lambda x: x[0], reverse=True)
-    selected = []
+
+    selected: list[
+        tuple[float, str, StrategySpec, BacktestResult, RobustnessResult, float]
+    ] = []
+    selected_series: list[list[float]] = []
     used_symbols: set[str] = set()
+
     for score, symbol, spec, bt, rb in ranked:
         if one_per_symbol and symbol in used_symbols:
             continue
-        selected.append((score, symbol, spec, bt, rb))
+
+        candidate_series: list[float] | None = None
+        candidate_max_corr = 0.0
+        if market_data and symbol in market_data:
+            candidate_series = strategy_return_series(
+                spec,
+                market_data[symbol],
+                cost_bps=cost_bps,
+            )
+            correlations = [
+                abs(pearson_correlation(candidate_series, other))
+                for other in selected_series
+            ]
+            candidate_max_corr = max(correlations, default=0.0)
+            if candidate_max_corr > max_correlation:
+                continue
+
+        selected.append(
+            (score, symbol, spec, bt, rb, candidate_max_corr)
+        )
+        if candidate_series is not None:
+            selected_series.append(candidate_series)
+        else:
+            selected_series.append([])
         used_symbols.add(symbol)
+
         if len(selected) >= max_entries:
             break
+
     total = sum(x[0] for x in selected) or 1.0
     return [
-        PortfolioEntry(symbol, spec, score, score / total, bt, rb)
-        for score, symbol, spec, bt, rb in selected
+        PortfolioEntry(
+            symbol=symbol,
+            strategy=spec,
+            score=score,
+            weight=score / total,
+            expected=bt,
+            robustness=rb,
+            max_abs_correlation=corr,
+        )
+        for score, symbol, spec, bt, rb, corr in selected
     ]
