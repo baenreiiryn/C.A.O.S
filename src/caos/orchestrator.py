@@ -10,6 +10,7 @@ from .compliance import ComplianceEngine
 from .domain import Mandate, MarketBar, OrderRequest
 from .experts.ensemble import ExpertEnsemble
 from .experts.evaluation import walk_forward_evaluate
+from .execution import estimate_execution_cost
 from .llm import LocalLLM
 from .marketdata import BybitPublicClient
 from .portfolio import build_portfolio
@@ -59,6 +60,7 @@ class CAOS:
         self.approved: dict[str, list[dict]] = {}
         self.candidate_bank: dict[str, list] = {}
         self.portfolio = []
+        self.execution_costs: dict[str, float] = {}
         self.tools: dict[str, Tool] = {}
         self._register_tools()
 
@@ -85,6 +87,11 @@ class CAOS:
             "market_regime",
             "Classify trend/range and recent volatility for a loaded symbol.",
             self.tool_market_regime,
+        )
+        self._register(
+            "estimate_cost",
+            "Measure spread and depth-based execution cost from the public Bybit orderbook.",
+            self.tool_estimate_cost,
         )
         self._register(
             "forecast",
@@ -164,6 +171,34 @@ class CAOS:
             "first_ts": bars[0].ts if bars else None,
             "last_ts": bars[-1].ts if bars else None,
         }
+
+    def tool_estimate_cost(
+        self,
+        symbol: str,
+        side: str = "buy",
+        notional: float = 100.0,
+        fee_bps: float = 5.0,
+        depth: int = 50,
+        category: str = "linear",
+    ) -> dict:
+        book = self.market_client.orderbook(
+            symbol,
+            limit=int(depth),
+            category=category,
+        )
+        cost = estimate_execution_cost(
+            book["bids"],
+            book["asks"],
+            side=side,
+            notional=float(notional),
+            fee_bps=float(fee_bps),
+        )
+        if cost.liquidity_sufficient:
+            self.execution_costs[symbol.upper()] = cost.roundtrip_cost_bps
+        payload = cost.to_dict()
+        payload["symbol"] = symbol.upper()
+        payload["book_ts"] = book.get("ts")
+        return payload
 
     def tool_market_regime(self, symbol: str) -> dict:
         bars = self.market_data.get(symbol.upper())
@@ -256,17 +291,22 @@ class CAOS:
     def tool_mine(
         self,
         symbol: str,
-        cost_bps: float = 8.0,
+        cost_bps: float | None = None,
     ) -> dict:
         self._require_mandate()
         bars = self.market_data.get(symbol.upper())
         if not bars:
             raise OrchestrationError("market_data_required")
         assert self.mandate is not None
+        effective_cost_bps = (
+            float(cost_bps)
+            if cost_bps is not None
+            else float(self.execution_costs.get(symbol.upper(), 8.0))
+        )
         results = mine_strategies(
             bars,
             self.mandate,
-            float(cost_bps),
+            effective_cost_bps,
         )
         self.candidate_bank[symbol.upper()] = results
         payload = []
@@ -282,6 +322,7 @@ class CAOS:
         return {
             "symbol": symbol.upper(),
             "approved": len(payload),
+            "cost_bps": effective_cost_bps,
             "strategies": payload[:10],
         }
 
@@ -364,6 +405,7 @@ class CAOS:
                 }
                 for e in self.portfolio
             ],
+            "execution_cost_bps": dict(self.execution_costs),
             "paper": (
                 self.paper.snapshot()
                 if self.paper
