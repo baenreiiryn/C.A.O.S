@@ -7,6 +7,7 @@ from typing import Literal
 
 class Mode(str, Enum):
     PAPER = "paper"
+    TESTNET = "testnet"
     LIVE = "live"
 
 
