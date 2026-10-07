@@ -54,8 +54,13 @@ class CompanySupervisor:
     def audit(self) -> CompanyAudit:
         alerts: list[dict] = []
 
-        if self.registry.slot_count() > self.policy.hard_max_active_traders:
-            alerts.append({"kind": "hard_trader_limit_violated", "severity": "critical"})
+        if self.registry.slot_count() > self.policy.operational_trader_cap:
+            alerts.append(
+                {
+                    "kind": "operational_trader_cap_violated",
+                    "severity": "critical",
+                }
+            )
 
         for trader in self.registry.traders.values():
             if trader.status == TraderStatus.RETIRED:
@@ -136,7 +141,11 @@ class CompanySupervisor:
                 "company_equity": self.treasury.company_equity,
                 "treasury_reserve": self.treasury.reserve,
                 "trader_slots": self.registry.slot_count(),
-                "hard_max_traders": self.policy.hard_max_active_traders,
+                "operational_trader_cap": self.policy.operational_trader_cap,
+                "treasury_spawn_capacity": int(
+                    self.treasury.reserve
+                    // self.policy.trader_initial_bucket
+                ),
                 "company_drawdown_pct": self.risk.drawdown_pct(),
                 "opportunities": len(self.opportunities.opportunities),
                 "assignments": len(self.market.assignments),
