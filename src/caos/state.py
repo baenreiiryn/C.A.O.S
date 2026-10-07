@@ -98,6 +98,9 @@ class RuntimeCheckpoint:
                 Fill(**row)
                 for row in paper.get("fills", [])
             ]
+            caos.paper.realized_trades = list(
+                paper.get("realized_trades", [])
+            )
 
         if caos.risk is not None and payload.get("risk"):
             risk = payload["risk"]
