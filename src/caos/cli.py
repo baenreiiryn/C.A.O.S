@@ -252,6 +252,107 @@ def parser() -> argparse.ArgumentParser:
         "--no-browser",
         action="store_true",
     )
+
+    company = sub.add_parser(
+        "company",
+        help="Run the standalone Trade Company cell",
+    )
+    company_sub = company.add_subparsers(
+        dest="company_cmd",
+        required=True,
+    )
+
+    cinit = company_sub.add_parser("init")
+    cinit.add_argument("--company-capital", type=float, default=10.0)
+    cinit.add_argument("--trader-bucket", type=float, default=10.0)
+    cinit.add_argument("--stop-floor", type=float, default=3.0)
+    cinit.add_argument(
+        "--default-max-exposure",
+        type=float,
+        default=20.0,
+    )
+    cinit.add_argument(
+        "--operational-cap",
+        type=int,
+        default=6,
+    )
+    cinit.add_argument(
+        "--company-max-dd",
+        type=float,
+        default=30.0,
+    )
+    cinit.add_argument(
+        "--trader-max-exposure",
+        type=float,
+        default=None,
+    )
+    cinit.add_argument(
+        "--requested-exposure",
+        type=float,
+        default=None,
+    )
+    cinit.add_argument(
+        "--mode",
+        choices=["production", "training"],
+        default="production",
+    )
+    cinit.add_argument(
+        "--targets",
+        default="BTCUSDT:long:momentum",
+        help=(
+            "Comma-separated SYMBOL[:direction[:strategy+strategy]] entries"
+        ),
+    )
+    cinit.add_argument("--interval", default="60")
+    cinit.add_argument("--candle-limit", type=int, default=500)
+    cinit.add_argument(
+        "--opportunity-ttl-ms",
+        type=int,
+        default=3_600_000,
+    )
+    cinit.add_argument("--every", type=float, default=60.0)
+
+    company_sub.add_parser("status")
+    company_sub.add_parser("traders")
+    company_sub.add_parser("treasury")
+    company_sub.add_parser("opportunities")
+    company_sub.add_parser("audit")
+
+    def add_runtime_overrides(sp):
+        sp.add_argument("--targets", default=None)
+        sp.add_argument("--interval", default=None)
+        sp.add_argument("--candle-limit", type=int, default=None)
+        sp.add_argument(
+            "--opportunity-ttl-ms",
+            type=int,
+            default=None,
+        )
+
+    conce = company_sub.add_parser("once")
+    add_runtime_overrides(conce)
+
+    crun = company_sub.add_parser("run")
+    add_runtime_overrides(crun)
+    crun.add_argument("--every", type=float, default=None)
+
+    cdash = company_sub.add_parser("dashboard")
+    cdash.add_argument("--port", type=int, default=5191)
+    cdash.add_argument("--no-browser", action="store_true")
+
+    climit = company_sub.add_parser("set-limit")
+    climit.add_argument("limit", type=int)
+
+    cexp = company_sub.add_parser("set-exposure")
+    cexp.add_argument("trader_id")
+    cexp.add_argument("--max", dest="max_exposure", type=float, required=True)
+    cexp.add_argument("--size", dest="requested_exposure", type=float)
+
+    cpause = company_sub.add_parser("pause")
+    cpause.add_argument("trader_id")
+    cresume = company_sub.add_parser("resume")
+    cresume.add_argument("trader_id")
+    company_sub.add_parser("emergency-stop")
+
     return p
 
 
