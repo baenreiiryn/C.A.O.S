@@ -30,6 +30,8 @@ class TraderRegistry:
         *,
         mode: TraderMode = TraderMode.PRODUCTION,
         spawned_from: str | None = None,
+        max_trade_exposure_pct: float = 20.0,
+        trade_exposure_pct: float | None = None,
         metadata: dict | None = None,
     ) -> Trader:
         if spawned_from is not None and spawned_from not in self.traders:
@@ -44,6 +46,12 @@ class TraderRegistry:
         trader = Trader(
             id=trader_id,
             mode=mode,
+            max_trade_exposure_pct=float(max_trade_exposure_pct),
+            trade_exposure_pct=(
+                float(trade_exposure_pct)
+                if trade_exposure_pct is not None
+                else None
+            ),
             spawned_from=spawned_from,
             generation=generation,
             metadata=dict(metadata or {}),
@@ -146,6 +154,14 @@ class TraderRegistry:
                 strategy_id=row.get("strategy_id"),
                 market=row.get("market"),
                 direction=row.get("direction"),
+                max_trade_exposure_pct=float(
+                    row.get("max_trade_exposure_pct", 20.0)
+                ),
+                trade_exposure_pct=(
+                    float(row["trade_exposure_pct"])
+                    if row.get("trade_exposure_pct") is not None
+                    else None
+                ),
                 spawned_from=row.get("spawned_from"),
                 generation=int(row.get("generation", 0)),
                 metadata=dict(row.get("metadata", {})),
