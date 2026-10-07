@@ -31,7 +31,7 @@ Drizzt remains optional. The Company must recover and continue operating without
 Checkpoint and restore:
 
 - immutable CompanyPolicy validation;
-- effective Trader limit;
+- effective operational Trader limit;
 - Treasury balances and append-only ledger;
 - Trader Registry and lifecycle state;
 - Opportunity Registry and TTL state;
@@ -78,7 +78,7 @@ One deterministic loop must:
 5. assign funded waiting Traders only to opportunities with registered strategies;
 6. run isolated paper cycles for ACTIVE Traders;
 7. flatten and retire a Trader if marked equity breaches the stop floor;
-8. evaluate expansion only when capital, slot, strategy and opportunity are all valid;
+8. evaluate expansion only when Treasury funding, operational capacity, strategy and opportunity are all valid;
 9. preserve production market exclusivity;
 10. track Company-wide exposure and reconciliation;
 11. run Supervisor audit;
@@ -88,26 +88,59 @@ The daemon does not call an LLM on every market tick.
 
 ### Expansion safety
 
-Expansion uses realized/reconciled capital and must be deferred while the triggering Trader has an open position.
+Spawn is Treasury-first. A new Trader is created only when Treasury can provide the configured minimum initial bucket and the operational Trader cap has room.
 
-A failed expansion assignment must rollback without losing Company capital.
+If Treasury already has enough capital, another Trader may be created without reducing an existing Trader, even while that existing Trader has an open position.
+
+If Treasury is short, the Capital Allocator may harvest only the missing amount from capital above an eligible Trader's minimum operating bucket. In that case the contributing Trader must be flat and reconciled first.
 
 ```text
-Trader A realized equity = 20
-        |
-        | only if flat + reconciled
-        v
-10 remains with A
-10 released to Treasury
+Case A — Treasury already funded
+
+Treasury Reserve = 10
+Trader A = 10, position may be open
         |
         v
-new Trader receives 10
+Trader B receives 10
+A is untouched
+
+Case B — Treasury needs capital
+
+Treasury Reserve = 0
+Trader A = 20 and flat
         |
         v
-valid market + registered strategy
+10 harvested to Treasury
+        |
+        v
+Trader B receives 10
+Trader A remains 10
 ```
 
-`spawned_from` remains analytics-only and never controls settlement.
+A failed assignment must rollback without losing Company capital. `spawned_from` is analytics-only and is not set merely because a Trader happened to be the first active worker when Treasury independently funded a spawn.
+
+
+### Two independent limits
+
+The Company must never conflate trade risk with runtime concurrency.
+
+```text
+Financial limit per Trader
+  maxTradeNotional =
+      currentTraderEquity * trader.maxTradeExposurePct
+
+Example:
+  A equity 10, max 20% -> ceiling 2
+  A equity 20, max 20% -> ceiling 4
+  A falls back to 10 -> ceiling 2
+
+Requested trade sizing may be lower than the ceiling.
+
+Operational concurrency limit
+  operationalTraderCap = 6 by default
+
+This cap exists to protect CPU/GPU/RAM/latency and may be configured separately from capital. Having enough Treasury capital does not permit the Company to exceed the operational cap.
+```
 
 ### Stop-floor safety
 
@@ -129,7 +162,7 @@ The market reservation is retained until the position is actually flat.
 
 ### Company-wide risk visibility
 
-The Company Risk Governor uses marked Trader equity for per-trade limits and marked Company equity for Company drawdown.
+The Company Risk Governor uses marked Trader equity for per-trade limits and marked Company equity for Company drawdown. Each Trader owns an independent maximum exposure percentage. A Trader or sizing policy may request less than that maximum.
 
 Supervisor must expose:
 
@@ -179,12 +212,12 @@ Goal V2 is complete when:
 8. production symbol exclusivity survives daemon operation;
 9. per-Trader paper positions remain isolated;
 10. paper realized equity reconciles into Treasury exactly once;
-11. Company risk uses marked current Trader equity for the 20% cap;
+11. Company risk uses marked current Trader equity and that Trader's configured exposure ceiling;
 12. Company drawdown can reflect unrealized paper losses;
 13. stop-floor forces flatten before retirement and returns residual to Treasury;
-14. expansion is blocked while the triggering Trader is not flat;
+14. a Trader is required to be flat only when its capital must be harvested to fund a spawn;
 15. expansion rollback preserves total Company equity;
-16. hard max 6 remains impossible to exceed through the Company runtime;
+16. the configurable operational Trader cap is enforced independently from available capital;
 17. restart/recovery can continue a previously open paper position;
 18. Company Supervisor exposes exposure and reconciliation health;
 19. CompanyControlPort still has no broker credential/raw-order/LIVE bypass;
