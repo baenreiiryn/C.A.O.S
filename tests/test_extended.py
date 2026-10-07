@@ -178,3 +178,33 @@ class AgentAndGoalTests(unittest.TestCase):
             cycle.refreshed["BTCUSDT"],
             2,
         )
+
+
+from caos.cli import parser
+
+
+class CLITests(unittest.TestCase):
+    def test_goal_and_desk_commands_parse(self):
+        a = parser().parse_args(
+            [
+                "--provider",
+                "static",
+                "goal",
+                "inspect",
+                "system",
+            ]
+        )
+        self.assertEqual(a.cmd, "goal")
+        self.assertEqual(a.max_steps, 8)
+
+        b = parser().parse_args(
+            [
+                "--provider",
+                "static",
+                "desk",
+                "risk",
+                "audit",
+            ]
+        )
+        self.assertEqual(b.cmd, "desk")
+        self.assertEqual(b.name, "risk")
