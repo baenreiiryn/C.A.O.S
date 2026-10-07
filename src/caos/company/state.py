@@ -63,10 +63,10 @@ class CompanyCheckpoint:
         effective = int(
             payload.get(
                 "effective_trader_limit",
-                company.policy.hard_max_active_traders,
+                company.policy.operational_trader_cap,
             )
         )
-        if not 1 <= effective <= company.policy.hard_max_active_traders:
+        if not 1 <= effective <= company.policy.operational_trader_cap:
             raise CompanyCheckpointError("invalid_effective_trader_limit")
         if effective < company.registry.slot_count():
             raise CompanyCheckpointError(
@@ -99,6 +99,9 @@ class CompanyCheckpoint:
 
     @staticmethod
     def _validate_integrity(company) -> None:
+        if company.registry.slot_count() > company.policy.operational_trader_cap:
+            raise CompanyCheckpointError("operational_trader_cap_exceeded")
+
         for trader_id, assignment in company.market.assignments.items():
             trader = company.registry.get(trader_id)
             if trader.market != assignment.symbol:
