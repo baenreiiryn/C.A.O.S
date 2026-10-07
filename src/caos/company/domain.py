@@ -35,6 +35,7 @@ class CompanyPolicy:
     trader_initial_bucket: float = 10.0
     trader_stop_floor: float = 3.0
     default_trader_max_exposure_pct: float = 20.0
+    operational_trader_cap: int = 6
     company_max_drawdown_pct: float = 30.0
     production_market_exclusivity: bool = True
     training_market_overlap: bool = True
@@ -58,6 +59,10 @@ class CompanyPolicy:
         if not 0 < self.default_trader_max_exposure_pct <= 100:
             raise ValueError(
                 "default_trader_max_exposure_pct must be in (0, 100]"
+            )
+        if not 1 <= self.operational_trader_cap <= 1024:
+            raise ValueError(
+                "operational_trader_cap must be between 1 and 1024"
             )
         if not 0 < self.company_max_drawdown_pct <= 100:
             raise ValueError("company_max_drawdown_pct must be in (0, 100]")
