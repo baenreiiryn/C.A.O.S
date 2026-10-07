@@ -442,6 +442,10 @@ class TradeCompany:
             "policy": self.policy.to_dict(),
             "effective_trader_limit": self.effective_trader_limit,
             "treasury": self.treasury.snapshot(),
+            "treasury_spawn_capacity": int(
+                self.treasury.reserve
+                / self.policy.trader_initial_bucket
+            ),
             "marked_company_equity": self.marked_company_equity(),
             "traders": self.registry.snapshot(),
             "opportunities": self.opportunities.snapshot(),
