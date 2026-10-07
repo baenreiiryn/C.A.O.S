@@ -48,12 +48,14 @@ class CAOS:
         market_client: BybitPublicClient | None = None,
         forecast_experts: dict[str, Any] | None = None,
         sentiment_expert: Any | None = None,
+        news_analyzer: Any | None = None,
         store: Any | None = None,
     ):
         self.llm = llm
         self.market_client = market_client or BybitPublicClient()
         self.forecast_experts = forecast_experts or {}
         self.sentiment_expert = sentiment_expert
+        self.news_analyzer = news_analyzer
         self.expert_ensemble = ExpertEnsemble()
         self.store = store
         self.mandate: Mandate | None = None
@@ -116,6 +118,11 @@ class CAOS:
             "news_sentiment",
             "Classify financial text with the configured local sentiment specialist.",
             self.tool_news_sentiment,
+        )
+        self._register(
+            "news_latest",
+            "Read the latest items from user-configured RSS/Atom feeds and optionally score sentiment.",
+            self.tool_news_latest,
         )
         self._register(
             "mine",
@@ -262,6 +269,20 @@ class CAOS:
             min_context=int(min_context),
             max_windows=int(max_windows),
         ).to_dict()
+
+    def tool_news_latest(
+        self,
+        limit: int = 20,
+        query: str | None = None,
+        with_sentiment: bool = True,
+    ) -> dict:
+        if self.news_analyzer is None:
+            raise OrchestrationError("news_feeds_not_configured")
+        return self.news_analyzer.latest(
+            limit=int(limit),
+            query=query,
+            with_sentiment=bool(with_sentiment),
+        )
 
     def tool_news_sentiment(self, text: str) -> dict:
         if self.sentiment_expert is None:
@@ -449,6 +470,14 @@ class CAOS:
                     getattr(self.sentiment_expert, "name", None)
                     if self.sentiment_expert is not None
                     else None
+                ),
+            },
+            "news": {
+                "configured": self.news_analyzer is not None,
+                "feeds": (
+                    len(self.news_analyzer.client.feed_urls)
+                    if self.news_analyzer is not None
+                    else 0
                 ),
             },
         }
