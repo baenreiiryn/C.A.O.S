@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from .domain import CompanyPolicy, Trader, TraderMode, TraderStatus
 from .registry import TraderRegistry
@@ -45,9 +46,23 @@ class CapitalAllocator:
         self.policy = policy
         self.treasury = treasury
         self.registry = registry
+        self._operational_limit_provider: Callable[[], int] | None = None
+
+    def set_operational_limit_provider(
+        self,
+        provider: Callable[[], int] | None,
+    ) -> None:
+        self._operational_limit_provider = provider
+
+    def operational_limit(self) -> int:
+        configured = self.policy.operational_trader_cap
+        if self._operational_limit_provider is None:
+            return configured
+        runtime = int(self._operational_limit_provider())
+        return max(1, min(configured, runtime))
 
     def _check_operational_capacity(self) -> None:
-        if self.registry.slot_count() >= self.policy.operational_trader_cap:
+        if self.registry.slot_count() >= self.operational_limit():
             raise CapitalAllocationError("operational_trader_cap")
 
     def treasury_can_fund_new_trader(self) -> bool:
@@ -101,7 +116,7 @@ class CapitalAllocator:
                 "trigger_trader_not_operational",
                 trader_id,
             )
-        if self.registry.slot_count() >= self.policy.operational_trader_cap:
+        if self.registry.slot_count() >= self.operational_limit():
             return ExpansionDecision(
                 False,
                 "operational_trader_cap",
