@@ -208,3 +208,50 @@ class CLITests(unittest.TestCase):
         )
         self.assertEqual(b.cmd, "desk")
         self.assertEqual(b.name, "risk")
+
+
+
+class GoalV2CLITests(unittest.TestCase):
+    def test_models_command_parses(self):
+        args = parser().parse_args(
+            ["--provider", "static", "models"]
+        )
+        self.assertEqual(args.cmd, "models")
+
+    def test_testnet_command_parses_without_secrets(self):
+        args = parser().parse_args(
+            [
+                "--provider",
+                "static",
+                "testnet-order",
+                "--confirm",
+                "ARM TESTNET",
+                "BTCUSDT",
+                "Buy",
+                "Limit",
+                "0.001",
+                "--price",
+                "50000",
+            ]
+        )
+        self.assertEqual(args.cmd, "testnet-order")
+        self.assertEqual(args.confirm, "ARM TESTNET")
+        self.assertFalse(hasattr(args, "api_secret"))
+
+    def test_expert_commands_parse(self):
+        args = parser().parse_args(
+            [
+                "--provider",
+                "static",
+                "--experts",
+                "kronos,chronos2",
+                "evaluate-expert",
+                "BTCUSDT",
+                "--expert",
+                "kronos",
+                "--horizon",
+                "6",
+            ]
+        )
+        self.assertEqual(args.cmd, "evaluate-expert")
+        self.assertEqual(args.expert, "kronos")
