@@ -69,6 +69,7 @@ class CAOS:
         self.candidate_bank: dict[str, list] = {}
         self.portfolio = []
         self.execution_costs: dict[str, float] = {}
+        self.expert_qualifications: dict[str, dict] = {}
         self.tools: dict[str, Tool] = {}
         self._register_tools()
 
@@ -263,7 +264,7 @@ class CAOS:
         predictor = self.forecast_experts.get(expert.lower())
         if predictor is None:
             raise OrchestrationError("forecast_expert_not_configured")
-        return walk_forward_evaluate(
+        payload = walk_forward_evaluate(
             predictor,
             symbol.upper(),
             bars,
@@ -271,6 +272,10 @@ class CAOS:
             min_context=int(min_context),
             max_windows=int(max_windows),
         ).to_dict()
+        key = f"{symbol.upper()}:{expert.lower()}:{int(horizon)}"
+        self.expert_qualifications[key] = payload
+        self.checkpoint()
+        return payload
 
     def tool_news_latest(
         self,
@@ -328,6 +333,12 @@ class CAOS:
         payload["symbol"] = symbol.upper()
         payload["horizon"] = int(horizon)
         payload["errors"] = errors
+        payload["qualification"] = {
+            name: self.expert_qualifications.get(
+                f"{symbol.upper()}:{name.lower()}:{int(horizon)}"
+            )
+            for name in selected
+        }
         return payload
 
     def tool_mine(
@@ -461,6 +472,7 @@ class CAOS:
                 for e in self.portfolio
             ],
             "execution_cost_bps": dict(self.execution_costs),
+            "expert_qualifications": dict(self.expert_qualifications),
             "paper": (
                 self.paper.snapshot()
                 if self.paper
