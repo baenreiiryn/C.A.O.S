@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "caos-trading-lab"
+version = "0.1.0"
+description = "C.A.O.S — local-LLM orchestration for a clean-room quantitative trading lab"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "C.A.O.S contributors"}]
+keywords = ["local-llm", "ollama", "quant", "paper-trading", "orchestration"]
+
+[project.scripts]
+caos = "caos.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
