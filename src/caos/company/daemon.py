@@ -249,7 +249,8 @@ class CompanyDaemon:
             ):
                 break
             if (
-                trader.id in self.company.paper.accounts
+                decision.released_capital > 1e-9
+                and trader.id in self.company.paper.accounts
                 and not self.company.paper.positions_flat(trader.id)
             ):
                 continue
