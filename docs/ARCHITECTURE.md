@@ -97,3 +97,24 @@ Runtime checkpoints store mandate, portfolio, paper positions/fills/P&L, pending
 ## TESTNET boundary
 
 The authenticated Bybit adapter is hard-locked to `https://api-testnet.bybit.com`. A separate `ARM TESTNET` human gate is required. The testnet executor is not registered as an LLM tool. Production LIVE has no exchange adapter in this milestone.
+
+
+## Planned Company layer
+
+The current v0.5 engine is the shared trading substrate. The next Company layer must use **Treasury-owned capital**, not a parent-child financial tree.
+
+```text
+Trade Company
+  Treasury / Capital Allocator
+  Supervisor / Improvement Manager
+  Market Scout / Market Regime
+  Opportunity Registry
+  Market Allocator
+  Traders A-F
+  Company Risk Governor
+  Strategy Diversity
+  Risk Engine
+  Broker
+```
+
+Trader creation may keep genealogical metadata such as `spawned_from`, but capital settlement is always through Treasury. When a Trader is halted or retired, its residual bucket is reconciled and returned to Treasury Reserve. See [`COMPANY_ARCHITECTURE.md`](COMPANY_ARCHITECTURE.md).
