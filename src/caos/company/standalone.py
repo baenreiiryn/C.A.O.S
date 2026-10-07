@@ -297,3 +297,18 @@ def targets_from_runtime_config(payload: dict) -> list[ScanTarget]:
             "runtime_config_has_no_targets"
         )
     return targets
+
+
+
+def load_saved_policy(store) -> CompanyPolicy | None:
+    if store is None:
+        return None
+    checkpoint = store.get_json("trade_company_checkpoint_v1")
+    if not checkpoint:
+        return None
+    policy = checkpoint.get("policy")
+    if not policy:
+        raise CompanyStandaloneError(
+            "checkpoint_policy_missing"
+        )
+    return CompanyPolicy(**policy)
