@@ -263,6 +263,68 @@ class CAOS:
                     "invalid_llm_json"
                 ) from exc
 
+    def run_goal(self, goal: str, max_steps: int = 8) -> dict:
+        if not 1 <= max_steps <= 32:
+            raise ValueError("max_steps must be between 1 and 32")
+        trace: list[dict] = []
+        for step in range(1, max_steps + 1):
+            exposed = [
+                {"name": t.name, "description": t.description}
+                for t in self.tools.values()
+                if t.name not in self.FORBIDDEN_FOR_LLM
+            ]
+            system = (
+                "You are the C.A.O.S goal orchestrator. Work toward the goal one safe step at a time. "
+                'Return JSON only. To execute a step return {"tool":"name","args":{...}}. '
+                'When the goal is actually satisfied return {"finish":{"summary":"..."}}. '
+                "Never arm live trading, request broker secrets, or reset a kill switch. Tools: "
+                + json.dumps(exposed, ensure_ascii=False)
+            )
+            user = json.dumps(
+                {
+                    "goal": goal,
+                    "state": self.status(),
+                    "trace": trace[-6:],
+                    "step": step,
+                },
+                ensure_ascii=False,
+            )
+            plan = self._extract_json(self.llm.complete(system, user))
+            if "finish" in plan:
+                finish = plan["finish"]
+                if not isinstance(finish, dict):
+                    raise OrchestrationError("finish_must_be_object")
+                return {
+                    "status": "completed",
+                    "steps": step - 1,
+                    "summary": finish.get("summary", ""),
+                    "trace": trace,
+                }
+            name = plan.get("tool")
+            args = plan.get("args", {})
+            if name in self.FORBIDDEN_FOR_LLM:
+                raise OrchestrationError("forbidden_tool")
+            tool = self.tools.get(name)
+            if tool is None:
+                raise OrchestrationError("unknown_tool")
+            if not isinstance(args, dict):
+                raise OrchestrationError("tool_args_must_be_object")
+            result = tool.fn(**args)
+            trace.append(
+                {
+                    "step": step,
+                    "tool": name,
+                    "args": args,
+                    "result": result,
+                }
+            )
+        return {
+            "status": "max_steps",
+            "steps": max_steps,
+            "summary": "Goal was not declared complete within the safe step budget.",
+            "trace": trace,
+        }
+
     def handle(self, message: str) -> dict:
         exposed = [
             {
