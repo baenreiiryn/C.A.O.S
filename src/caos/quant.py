@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass
 from statistics import mean, pstdev
@@ -14,6 +15,17 @@ def _sma(values: list[float], period: int, idx: int) -> float | None:
     return sum(window) / period
 
 
+def _zscore(values: list[float], period: int, idx: int) -> float | None:
+    if idx + 1 < period:
+        return None
+    window = values[idx + 1 - period : idx + 1]
+    mu = mean(window)
+    sigma = pstdev(window)
+    if sigma <= 1e-12:
+        return 0.0
+    return (values[idx] - mu) / sigma
+
+
 def _max_drawdown(equity: list[float]) -> float:
     peak = equity[0] if equity else 1.0
     worst = 0.0
@@ -22,6 +34,133 @@ def _max_drawdown(equity: list[float]) -> float:
         if peak > 0:
             worst = max(worst, (peak - value) / peak * 100.0)
     return worst
+
+
+def _entry_signal(spec: StrategySpec, closes: list[float], idx: int) -> bool:
+    if idx <= 0:
+        return False
+
+    if spec.family == "trend":
+        fast = _sma(closes, spec.fast, idx)
+        slow = _sma(closes, spec.slow, idx)
+        pfast = _sma(closes, spec.fast, idx - 1)
+        pslow = _sma(closes, spec.slow, idx - 1)
+        return (
+            None not in (fast, slow, pfast, pslow)
+            and pfast <= pslow
+            and fast > slow
+        )
+
+    if spec.family == "mean_reversion":
+        z = _zscore(closes, spec.slow, idx)
+        return z is not None and z <= -spec.threshold
+
+    if spec.family == "breakout":
+        if idx < spec.slow:
+            return False
+        prior = closes[idx - spec.slow : idx]
+        return bool(prior) and closes[idx] > max(prior)
+
+    if spec.family == "momentum":
+        if idx < spec.slow:
+            return False
+        base = closes[idx - spec.slow]
+        if base <= 0:
+            return False
+        momentum_pct = (closes[idx] / base - 1.0) * 100.0
+        return momentum_pct >= spec.threshold
+
+    return False
+
+
+def _exit_signal(spec: StrategySpec, closes: list[float], idx: int) -> bool:
+    if idx <= 0:
+        return False
+
+    if spec.family == "trend":
+        fast = _sma(closes, spec.fast, idx)
+        slow = _sma(closes, spec.slow, idx)
+        pfast = _sma(closes, spec.fast, idx - 1)
+        pslow = _sma(closes, spec.slow, idx - 1)
+        return (
+            None not in (fast, slow, pfast, pslow)
+            and pfast >= pslow
+            and fast < slow
+        )
+
+    if spec.family == "mean_reversion":
+        z = _zscore(closes, spec.slow, idx)
+        return z is not None and z >= -0.15
+
+    if spec.family == "breakout":
+        exit_lookback = max(3, spec.fast)
+        if idx < exit_lookback:
+            return False
+        prior = closes[idx - exit_lookback : idx]
+        return bool(prior) and closes[idx] < min(prior)
+
+    if spec.family == "momentum":
+        if idx < spec.fast:
+            return False
+        base = closes[idx - spec.fast]
+        if base <= 0:
+            return False
+        short_momentum = (closes[idx] / base - 1.0) * 100.0
+        return short_momentum <= 0.0
+
+    return False
+
+
+def signal_state_series(spec: StrategySpec, bars: list[MarketBar]) -> list[int]:
+    """Long/flat state per bar for correlation and diagnostics."""
+    closes = [b.close for b in bars]
+    state = 0
+    out: list[int] = []
+    for i in range(len(bars)):
+        if state == 0 and _entry_signal(spec, closes, i):
+            state = 1
+        elif state == 1 and _exit_signal(spec, closes, i):
+            state = 0
+        out.append(state)
+    return out
+
+
+def strategy_return_series(
+    spec: StrategySpec,
+    bars: list[MarketBar],
+    cost_bps: float = 8.0,
+) -> list[float]:
+    """Approximate bar-level strategy returns for cross-strategy correlation."""
+    if len(bars) < 2:
+        return []
+    state = signal_state_series(spec, bars)
+    cost_pct = cost_bps / 100.0
+    returns: list[float] = [0.0]
+    for i in range(1, len(bars)):
+        raw = (
+            (bars[i].close / bars[i - 1].close - 1.0) * 100.0
+            if state[i - 1]
+            else 0.0
+        )
+        turnover = abs(state[i] - state[i - 1])
+        returns.append(raw - turnover * cost_pct / 2.0)
+    return returns
+
+
+def pearson_correlation(a: list[float], b: list[float]) -> float:
+    n = min(len(a), len(b))
+    if n < 3:
+        return 0.0
+    x = a[-n:]
+    y = b[-n:]
+    mx = mean(x)
+    my = mean(y)
+    dx = [v - mx for v in x]
+    dy = [v - my for v in y]
+    denom = math.sqrt(sum(v * v for v in dx) * sum(v * v for v in dy))
+    if denom <= 1e-12:
+        return 0.0
+    return max(-1.0, min(1.0, sum(i * j for i, j in zip(dx, dy)) / denom))
 
 
 def backtest(
@@ -40,21 +179,16 @@ def backtest(
     entry_ts = 0
     trades: list[Trade] = []
     equity = [1.0]
-    cost_pct = cost_bps / 100.0
+    roundtrip_cost_pct = cost_bps / 100.0
 
     for i in range(spec.slow, len(bars)):
-        fast = _sma(closes, spec.fast, i)
-        slow = _sma(closes, spec.slow, i)
-        prev_fast = _sma(closes, spec.fast, i - 1)
-        prev_slow = _sma(closes, spec.slow, i - 1)
-        if None in (fast, slow, prev_fast, prev_slow):
-            continue
         price = closes[i]
-        if not in_trade and prev_fast <= prev_slow and fast > slow:
+        if not in_trade and _entry_signal(spec, closes, i):
             in_trade = True
             entry_price = price
             entry_ts = bars[i].ts
             continue
+
         if in_trade:
             move_pct = (price / entry_price - 1.0) * 100.0
             reason = None
@@ -62,12 +196,13 @@ def backtest(
                 reason = "stop"
             elif move_pct >= spec.take_profit_pct:
                 reason = "target"
-            elif prev_fast >= prev_slow and fast < slow:
-                reason = "cross"
+            elif _exit_signal(spec, closes, i):
+                reason = "signal"
             elif i == len(bars) - 1:
                 reason = "end"
+
             if reason:
-                pnl_pct = move_pct - cost_pct
+                pnl_pct = move_pct - roundtrip_cost_pct
                 trades.append(
                     Trade(
                         entry_ts,
@@ -189,6 +324,65 @@ def robustness(
     )
 
 
+def _candidate_specs() -> list[StrategySpec]:
+    specs: list[StrategySpec] = []
+
+    for fast in (3, 5, 8, 13):
+        for slow in (21, 34, 55):
+            if fast < slow:
+                specs.append(
+                    StrategySpec(
+                        f"trend_ma_{fast}_{slow}",
+                        "trend",
+                        fast,
+                        slow,
+                    )
+                )
+
+    for lookback in (14, 20, 30):
+        for z in (1.25, 1.75, 2.25):
+            specs.append(
+                StrategySpec(
+                    f"meanrev_z{z}_{lookback}",
+                    "mean_reversion",
+                    max(3, lookback // 4),
+                    lookback,
+                    stop_loss_pct=2.5,
+                    take_profit_pct=3.0,
+                    threshold=z,
+                )
+            )
+
+    for lookback in (20, 40, 60):
+        specs.append(
+            StrategySpec(
+                f"breakout_{lookback}",
+                "breakout",
+                max(5, lookback // 4),
+                lookback,
+                stop_loss_pct=2.5,
+                take_profit_pct=5.0,
+                threshold=0.0,
+            )
+        )
+
+    for lookback in (12, 24, 48):
+        for threshold in (0.5, 1.0, 2.0):
+            specs.append(
+                StrategySpec(
+                    f"momentum_{lookback}_{threshold}",
+                    "momentum",
+                    max(3, lookback // 3),
+                    lookback,
+                    stop_loss_pct=2.0,
+                    take_profit_pct=4.5,
+                    threshold=threshold,
+                )
+            )
+
+    return specs
+
+
 def mine_strategies(
     bars: list[MarketBar],
     mandate: Mandate,
@@ -197,24 +391,16 @@ def mine_strategies(
     candidates: list[
         tuple[StrategySpec, BacktestResult, RobustnessResult]
     ] = []
-    for fast in (3, 5, 8, 13):
-        for slow in (21, 34, 55):
-            if fast >= slow:
-                continue
-            spec = StrategySpec(
-                f"ma_{fast}_{slow}",
-                "trend",
-                fast,
-                slow,
-            )
-            bt = backtest(spec, bars, cost_bps)
-            rb = robustness(spec, bars, mandate, cost_bps)
-            if rb.passed:
-                candidates.append((spec, bt, rb))
+    for spec in _candidate_specs():
+        bt = backtest(spec, bars, cost_bps)
+        rb = robustness(spec, bars, mandate, cost_bps)
+        if rb.passed:
+            candidates.append((spec, bt, rb))
     candidates.sort(
         key=lambda item: (
             item[1].profit_factor,
             item[1].pnl_pct,
+            item[1].trades,
         ),
         reverse=True,
     )
@@ -250,13 +436,11 @@ def market_regime(bars: list[MarketBar]) -> dict[str, float | str]:
 
 
 def current_signal(spec: StrategySpec, bars: list[MarketBar]) -> str:
-    """Return long/flat from the latest completed bar using the same MA crossover family."""
+    """Return long/flat from the latest completed bar for any supported family."""
     if len(bars) < spec.slow + 1:
         return "flat"
     closes = [b.close for b in bars]
     i = len(closes) - 1
-    fast = _sma(closes, spec.fast, i)
-    slow = _sma(closes, spec.slow, i)
-    if fast is None or slow is None:
-        return "flat"
-    return "long" if fast > slow else "flat"
+    return "long" if _entry_signal(spec, closes, i) or (
+        signal_state_series(spec, bars)[-1] == 1
+    ) else "flat"
