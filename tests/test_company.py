@@ -147,6 +147,11 @@ class CompanyLifecycleTests(unittest.TestCase):
         with self.assertRaises(CapitalAllocationError):
             c.retire_trader("A", positions_flat=False)
         self.assertEqual(c.treasury.balance("A"), 10)
+        self.assertIn("A", c.market.assignments)
+        self.assertEqual(
+            c.opportunities.get("btc").reserved_by,
+            "A",
+        )
 
     def test_effective_limit_can_only_reduce_user_hard_limit(self):
         c = self.company
