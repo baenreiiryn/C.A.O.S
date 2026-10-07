@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..domain import StrategySpec
 from ..orchestrator import CAOS
+from ..quant import current_signal
 
 
 class CAOSAdapter:
@@ -14,6 +16,10 @@ class CAOSAdapter:
 
     def __init__(self, caos: CAOS):
         self.caos = caos
+
+    @property
+    def store(self):
+        return self.caos.store
 
     def health(self) -> dict:
         status = self.caos.status()
@@ -43,8 +49,24 @@ class CAOSAdapter:
             category=category,
         )
 
+    def bars(self, symbol: str) -> list[Any]:
+        return list(self.caos.market_data.get(symbol.upper(), []))
+
     def regime(self, symbol: str) -> dict:
         return self.caos.tool_market_regime(symbol)
+
+    def current_signal(
+        self,
+        strategy: StrategySpec,
+        symbol: str,
+    ) -> str:
+        bars = self.bars(symbol)
+        if not bars:
+            raise RuntimeError("market_data_required")
+        return current_signal(strategy, bars)
+
+    def execution_cost_bps(self, symbol: str) -> float:
+        return float(self.caos.execution_costs.get(symbol.upper(), 0.0))
 
     def estimate_cost(
         self,
