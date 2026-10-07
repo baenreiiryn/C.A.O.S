@@ -18,7 +18,16 @@ DESKS: dict[str, DeskSpec] = {
     "quant": DeskSpec(
         "QUANT",
         "Research strategies, interpret backtests and robustness, and recommend quantitative experiments.",
-        ("fetch_market", "market_regime", "mine", "build_portfolio", "status"),
+        (
+            "fetch_market",
+            "market_regime",
+            "forecast",
+            "forecast_ensemble",
+            "evaluate_forecast_expert",
+            "mine",
+            "build_portfolio",
+            "status",
+        ),
     ),
     "macro": DeskSpec(
         "MACRO",
@@ -28,7 +37,7 @@ DESKS: dict[str, DeskSpec] = {
     "news": DeskSpec(
         "NEWS",
         "Interpret user-supplied headlines or external context. Never execute orders or alter safety state.",
-        ("status",),
+        ("news_sentiment", "status"),
     ),
     "risk": DeskSpec(
         "RISK",
@@ -43,7 +52,13 @@ DESKS: dict[str, DeskSpec] = {
     "supervisor": DeskSpec(
         "SUPERVISOR",
         "Watch the whole system for divergence, stale data and unsafe state; recommend corrective actions.",
-        ("status", "market_regime", "kill"),
+        (
+            "status",
+            "market_regime",
+            "forecast_ensemble",
+            "evaluate_forecast_expert",
+            "kill",
+        ),
     ),
 }
 
