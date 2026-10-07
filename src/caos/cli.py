@@ -16,6 +16,7 @@ from .llm import (
     StaticLLM,
 )
 from .orchestrator import CAOS
+from .store import Store
 
 
 def synthetic_bars(
@@ -72,20 +73,24 @@ def build_caos(args) -> CAOS:
         if x.strip()
     ]
     forecast_experts, sentiment_expert = build_experts(expert_names)
+    store = Store(args.state_db) if args.state_db else None
     c = CAOS(
         llm,
         forecast_experts=forecast_experts,
         sentiment_expert=sentiment_expert,
+        store=store,
     )
-    c.set_mandate(
-        Mandate(
-            args.capital,
-            args.max_dd,
-            "consistency",
-            6,
-            args.max_position,
+    restored = bool(args.restore and c.restore_checkpoint())
+    if not restored:
+        c.set_mandate(
+            Mandate(
+                args.capital,
+                args.max_dd,
+                "consistency",
+                6,
+                args.max_position,
+            )
         )
-    )
     c.load_bars("DEMOUSDT", synthetic_bars())
     return c
 
@@ -124,6 +129,16 @@ def parser() -> argparse.ArgumentParser:
         "--experts",
         default=os.getenv("CAOS_EXPERTS", ""),
         help="Comma-separated optional specialists: kronos,chronos2,finbert",
+    )
+    p.add_argument(
+        "--state-db",
+        default=os.getenv("CAOS_STATE_DB", ".caos/caos.db"),
+        help="SQLite runtime state path; pass an empty string to disable persistence",
+    )
+    p.add_argument(
+        "--restore",
+        action="store_true",
+        help="Restore the latest runtime checkpoint before executing the command",
     )
     p.add_argument(
         "--capital",
