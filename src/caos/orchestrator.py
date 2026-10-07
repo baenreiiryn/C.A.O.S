@@ -8,6 +8,7 @@ from typing import Any, Callable
 from .broker import PaperBroker
 from .compliance import ComplianceEngine
 from .domain import Mandate, MarketBar, OrderRequest
+from .experts.ensemble import ExpertEnsemble
 from .llm import LocalLLM
 from .marketdata import BybitPublicClient
 from .portfolio import build_portfolio
@@ -34,11 +35,21 @@ class CAOS:
         "human_arm_live",
         "set_broker_credentials",
         "reset_kill_switch",
+        "paper_order",
     }
 
-    def __init__(self, llm: LocalLLM, market_client: BybitPublicClient | None = None):
+    def __init__(
+        self,
+        llm: LocalLLM,
+        market_client: BybitPublicClient | None = None,
+        forecast_experts: dict[str, Any] | None = None,
+        sentiment_expert: Any | None = None,
+    ):
         self.llm = llm
         self.market_client = market_client or BybitPublicClient()
+        self.forecast_experts = forecast_experts or {}
+        self.sentiment_expert = sentiment_expert
+        self.expert_ensemble = ExpertEnsemble()
         self.mandate: Mandate | None = None
         self.risk: RiskEngine | None = None
         self.compliance = ComplianceEngine()
@@ -60,8 +71,13 @@ class CAOS:
 
     def _register_tools(self) -> None:
         self._register(
+            "fetch_market",
+            "Download public Bybit candles for a symbol; no API key is used.",
+            self.tool_fetch_market,
+        )
+        self._register(
             "status",
-            "Return current desk, risk and paper-account status.",
+            "Return current desk, risk, expert and paper-account status.",
             self.status,
         )
         self._register(
@@ -70,14 +86,34 @@ class CAOS:
             self.tool_market_regime,
         )
         self._register(
+            "forecast",
+            "Run one configured local forecast expert. The result is evidence, never an order.",
+            self.tool_forecast,
+        )
+        self._register(
+            "forecast_ensemble",
+            "Compare configured forecast experts and optionally financial-news sentiment.",
+            self.tool_forecast_ensemble,
+        )
+        self._register(
+            "news_sentiment",
+            "Classify financial text with the configured local sentiment specialist.",
+            self.tool_news_sentiment,
+        )
+        self._register(
             "mine",
-            "Mine and robustly validate strategies for a loaded symbol.",
+            "Mine and robustly validate deterministic strategies for a loaded symbol.",
             self.tool_mine,
         )
         self._register(
-            "paper_order",
-            "Submit a paper-only order after risk checks.",
-            self.tool_paper_order,
+            "build_portfolio",
+            "Build a paper portfolio only from strategies that passed robustness gates.",
+            self.tool_build_portfolio,
+        )
+        self._register(
+            "paper_cycle",
+            "Run one deterministic paper cycle for the validated portfolio; the LLM does not place raw orders.",
+            self.tool_paper_cycle,
         )
         self._register(
             "kill",
@@ -128,6 +164,65 @@ class CAOS:
         if not bars:
             raise OrchestrationError("market_data_required")
         return market_regime(bars)
+
+    def tool_forecast(
+        self,
+        symbol: str,
+        expert: str = "kronos",
+        horizon: int = 12,
+    ) -> dict:
+        bars = self.market_data.get(symbol.upper())
+        if not bars:
+            raise OrchestrationError("market_data_required")
+        predictor = self.forecast_experts.get(expert.lower())
+        if predictor is None:
+            raise OrchestrationError("forecast_expert_not_configured")
+        result = predictor.forecast(symbol.upper(), bars, int(horizon))
+        return result.to_dict()
+
+    def tool_news_sentiment(self, text: str) -> dict:
+        if self.sentiment_expert is None:
+            raise OrchestrationError("sentiment_expert_not_configured")
+        return self.sentiment_expert.classify(text).to_dict()
+
+    def tool_forecast_ensemble(
+        self,
+        symbol: str,
+        horizon: int = 12,
+        experts: list[str] | None = None,
+        news_text: str | None = None,
+    ) -> dict:
+        bars = self.market_data.get(symbol.upper())
+        if not bars:
+            raise OrchestrationError("market_data_required")
+        selected = experts or sorted(self.forecast_experts)
+        forecasts = []
+        errors: dict[str, str] = {}
+        for name in selected:
+            predictor = self.forecast_experts.get(name.lower())
+            if predictor is None:
+                errors[name] = "not_configured"
+                continue
+            try:
+                forecasts.append(
+                    predictor.forecast(symbol.upper(), bars, int(horizon))
+                )
+            except Exception as exc:
+                errors[name] = f"{type(exc).__name__}: {exc}"
+
+        sentiment = None
+        if news_text and self.sentiment_expert is not None:
+            try:
+                sentiment = self.sentiment_expert.classify(news_text)
+            except Exception as exc:
+                errors["sentiment"] = f"{type(exc).__name__}: {exc}"
+
+        outlook = self.expert_ensemble.combine(forecasts, sentiment)
+        payload = outlook.to_dict()
+        payload["symbol"] = symbol.upper()
+        payload["horizon"] = int(horizon)
+        payload["errors"] = errors
+        return payload
 
     def tool_mine(
         self,
@@ -243,6 +338,14 @@ class CAOS:
                 else None
             ),
             "orchestrator": "local_llm",
+            "experts": {
+                "forecast": sorted(self.forecast_experts),
+                "sentiment": (
+                    getattr(self.sentiment_expert, "name", None)
+                    if self.sentiment_expert is not None
+                    else None
+                ),
+            },
         }
 
     @staticmethod
@@ -277,7 +380,8 @@ class CAOS:
                 "You are the C.A.O.S goal orchestrator. Work toward the goal one safe step at a time. "
                 'Return JSON only. To execute a step return {"tool":"name","args":{...}}. '
                 'When the goal is actually satisfied return {"finish":{"summary":"..."}}. '
-                "Never arm live trading, request broker secrets, or reset a kill switch. Tools: "
+                "Never arm live trading, request broker secrets, reset a kill switch, or place raw orders. "
+                "Forecasts and sentiment are evidence only; paper execution must use validated portfolio tools. Tools: "
                 + json.dumps(exposed, ensure_ascii=False)
             )
             user = json.dumps(
@@ -338,7 +442,8 @@ class CAOS:
             "You are the C.A.O.S local orchestrator. "
             "Pick exactly one deterministic tool. "
             "Never invent tools. Never arm live trading, "
-            "request broker secrets, or reset a kill switch. "
+            "request broker secrets, reset a kill switch, or place raw orders. "
+            "Forecasts and sentiment are evidence only; execution must flow through validated portfolio tools. "
             'Return JSON only as {"tool":"name","args":{...}}. '
             "Available tools: "
             + json.dumps(exposed, ensure_ascii=False)
