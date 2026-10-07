@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from uuid import uuid4
 
-from .domain import Fill, OrderRequest, Position
+from .domain import Fill, MarketBar, OrderRequest, PendingOrder, Position
 from .risk import RiskEngine
 
 
@@ -14,6 +15,88 @@ class PaperBroker:
         self.positions: dict[str, Position] = {}
         self.fills: list[Fill] = []
         self.realized_trades: list[dict] = []
+        self.pending_orders: dict[str, PendingOrder] = {}
+
+    def place_pending(
+        self,
+        symbol: str,
+        side: str,
+        notional: float,
+        order_type: str,
+        trigger_price: float,
+        strategy: str,
+    ) -> PendingOrder:
+        if side not in {"buy", "sell"}:
+            raise ValueError("side must be buy or sell")
+        if order_type not in {"limit", "stop"}:
+            raise ValueError("order_type must be limit or stop")
+        if notional <= 0 or trigger_price <= 0:
+            raise ValueError("notional and trigger_price must be positive")
+
+        pos = self.positions.get(symbol)
+        risk_reducing = (
+            side == "sell"
+            and pos is not None
+            and pos.quantity > 1e-12
+        )
+        self.risk.validate(
+            OrderRequest(
+                symbol,
+                side,
+                float(notional),
+                float(trigger_price),
+                strategy,
+            ),
+            risk_reducing=risk_reducing,
+        )
+        order = PendingOrder(
+            id=uuid4().hex,
+            symbol=symbol,
+            side=side,
+            notional=float(notional),
+            order_type=order_type,
+            trigger_price=float(trigger_price),
+            strategy=strategy,
+        )
+        self.pending_orders[order.id] = order
+        return order
+
+    def cancel_pending(self, order_id: str) -> bool:
+        order = self.pending_orders.get(order_id)
+        if order is None or order.status != "open":
+            return False
+        order.status = "cancelled"
+        return True
+
+    def process_bar(self, bar: MarketBar) -> list[Fill]:
+        fills: list[Fill] = []
+        for order in list(self.pending_orders.values()):
+            if order.status != "open" or order.symbol != getattr(bar, "symbol", order.symbol):
+                continue
+
+            hit = False
+            if order.side == "buy" and order.order_type == "limit":
+                hit = bar.low <= order.trigger_price
+            elif order.side == "buy" and order.order_type == "stop":
+                hit = bar.high >= order.trigger_price
+            elif order.side == "sell" and order.order_type == "limit":
+                hit = bar.high >= order.trigger_price
+            elif order.side == "sell" and order.order_type == "stop":
+                hit = bar.low <= order.trigger_price
+
+            if hit:
+                fill = self.execute(
+                    OrderRequest(
+                        order.symbol,
+                        order.side,
+                        order.notional,
+                        order.trigger_price,
+                        order.strategy,
+                    )
+                )
+                order.status = "filled"
+                fills.append(fill)
+        return fills
 
     def execute(self, order: OrderRequest) -> Fill:
         pos = self.positions.setdefault(order.symbol, Position(order.symbol))
@@ -117,4 +200,8 @@ class PaperBroker:
             "positions": {k: asdict(v) for k, v in self.positions.items()},
             "fills": [asdict(f) for f in self.fills],
             "realized_trades": list(self.realized_trades),
+            "pending_orders": {
+                k: asdict(v)
+                for k, v in self.pending_orders.items()
+            },
         }
