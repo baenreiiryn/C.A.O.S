@@ -90,9 +90,20 @@ class CompanyPersistenceGoalTests(unittest.TestCase):
             store = Store(Path(d) / "company.db")
             caos, company = make_company(store=store)
             company.register_strategy(
-                StrategySpec("trend", "trend", 3, 21)
+                StrategySpec(
+                    "mom",
+                    "momentum",
+                    3,
+                    21,
+                    threshold=0.5,
+                )
             )
-            publish(company, "btc", "BTCUSDT")
+            publish(
+                company,
+                "btc",
+                "BTCUSDT",
+                strategies=("mom",),
+            )
             company.bootstrap(assign_best=True)
             company.engine.load_bars("BTCUSDT", bars_up())
 
@@ -170,9 +181,20 @@ class CompanyRiskGoalTests(unittest.TestCase):
     def test_risk_uses_marked_equity_not_only_treasury(self):
         _, company = make_company()
         company.register_strategy(
-            StrategySpec("trend", "trend", 3, 21)
+            StrategySpec(
+                "mom",
+                "momentum",
+                3,
+                21,
+                threshold=0.5,
+            )
         )
-        publish(company, "btc", "BTCUSDT")
+        publish(
+            company,
+            "btc",
+            "BTCUSDT",
+            strategies=("mom",),
+        )
         company.bootstrap(assign_best=True)
         company.engine.load_bars("BTCUSDT", bars_up())
         company.paper.cycle_trader("A")
@@ -202,9 +224,20 @@ class CompanyRiskGoalTests(unittest.TestCase):
     def test_exposure_reports_per_trader_and_symbol(self):
         _, company = make_company()
         company.register_strategy(
-            StrategySpec("trend", "trend", 3, 21)
+            StrategySpec(
+                "mom",
+                "momentum",
+                3,
+                21,
+                threshold=0.5,
+            )
         )
-        publish(company, "btc", "BTCUSDT")
+        publish(
+            company,
+            "btc",
+            "BTCUSDT",
+            strategies=("mom",),
+        )
         company.bootstrap(assign_best=True)
         company.engine.load_bars("BTCUSDT", bars_up())
         company.paper.cycle_trader("A")
@@ -346,10 +379,28 @@ class CompanyExpansionGoalTests(unittest.TestCase):
     def test_expansion_is_blocked_while_trigger_has_open_position(self):
         _, company = make_company()
         company.register_strategy(
-            StrategySpec("trend", "trend", 3, 21)
+            StrategySpec(
+                "mom",
+                "momentum",
+                3,
+                21,
+                threshold=0.5,
+            )
         )
-        publish(company, "btc", "BTCUSDT", 100)
-        publish(company, "eth", "ETHUSDT", 90)
+        publish(
+            company,
+            "btc",
+            "BTCUSDT",
+            100,
+            strategies=("mom",),
+        )
+        publish(
+            company,
+            "eth",
+            "ETHUSDT",
+            90,
+            strategies=("mom",),
+        )
         company.bootstrap(assign_best=True)
         company.record_realized_pnl("A", 10)
         company.engine.load_bars("BTCUSDT", bars_up())
