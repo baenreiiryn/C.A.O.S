@@ -37,6 +37,8 @@ class CAOS:
 
     FORBIDDEN_FOR_LLM = {
         "human_arm_live",
+        "human_arm_testnet",
+        "testnet_place_order",
         "set_broker_credentials",
         "reset_kill_switch",
         "paper_order",
@@ -443,6 +445,7 @@ class CAOS:
                 if self.risk
                 else False
             ),
+            "testnet_armed": self.compliance.state.testnet_armed,
             "live_armed": self.compliance.state.live_armed,
             "symbols_loaded": sorted(self.market_data),
             "approved_by_symbol": {
