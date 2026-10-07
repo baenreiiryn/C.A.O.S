@@ -207,3 +207,93 @@ def build_daemon(
         candle_limit=int(candle_limit),
         opportunity_ttl_ms=int(opportunity_ttl_ms),
     )
+
+
+RUNTIME_CONFIG_KEY = "trade_company_runtime_config_v1"
+
+
+def runtime_config_payload(
+    targets: list[ScanTarget],
+    *,
+    interval: str = "60",
+    candle_limit: int = 500,
+    opportunity_ttl_ms: int = 3_600_000,
+    every_seconds: float = 60.0,
+) -> dict:
+    return {
+        "version": 1,
+        "targets": [
+            {
+                "symbol": target.symbol,
+                "direction": target.direction,
+                "strategy_candidates": list(
+                    target.strategy_candidates
+                ),
+            }
+            for target in targets
+        ],
+        "interval": str(interval),
+        "candle_limit": int(candle_limit),
+        "opportunity_ttl_ms": int(opportunity_ttl_ms),
+        "every_seconds": float(every_seconds),
+    }
+
+
+def save_runtime_config(
+    store,
+    targets: list[ScanTarget],
+    *,
+    interval: str = "60",
+    candle_limit: int = 500,
+    opportunity_ttl_ms: int = 3_600_000,
+    every_seconds: float = 60.0,
+) -> dict:
+    if store is None:
+        raise CompanyStandaloneError(
+            "runtime_config_requires_persistent_store"
+        )
+    payload = runtime_config_payload(
+        targets,
+        interval=interval,
+        candle_limit=candle_limit,
+        opportunity_ttl_ms=opportunity_ttl_ms,
+        every_seconds=every_seconds,
+    )
+    store.set_json(RUNTIME_CONFIG_KEY, payload)
+    store.event(
+        "trade_company_runtime_config",
+        payload,
+    )
+    return payload
+
+
+def load_runtime_config(store) -> dict | None:
+    if store is None:
+        return None
+    payload = store.get_json(RUNTIME_CONFIG_KEY)
+    if not payload:
+        return None
+    if int(payload.get("version", 0)) != 1:
+        raise CompanyStandaloneError(
+            "unsupported_runtime_config"
+        )
+    return payload
+
+
+def targets_from_runtime_config(payload: dict) -> list[ScanTarget]:
+    targets = []
+    for row in payload.get("targets", []):
+        targets.append(
+            ScanTarget(
+                symbol=str(row["symbol"]).upper(),
+                direction=str(row.get("direction", "long")).lower(),
+                strategy_candidates=tuple(
+                    row.get("strategy_candidates", [])
+                ),
+            )
+        )
+    if not targets:
+        raise CompanyStandaloneError(
+            "runtime_config_has_no_targets"
+        )
+    return targets
