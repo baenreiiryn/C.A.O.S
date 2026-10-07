@@ -9,6 +9,7 @@ from .broker import PaperBroker
 from .compliance import ComplianceEngine
 from .domain import Mandate, MarketBar, OrderRequest
 from .experts.ensemble import ExpertEnsemble
+from .experts.evaluation import walk_forward_evaluate
 from .llm import LocalLLM
 from .marketdata import BybitPublicClient
 from .portfolio import build_portfolio
@@ -96,6 +97,11 @@ class CAOS:
             self.tool_forecast_ensemble,
         )
         self._register(
+            "evaluate_forecast_expert",
+            "Walk-forward evaluate one configured forecast expert against a naive price baseline.",
+            self.tool_evaluate_forecast_expert,
+        )
+        self._register(
             "news_sentiment",
             "Classify financial text with the configured local sentiment specialist.",
             self.tool_news_sentiment,
@@ -179,6 +185,29 @@ class CAOS:
             raise OrchestrationError("forecast_expert_not_configured")
         result = predictor.forecast(symbol.upper(), bars, int(horizon))
         return result.to_dict()
+
+    def tool_evaluate_forecast_expert(
+        self,
+        symbol: str,
+        expert: str = "kronos",
+        horizon: int = 6,
+        min_context: int = 100,
+        max_windows: int = 12,
+    ) -> dict:
+        bars = self.market_data.get(symbol.upper())
+        if not bars:
+            raise OrchestrationError("market_data_required")
+        predictor = self.forecast_experts.get(expert.lower())
+        if predictor is None:
+            raise OrchestrationError("forecast_expert_not_configured")
+        return walk_forward_evaluate(
+            predictor,
+            symbol.upper(),
+            bars,
+            horizon=int(horizon),
+            min_context=int(min_context),
+            max_windows=int(max_windows),
+        ).to_dict()
 
     def tool_news_sentiment(self, text: str) -> dict:
         if self.sentiment_expert is None:
