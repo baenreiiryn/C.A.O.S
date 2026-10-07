@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.1 paper/research core**. Live exchange execution is intentionally not enabled yet.
+> Current milestone: **v0.3 local-agent paper desk**. Research, public market data, portfolio construction, local-LLM Goal orchestration and autonomous paper cycles are implemented. Live exchange execution remains deliberately human-gated and is not shipped yet.
 
 ## Why it is built this way
 
@@ -70,6 +70,37 @@ caos --provider openai-compatible \
 
 This works with local servers that implement `/v1/chat/completions`.
 
+## Goal mode
+
+Give the local model a result to pursue across multiple safe tool calls:
+
+```bash
+caos --provider ollama --model qwen3:8b goal "baixe BTCUSDT, analise, mine estratégias e monte uma carteira paper"
+```
+
+The loop is bounded by a maximum step budget and can only call tools exposed by C.A.O.S. It cannot arm LIVE, set broker credentials or reset the kill-switch.
+
+## Logical desks
+
+The same local model can be multiplexed into specialized roles, so a single GPU does not need six model copies:
+
+- QUANT — research, backtests and robustness
+- MACRO — regime and volatility context
+- NEWS — qualitative context only
+- RISK — exposure and emergency stop
+- COMPLIANCE — policy boundary audit
+- SUPERVISOR — system-wide health and divergence monitoring
+
+Example:
+
+```bash
+caos --provider ollama --model qwen3:8b desk risk "audite o estado atual"
+```
+
+## Public market data and paper automation
+
+C.A.O.S includes a public Bybit kline client that requires no API key, a local SQLite store, portfolio scoring and a deterministic paper runner/daemon. The LLM is not called on every market tick.
+
 ## Dashboard
 
 ```bash
@@ -86,7 +117,7 @@ python -m unittest discover -s tests -v
 
 GitHub Actions executes the same suite on every push and pull request.
 
-## Safety boundaries in v0.1
+## Safety boundaries in v0.3
 
 - research and paper trading only;
 - configurable position cap (20% default);
