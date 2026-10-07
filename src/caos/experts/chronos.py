@@ -25,13 +25,13 @@ class Chronos2Expert:
         if self._pipeline is not None:
             return self._pipeline
         try:
-            from chronos import Chronos2Pipeline
+            from chronos import BaseChronosPipeline
         except ImportError as exc:
             raise ExpertUnavailable(
                 "Chronos-2 requires optional chronos dependencies: "
                 "pip install -e .[chronos]"
             ) from exc
-        self._pipeline = Chronos2Pipeline.from_pretrained(
+        self._pipeline = BaseChronosPipeline.from_pretrained(
             self.model_id,
             device_map=self.device_map,
         )
