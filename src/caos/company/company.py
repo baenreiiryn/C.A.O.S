@@ -246,7 +246,11 @@ class TradeCompany:
 
         new_trader = self.capital.create_funded_trader(
             mode=trigger.mode,
-            spawned_from=trigger_trader_id,
+            spawned_from=(
+                trigger_trader_id
+                if released > 1e-9
+                else None
+            ),
             note="company_expansion",
         )
         try:
@@ -267,16 +271,17 @@ class TradeCompany:
                 positions_flat=True,
                 reason="failed_market_assignment",
             )
-            self.treasury.allocate(
-                trigger_trader_id,
-                released,
-                note="expansion_rollback",
-            )
-            if (
-                released > 1e-9
-                and trigger_trader_id in self.paper.accounts
-            ):
-                self.paper.deposit_flat(trigger_trader_id, released)
+            if released > 1e-9:
+                self.treasury.allocate(
+                    trigger_trader_id,
+                    released,
+                    note="expansion_rollback",
+                )
+                if trigger_trader_id in self.paper.accounts:
+                    self.paper.deposit_flat(
+                        trigger_trader_id,
+                        released,
+                    )
             raise
 
         self._save()
