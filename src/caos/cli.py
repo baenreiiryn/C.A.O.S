@@ -7,6 +7,7 @@ import os
 import random
 
 from .dashboard import serve
+from .desks import DeskCouncil
 from .domain import Mandate, MarketBar
 from .llm import (
     OllamaClient,
@@ -131,6 +132,22 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("demo")
     chat = sub.add_parser("chat")
     chat.add_argument("message", nargs="+")
+    goal = sub.add_parser("goal")
+    goal.add_argument("message", nargs="+")
+    goal.add_argument("--max-steps", type=int, default=8)
+    desk = sub.add_parser("desk")
+    desk.add_argument(
+        "name",
+        choices=[
+            "quant",
+            "macro",
+            "news",
+            "risk",
+            "compliance",
+            "supervisor",
+        ],
+    )
+    desk.add_argument("question", nargs="+")
     dash = sub.add_parser("dashboard")
     dash.add_argument(
         "--port",
@@ -167,6 +184,30 @@ def main() -> None:
         print(
             json.dumps(
                 c.handle(" ".join(args.message)),
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    elif args.cmd == "goal":
+        print(
+            json.dumps(
+                c.run_goal(
+                    " ".join(args.message),
+                    max_steps=args.max_steps,
+                ),
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    elif args.cmd == "desk":
+        council = DeskCouncil(c.llm)
+        print(
+            json.dumps(
+                council.consult(
+                    args.name,
+                    c.status(),
+                    " ".join(args.question),
+                ),
                 indent=2,
                 ensure_ascii=False,
             )
