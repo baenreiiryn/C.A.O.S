@@ -18,6 +18,7 @@ from .quant import market_regime, mine_strategies
 from .risk import RiskEngine
 from .runner import PaperRunner
 from .state import RuntimeCheckpoint
+from .supervisor import audit_portfolio
 
 
 class OrchestrationError(RuntimeError):
@@ -130,6 +131,11 @@ class CAOS:
             "paper_cycle",
             "Run one deterministic paper cycle for the validated portfolio; the LLM does not place raw orders.",
             self.tool_paper_cycle,
+        )
+        self._register(
+            "supervisor_audit",
+            "Compare realized paper behaviour against backtest expectations and surface divergence.",
+            self.tool_supervisor_audit,
         )
         self._register(
             "kill",
@@ -362,8 +368,13 @@ class CAOS:
     def tool_paper_cycle(self) -> dict:
         self._require_mandate()
         result = PaperRunner(self).cycle(self.portfolio)
+        supervisor = audit_portfolio(self)
         self.checkpoint()
-        return {"actions": result.actions, "skipped": result.skipped}
+        return {
+            "actions": result.actions,
+            "skipped": result.skipped,
+            "supervisor": supervisor,
+        }
 
     def tool_paper_order(
         self,
@@ -388,6 +399,9 @@ class CAOS:
         )
         self.checkpoint()
         return asdict(fill)
+
+    def tool_supervisor_audit(self) -> dict:
+        return audit_portfolio(self)
 
     def tool_kill(self) -> dict:
         self._require_mandate()
