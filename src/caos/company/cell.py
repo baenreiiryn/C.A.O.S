@@ -72,6 +72,7 @@ class TradeCompanyCell:
                 "themed_ui",
                 "domain.trade.summary",
                 "domain.trade.research",
+                "domain.trade.rollout",
             ),
             commands=self.SAFE_COMMANDS,
             ui={
@@ -184,6 +185,8 @@ class TradeCompanyCell:
         traders = status.get("traders", {})
         opportunities = status.get("opportunities", {})
         research = status.get("research_summary", {})
+        rollout = status.get("rollout_summary", {})
+        rollout_stages = rollout.get("stages", {})
         values = {
             "company_equity": status.get(
                 "marked_company_equity",
@@ -220,6 +223,22 @@ class TradeCompanyCell:
             ),
             "research_champions": len(
                 research.get("champions", {})
+            ),
+            "rollout_releases": rollout.get(
+                "releases",
+                0,
+            ),
+            "rollout_canaries": rollout_stages.get(
+                "paper_canary",
+                0,
+            ),
+            "rollout_eligible": rollout_stages.get(
+                "eligible",
+                0,
+            ),
+            "rollout_active": rollout_stages.get(
+                "active",
+                0,
             ),
         }
         descriptors = [
@@ -300,6 +319,34 @@ class TradeCompanyCell:
                 "count",
                 "research",
             ).to_dict(),
+            CellMetric(
+                "rollout_releases",
+                "Strategy Releases",
+                values["rollout_releases"],
+                "count",
+                "rollout",
+            ).to_dict(),
+            CellMetric(
+                "rollout_canaries",
+                "Paper Canaries",
+                values["rollout_canaries"],
+                "count",
+                "rollout",
+            ).to_dict(),
+            CellMetric(
+                "rollout_eligible",
+                "Eligible Releases",
+                values["rollout_eligible"],
+                "count",
+                "rollout",
+            ).to_dict(),
+            CellMetric(
+                "rollout_active",
+                "Active Releases",
+                values["rollout_active"],
+                "count",
+                "rollout",
+            ).to_dict(),
         ]
         return {
             "cell_id": self.manifest.cell_id,
@@ -371,6 +418,12 @@ class TradeCompanyCell:
         alerts = self.get_alerts()
         recent_events = self.get_recent_events(5)
         highlights = [
+            (
+                f"Strategy rollout: "
+                f"{metrics['rollout_canaries']} canary, "
+                f"{metrics['rollout_eligible']} eligible, "
+                f"{metrics['rollout_active']} active."
+            ),
             (
                 f"Research Factory: "
                 f"{metrics['research_hypotheses']} hypothesis(es), "
