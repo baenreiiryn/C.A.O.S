@@ -50,6 +50,7 @@ Fresh Windows installations start with these sources enabled:
 | U.S. SEC Press Releases | regulation | official |
 | Federal Reserve Press Releases | macro | official |
 | Bank of Japan | macro-japan | official |
+| Japan Financial Services Agency | regulation-japan | official |
 
 The catalog is versioned in:
 
