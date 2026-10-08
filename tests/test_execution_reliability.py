@@ -179,6 +179,34 @@ class ReliableTestnetExecutorTests(unittest.TestCase):
             )
             store.close()
 
+    def test_invalid_ack_identity_becomes_uncertain(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "reliability.db")
+
+            def post(url, data, headers):
+                del url, data, headers
+                return {
+                    "retCode": 0,
+                    "result": {
+                        "orderId": "",
+                        "orderLinkId": "wrong-link",
+                    },
+                }
+
+            executor, journal = self.make_executor(
+                store,
+                post_transport=post,
+            )
+            with self.assertRaises(TestnetError):
+                executor.submit_plan(sample_plan())
+            row = journal.list()[0]
+            self.assertEqual(row["status"], "uncertain")
+            self.assertIn(
+                "broker_ack_identity_invalid",
+                row["last_error"],
+            )
+            store.close()
+
     def test_ambiguous_submission_never_retries_before_reconcile(self):
         with tempfile.TemporaryDirectory() as d:
             store = Store(Path(d) / "reliability.db")
