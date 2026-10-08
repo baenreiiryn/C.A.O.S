@@ -119,6 +119,24 @@ class CompanyControlPort:
             cost_bps=cost_bps,
         )
 
+    def get_execution_reliability(self) -> dict:
+        reliability = self.company.execution_reliability
+        if reliability is None:
+            return {
+                "enabled": False,
+                "summary": {
+                    "total": 0,
+                    "recovery_required": 0,
+                    "counts": {},
+                },
+                "intents": [],
+            }
+        return {
+            "enabled": True,
+            "summary": reliability.summary(),
+            "intents": reliability.list(limit=100),
+        }
+
     def get_execution_plans(self) -> dict:
         return {
             "version": self.company.status()[
