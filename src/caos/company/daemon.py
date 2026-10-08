@@ -32,6 +32,7 @@ class CompanyDaemonCycle:
     errors: dict[str, str]
     audit: dict
     exposure: dict
+    paused: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -45,6 +46,7 @@ class CompanyDaemonCycle:
             "errors": dict(self.errors),
             "audit": dict(self.audit),
             "exposure": dict(self.exposure),
+            "paused": self.paused,
         }
 
 
@@ -343,23 +345,30 @@ class CompanyDaemon:
                     f"{type(exc).__name__}: {exc}"
                 )
 
-        opportunities = self._scan(
-            now=now,
-            refreshed=refreshed,
-            errors=errors,
-        )
-        assignments = self._assign_waiting(
-            now=now,
-            errors=errors,
-        )
-        paper_actions, retirements = self._paper_cycles(
-            refreshed=refreshed,
-            errors=errors,
-        )
-        expansions = self._expand(
-            now=now,
-            errors=errors,
-        )
+        if self.company.operations_paused:
+            opportunities: list[str] = []
+            assignments: list[dict] = []
+            paper_actions: list[dict] = []
+            retirements: list[dict] = []
+            expansions: list[dict] = []
+        else:
+            opportunities = self._scan(
+                now=now,
+                refreshed=refreshed,
+                errors=errors,
+            )
+            assignments = self._assign_waiting(
+                now=now,
+                errors=errors,
+            )
+            paper_actions, retirements = self._paper_cycles(
+                refreshed=refreshed,
+                errors=errors,
+            )
+            expansions = self._expand(
+                now=now,
+                errors=errors,
+            )
 
         audit = self.company.audit()
         exposure = self.company.paper.exposure()
@@ -379,6 +388,7 @@ class CompanyDaemon:
                     "errors": errors,
                     "audit_status": audit["status"],
                     "gross_exposure": exposure["gross_notional"],
+                    "operations_paused": self.company.operations_paused,
                 },
             )
 
@@ -393,6 +403,7 @@ class CompanyDaemon:
             errors=errors,
             audit=audit,
             exposure=exposure,
+            paused=self.company.operations_paused,
         )
 
     def serve(
