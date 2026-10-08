@@ -56,6 +56,8 @@ class CityPresentationMapper:
         }
         if status.get("risk", {}).get("kill_switch"):
             mood = "emergency"
+        elif status.get("operations_paused"):
+            mood = "paused"
         elif "critical" in severity or audit.get("status") == "critical":
             mood = "critical"
         elif alerts:
@@ -243,6 +245,9 @@ class CityPresentationMapper:
                 "health": audit.get("status", "unknown"),
                 "emergency": bool(
                     status.get("risk", {}).get("kill_switch")
+                ),
+                "operations_paused": bool(
+                    status.get("operations_paused")
                 ),
                 "company_equity": status.get(
                     "marked_company_equity",
