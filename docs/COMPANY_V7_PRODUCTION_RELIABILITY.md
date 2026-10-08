@@ -1,6 +1,6 @@
 # Company V7 — Production Reliability / Broker Reconciliation
 
-Status: **IN DEVELOPMENT on `feature/trade-company`**
+Status: **COMPLETE on `feature/trade-company`**
 
 ## Goal
 
@@ -619,3 +619,36 @@ Company V7 does not:
 - migrate the legacy raw human `testnet-order` command into the durable plan path.
 
 Those are later production-readiness steps after order-intent reliability is proven.
+
+
+## Validation result
+
+Final validated implementation:
+
+```text
+Ran 149 tests
+OK
+
+CI: SUCCESS
+CLI smoke: SUCCESS
+Company reliability inspection smoke: SUCCESS
+Execution-intents inspection smoke: SUCCESS
+durable outbox/idempotency tests: SUCCESS
+crash-window/restart recovery tests: SUCCESS
+Bybit realtime/history reconciliation tests: SUCCESS
+broker payload mismatch fail-closed tests: SUCCESS
+invalid ACK identity fail-closed tests: SUCCESS
+confirmed-missing abandonment tests: SUCCESS
+human TESTNET submit gate tests: SUCCESS
+read-only unarmed recovery tests: SUCCESS
+checkpoint-independent persistence tests: SUCCESS
+Company Cell reliability alert/metrics tests: SUCCESS
+Chronicle Vault reliability tests: SUCCESS
+read-only themed reliability endpoint tests: SUCCESS
+```
+
+The validated branch remains `feature/trade-company`.
+
+No merge to `main` has occurred.
+
+**COMPANY V7 — PRODUCTION RELIABILITY / BROKER RECONCILIATION: COMPLETE**
