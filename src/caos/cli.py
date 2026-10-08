@@ -344,7 +344,12 @@ def parser() -> argparse.ArgumentParser:
 
     cexp = company_sub.add_parser("set-exposure")
     cexp.add_argument("trader_id")
-    cexp.add_argument("--max", dest="max_exposure", type=float, required=True)
+    cexp.add_argument(
+        "--max-exposure",
+        dest="max_exposure",
+        type=float,
+        required=True,
+    )
     cexp.add_argument("--size", dest="requested_exposure", type=float)
 
     cpause = company_sub.add_parser("pause")
