@@ -395,6 +395,37 @@ class DurableExecutionJournal:
             broker_order=broker_order,
         )
 
+    def abandon_not_found(
+        self,
+        intent_id: str,
+    ) -> dict:
+        current = self.get(intent_id)
+        if (
+            current["status"] != "uncertain"
+            or current.get("reconciliation_status")
+            != "not_found"
+        ):
+            raise ExecutionReliabilityError(
+                "only_confirmed_not_found_intent_can_be_abandoned"
+            )
+        changed = self.store.transition_execution_intent(
+            intent_id,
+            from_statuses=("uncertain",),
+            to_status="abandoned",
+            reconciliation_status="not_found_abandoned",
+            reconciliation_payload=None,
+            last_error=current.get("last_error"),
+        )
+        if not changed:
+            raise ExecutionReliabilityError(
+                "execution_intent_abandon_transition_failed"
+            )
+        self.store.event(
+            "execution_intent_abandoned",
+            {"intent_id": intent_id},
+        )
+        return self.get(intent_id)
+
     def recovery_candidates(self) -> list[dict]:
         return self.list(
             statuses=(
