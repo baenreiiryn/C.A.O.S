@@ -231,7 +231,7 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
     <button class="place scout" data-location="scout"><span class="state-dot"></span><div class="building"><span class="place-icon">🧭</span></div><div class="place-label"><div class="place-title">Scout Lodge</div><div class="place-character">Royal Pathfinder</div><div class="place-activity" data-activity="scout">scouting markets</div></div></button>
     <button class="place arena" data-location="arena"><span class="state-dot"></span><div class="building"><span class="place-icon">🏟️</span></div><div class="place-label"><div class="place-title">Tournament Arena</div><div class="place-character">Training Arena</div><div class="place-activity" data-activity="arena">training challengers</div></div></button>
     <button class="place nexus" data-location="nexus"><span class="state-dot"></span><div class="building"><span class="place-icon">🔮</span></div><div class="place-label"><div class="place-title">Arcane Nexus</div><div class="place-character">C.A.O.S</div><div class="place-activity" data-activity="nexus">feeding the ley lines</div></div></button>
-    <button class="place workshop" data-location="workshop"><span class="state-dot"></span><div class="building"><span class="place-icon">⚗️</span></div><div class="place-label"><div class="place-title">Arcane Workshop</div><div class="place-character">Improvement Manager</div><div class="place-activity" data-activity="workshop">researching improvements</div></div></button>
+    <button class="place workshop" data-location="workshop"><span class="state-dot"></span><div class="building"><span class="place-icon">⚗️</span></div><div class="place-label"><div class="place-title">Arcane Workshop</div><div class="place-character">Royal Arcanist · Research Factory</div><div class="place-activity" data-activity="workshop">researching challengers</div></div></button>
     <button class="place chronicle" data-location="chronicle"><span class="state-dot"></span><div class="building"><span class="place-icon">📚</span></div><div class="place-label"><div class="place-title">Chronicle Vault</div><div class="place-character">Memory & Recovery</div><div class="place-activity" data-activity="chronicle">recording history</div></div></button>
 
     <div id="guildAdventurers" class="guild-adventurers" aria-label="Visible Trader adventurers"></div>
@@ -403,8 +403,15 @@ function locationDetails(id){
    body+=section('Tournament Records',experiments.length?'<div class="list">'+experiments.map(function(e){const best=(e.results||[])[0];return listItem(e.symbol+' · '+String(e.id).slice(0,8),(best?'leader '+best.variant:'no results')+' · capital '+money(e.starting_capital))}).join('')+'</div>':'<div class="empty">No tournaments have been recorded.</div>');
  }
  if(id==='workshop'){
-   const imp=c.improvements||[];
-   body+=section('Research Scrolls',imp.length?'<div class="list">'+imp.map(function(p){return listItem(p.kind,(p.target?'target '+p.target+' · ':'')+p.reason+(p.requires_human?' · human action required':''))}).join('')+'</div>':'<div class="empty">The Royal Arcanist has no proposals right now.</div>');
+   const imp=c.improvements||[], research=c.research||{}, summary=c.research_summary||{};
+   body+=section('Research Factory','<div class="metric-grid">'+metric('Hypotheses',summary.hypotheses||0)+metric('Candidates',summary.candidates||0)+metric('Evaluations',summary.evaluations||0)+metric('Champions',Object.keys(summary.champions||{}).length)+'</div>');
+   const champs=Object.entries(summary.champions||{});
+   body+=section('Champions',champs.length?'<div class="list">'+champs.map(function(row){return listItem(row[0],row[1])}).join('')+'</div>':'<div class="empty">No champion has been promoted yet.</div>');
+   const decisions=(research.decisions||[]).slice().reverse().slice(0,10);
+   body+=section('Promotion Council',decisions.length?'<div class="list">'+decisions.map(function(d){return listItem((d.status||'decision').toUpperCase()+' · '+(d.symbol||''),(d.candidate_strategy_id||'no candidate')+' · '+(d.reason||''))}).join('')+'</div>':'<div class="empty">No promotion decisions yet.</div>');
+   const hypotheses=Object.values(research.hypotheses||{}).slice(-10).reverse();
+   body+=section('Hypothesis Scrolls',hypotheses.length?'<div class="list">'+hypotheses.map(function(h){return listItem(h.symbol+' · '+h.family,h.thesis+' · '+h.status)}).join('')+'</div>':'<div class="empty">No research hypotheses have been submitted.</div>');
+   body+=section('Improvement Proposals',imp.length?'<div class="list">'+imp.map(function(p){return listItem(p.kind,(p.target?'target '+p.target+' · ':'')+p.reason+(p.requires_human?' · human action required':''))}).join('')+'</div>':'<div class="empty">No improvement proposals right now.</div>');
  }
  if(id==='nexus'){
    const caos=s.caos||{}, experts=caos.experts||{};
@@ -432,7 +439,7 @@ function technicalSnapshot(id,s){
  if(id==='observatory')return {approved_by_symbol:s.caos&&s.caos.approved_by_symbol,portfolio:s.caos&&s.caos.portfolio,experts:s.caos&&s.caos.experts};
  if(id==='tavern')return {news:s.caos&&s.caos.news,sentiment:s.caos&&s.caos.experts&&s.caos.experts.sentiment};
  if(id==='arena')return s.training;
- if(id==='workshop')return currentCity&&currentCity.improvements;
+ if(id==='workshop')return {research:currentCity&&currentCity.research,improvements:currentCity&&currentCity.improvements};
  if(id==='nexus')return s.caos;
  if(id==='chronicle')return currentCity&&currentCity.recent_events;
  return {};
