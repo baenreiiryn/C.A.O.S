@@ -4,6 +4,14 @@ from dataclasses import dataclass
 
 from ..broker import PaperBroker
 from ..domain import Mandate, OrderRequest
+from ..execution_fabric import (
+    ExecutionPlan,
+    StrategyDecision,
+    TargetPosition,
+    decision_from_signal,
+    plan_execution,
+    resolve_target_position,
+)
 from ..risk import RiskEngine
 from .adapter import CAOSAdapter
 from .domain import CompanyPolicy, TraderStatus
@@ -26,6 +34,9 @@ class TraderPaperCycle:
     fill: dict | None
     equity: float
     realized_equity: float
+    decision: dict | None = None
+    target: dict | None = None
+    plan: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -35,6 +46,9 @@ class TraderPaperCycle:
             "fill": self.fill,
             "equity": self.equity,
             "realized_equity": self.realized_equity,
+            "decision": self.decision,
+            "target": self.target,
+            "plan": self.plan,
         }
 
 
@@ -67,6 +81,7 @@ class CompanyPaperBook:
         self.strategies = strategies
         self.fee_bps = float(fee_bps)
         self.accounts: dict[str, PaperBroker] = {}
+        self.last_plans: dict[str, dict] = {}
 
     def ensure_account(self, trader_id: str) -> PaperBroker:
         trader = self.registry.get(trader_id)
@@ -233,32 +248,78 @@ class CompanyPaperBook:
         if not bars:
             raise CompanyPaperError("market_data_required")
         strategy = self.strategies.get(trader.strategy_id)
-        signal = self.engine.current_signal(strategy, trader.market)
+        requested_weight = (
+            trader.requested_trade_exposure_pct() / 100.0
+        )
+        decision = self.engine.current_decision(
+            strategy,
+            trader.market,
+            requested_weight=requested_weight,
+        )
+        if self.company_risk.state.kill_switch:
+            decision = decision_from_signal(
+                symbol=trader.market,
+                strategy_id=trader.strategy_id,
+                signal="flat",
+                requested_weight=0.0,
+                as_of=bars[-1].ts,
+                reason="company_kill_switch",
+            )
+
         account = self.ensure_account(trader_id)
         marks = {trader.market: bars[-1].close}
-        account.risk.set_equity(account.equity(marks))
+        marked_equity = account.equity(marks)
+        account.risk.set_equity(marked_equity)
 
         position = account.positions.get(trader.market)
         open_qty = position.quantity if position else 0.0
         price = bars[-1].close
+        current_notional = open_qty * price
 
-        if self.company_risk.state.kill_switch:
-            signal = "flat"
+        max_notional = min(
+            self.company_risk.max_trade_notional(trader_id),
+            account.risk.max_position_notional,
+        )
+        target = resolve_target_position(
+            decision,
+            equity=marked_equity,
+            max_notional=max_notional,
+        )
+        tolerance = max(
+            1e-8,
+            target.target_notional * 0.01,
+        )
+        plan = plan_execution(
+            target,
+            current_notional=current_notional,
+            reference_price=price,
+            allow_new_risk=allow_new_risk,
+            tolerance=tolerance,
+        )
+        self.last_plans[trader_id] = plan.to_dict()
 
-        if (
-            allow_new_risk
-            and signal == "long"
-            and open_qty <= 1e-12
-        ):
-            target = min(
-                self.company_risk.requested_trade_notional(trader_id),
-                self.company_risk.max_trade_notional(trader_id),
-                account.risk.max_position_notional,
+        if not plan.executable:
+            return TraderPaperCycle(
+                trader_id,
+                "no_state_change",
+                decision.signal,
+                None,
+                self.marked_equity(trader_id),
+                self.realized_equity(trader_id),
+                decision.to_dict(),
+                target.to_dict(),
+                plan.to_dict(),
             )
+
+        if plan.side == "buy":
+            if plan.effective_target_notional > max_notional + 1e-9:
+                raise CompanyPaperError(
+                    "execution_plan_exceeds_target_ceiling"
+                )
             self.company_risk.validate(
                 trader_id,
                 symbol=trader.market,
-                notional=target,
+                notional=plan.effective_target_notional,
             )
             entry_price = self._execution_price(
                 trader.market,
@@ -269,60 +330,56 @@ class CompanyPaperBook:
                 OrderRequest(
                     trader.market,
                     "buy",
-                    target,
+                    plan.order_notional,
                     entry_price,
                     trader.strategy_id,
                 )
             )
-            self.reconcile_trader(trader_id)
-            return TraderPaperCycle(
-                trader_id,
-                "open_long",
-                signal,
-                self._fill_dict(fill),
-                self.marked_equity(trader_id),
-                self.realized_equity(trader_id),
+            action = (
+                "open_long"
+                if current_notional <= 1e-8
+                else "increase_long"
             )
-
-        if signal == "flat" and open_qty > 1e-12:
+        else:
+            self.company_risk.validate(
+                trader_id,
+                symbol=trader.market,
+                notional=plan.order_notional,
+                risk_reducing=True,
+            )
             exit_price = self._execution_price(
                 trader.market,
                 "sell",
                 price,
             )
-            notional = open_qty * exit_price
-            self.company_risk.validate(
-                trader_id,
-                symbol=trader.market,
-                notional=notional,
-                risk_reducing=True,
-            )
+            quantity_to_sell = plan.order_notional / price
+            execution_notional = quantity_to_sell * exit_price
             fill = account.execute(
                 OrderRequest(
                     trader.market,
                     "sell",
-                    notional,
+                    execution_notional,
                     exit_price,
                     trader.strategy_id,
                 )
             )
-            self.reconcile_trader(trader_id)
-            return TraderPaperCycle(
-                trader_id,
-                "close_long",
-                signal,
-                self._fill_dict(fill),
-                self.marked_equity(trader_id),
-                self.realized_equity(trader_id),
+            action = (
+                "close_long"
+                if plan.action == "close"
+                else "reduce_long"
             )
 
+        self.reconcile_trader(trader_id)
         return TraderPaperCycle(
             trader_id,
-            "no_state_change",
-            signal,
-            None,
+            action,
+            decision.signal,
+            self._fill_dict(fill),
             self.marked_equity(trader_id),
             self.realized_equity(trader_id),
+            decision.to_dict(),
+            target.to_dict(),
+            plan.to_dict(),
         )
 
     def force_flatten(self, trader_id: str) -> TraderPaperCycle:
@@ -350,23 +407,48 @@ class CompanyPaperBook:
         bars = self.engine.bars(trader.market)
         if not bars:
             raise CompanyPaperError("market_data_required_to_flatten")
+
+        price = bars[-1].close
+        current_notional = position.quantity * price
+        decision = decision_from_signal(
+            symbol=trader.market,
+            strategy_id=trader.strategy_id or "company_flatten",
+            signal="flat",
+            requested_weight=0.0,
+            as_of=bars[-1].ts,
+            reason="company_force_flatten",
+        )
+        target = resolve_target_position(
+            decision,
+            equity=self.marked_equity(trader_id),
+            max_notional=0.0,
+        )
+        plan = plan_execution(
+            target,
+            current_notional=current_notional,
+            reference_price=price,
+            allow_new_risk=False,
+        )
+        self.last_plans[trader_id] = plan.to_dict()
+
         exit_price = self._execution_price(
             trader.market,
             "sell",
-            bars[-1].close,
+            price,
         )
-        notional = position.quantity * exit_price
+        quantity_to_sell = plan.order_notional / price
+        execution_notional = quantity_to_sell * exit_price
         self.company_risk.validate(
             trader_id,
             symbol=trader.market,
-            notional=notional,
+            notional=execution_notional,
             risk_reducing=True,
         )
         fill = account.execute(
             OrderRequest(
                 trader.market,
                 "sell",
-                notional,
+                execution_notional,
                 exit_price,
                 trader.strategy_id or "company_flatten",
             )
@@ -379,6 +461,9 @@ class CompanyPaperBook:
             self._fill_dict(fill),
             self.marked_equity(trader_id),
             self.realized_equity(trader_id),
+            decision.to_dict(),
+            target.to_dict(),
+            plan.to_dict(),
         )
 
     def adjust_flat_cash(self, trader_id: str, delta: float) -> None:
@@ -414,6 +499,7 @@ class CompanyPaperBook:
     def snapshot(self) -> dict:
         return {
             "fee_bps": self.fee_bps,
+            "last_plans": dict(self.last_plans),
             "accounts": {
                 trader_id: {
                     "paper": account.snapshot(),
@@ -431,6 +517,7 @@ class CompanyPaperBook:
         from ..domain import Fill, PendingOrder, Position
 
         self.fee_bps = float(snapshot.get("fee_bps", self.fee_bps))
+        self.last_plans = dict(snapshot.get("last_plans", {}))
         self.accounts = {}
         for trader_id, row in snapshot.get("accounts", {}).items():
             trader = self.registry.get(trader_id)
