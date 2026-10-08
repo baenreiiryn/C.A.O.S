@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass, field
 
+from ..news import DEFAULT_NEWS_SOURCES
+
 
 NEWS_INTELLIGENCE_VERSION = "news-intelligence/v1"
 
@@ -67,6 +69,12 @@ _MACRO = (
     "monetary policy",
     "treasury yield",
 )
+
+_TRUSTED_SOURCE_KIND = {
+    str(row["url"]): str(row["kind"])
+    for row in DEFAULT_NEWS_SOURCES
+}
+
 
 
 @dataclass(slots=True)
@@ -282,6 +290,22 @@ class CompanyNewsIntelligence:
                     sentiment,
                     direct,
                 )
+                source_url = str(
+                    item.get("source", "")
+                )
+                source_kind = (
+                    _TRUSTED_SOURCE_KIND.get(
+                        source_url
+                    )
+                )
+                trusted_source = (
+                    source_kind is not None
+                )
+                if (
+                    severity == "high"
+                    and not trusted_source
+                ):
+                    severity = "medium"
                 ctx = contexts[symbol]
                 ctx.relevance = max(
                     ctx.relevance,
@@ -322,6 +346,10 @@ class CompanyNewsIntelligence:
                         "sentiment": sentiment,
                         "severity": severity,
                         "direct": direct,
+                        "trusted_source": trusted_source,
+                        "source_kind": (
+                            source_kind or "custom"
+                        ),
                     }
                 )
                 ctx.headlines = ctx.headlines[:8]
@@ -371,6 +399,7 @@ class CompanyNewsIntelligence:
                 "news_can_create_trades": False,
                 "positive_news_can_increase_risk": False,
                 "critical_negative_news_blocks_new_risk": True,
+                "custom_source_can_block_new_risk_alone": False,
                 "risk_reducing_actions_remain_allowed": True,
             },
         }
