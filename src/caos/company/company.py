@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ..execution_fabric import EXECUTION_FABRIC_VERSION
 from .adapter import CAOSAdapter
 from .capital import CapitalAllocator, ExpansionDecision
 from .diversity import StrategyDiversity
@@ -503,6 +504,10 @@ class TradeCompany:
             "diversity": self.diversity.audit().to_dict(),
             "strategies": self.strategies.snapshot(),
             "paper": self.paper.snapshot(),
+            "execution_fabric": {
+                "version": EXECUTION_FABRIC_VERSION,
+                "last_plans": dict(self.paper.last_plans),
+            },
             "exposure": self.paper.exposure(),
             "reconciliation_mismatches": self.paper.audit_reconciliation(),
             "training": self.training.snapshot(),
