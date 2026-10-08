@@ -219,6 +219,13 @@ class TradeCompany:
                 trigger_trader_id,
             )
 
+        if self.paper.has_pending_order(trigger_trader_id):
+            return ExpansionDecision(
+                False,
+                "trigger_trader_pending_order",
+                trigger_trader_id,
+            )
+
         decision = self.capital.can_expand_from(trigger_trader_id)
         if not decision.allowed:
             return decision
@@ -359,6 +366,10 @@ class TradeCompany:
             and not self.paper.positions_flat(trader_id)
         ):
             raise CompanyPaperError("positions_not_actually_flat")
+        self.paper.cancel_pending_order(
+            trader_id,
+            reason="trader_retired",
+        )
         if trader_id in self.paper.accounts:
             self.paper.reconcile_trader(trader_id)
         self.market.release(trader_id)
@@ -389,6 +400,10 @@ class TradeCompany:
             and not self.paper.positions_flat(trader_id)
         ):
             raise CompanyPaperError("positions_not_actually_flat")
+        self.paper.cancel_pending_order(
+            trader_id,
+            reason="stop_floor",
+        )
         if trader_id in self.paper.accounts:
             self.paper.reconcile_trader(trader_id)
         self.market.release(trader_id)
@@ -424,6 +439,10 @@ class TradeCompany:
         account = self.paper.accounts.get(trader_id)
         if account is not None:
             account.risk.mandate.max_position_pct = max_pct
+        self.paper.cancel_pending_order(
+            trader_id,
+            reason="exposure_configuration_changed",
+        )
         self._save()
         return {
             "trader_id": trader_id,
@@ -438,6 +457,15 @@ class TradeCompany:
 
     def pause_operations(self) -> dict:
         self.operations_paused = True
+        for trader_id in list(self.paper.pending_meta):
+            pending = self.paper.pending_order_snapshot(
+                trader_id
+            )
+            if pending and pending.get("side") == "buy":
+                self.paper.cancel_pending_order(
+                    trader_id,
+                    reason="company_operations_paused",
+                )
         self._save()
         if self.store is not None:
             self.store.event(
@@ -471,6 +499,10 @@ class TradeCompany:
         }
 
     def pause_trader(self, trader_id: str) -> dict:
+        self.paper.cancel_pending_order(
+            trader_id,
+            reason="trader_paused",
+        )
         result = self.registry.pause(trader_id).to_dict()
         self._save()
         return result
@@ -481,6 +513,11 @@ class TradeCompany:
         return result
 
     def emergency_stop(self) -> dict:
+        for trader_id in list(self.paper.pending_meta):
+            self.paper.cancel_pending_order(
+                trader_id,
+                reason="emergency_stop",
+            )
         self.risk.kill()
         engine_result = None
         try:
