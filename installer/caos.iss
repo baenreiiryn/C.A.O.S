@@ -1,5 +1,5 @@
 #define MyAppName "C.A.O.S Trade Company"
-#define MyAppVersion "0.7.3"
+#define MyAppVersion "0.8.0"
 #define MyAppPublisher "C.A.O.S"
 #define MyAppExeName "CAOS-Trade-Company.exe"
 
@@ -31,6 +31,8 @@ Name: "autostart"; Description: "Start C.A.O.S Trade Company when I sign in"; Gr
 [Files]
 Source: "..\dist\CAOS-Trade-Company.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\caos.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\ollama-runtime\*"; DestDir: "{app}\ollama"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "THIRD_PARTY_OLLAMA_LICENSE.txt"; DestDir: "{app}\ollama"; DestName: "LICENSE-ollama.txt"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\C.A.O.S Trade Company"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
