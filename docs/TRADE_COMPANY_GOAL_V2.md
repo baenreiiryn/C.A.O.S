@@ -181,6 +181,36 @@ Operational Traders may only be auto-assigned an opportunity when at least one s
 
 Training remains capable of comparing deterministic C.A.O.S StrategySpec variants on identical data.
 
+
+### Standalone operator surface
+
+Trade Company must be usable without Drizzt through its own local operator surface.
+
+Required CLI:
+
+```text
+caos company init
+caos company status
+caos company once
+caos company run
+caos company dashboard
+caos company traders
+caos company treasury
+caos company opportunities
+caos company audit
+caos company set-limit
+caos company set-exposure
+caos company pause
+caos company resume
+caos company emergency-stop
+```
+
+`company init` persists both Company state and daemon runtime configuration. Later commands restore the saved Company Policy and checkpoint instead of silently creating a new Company.
+
+The standalone dashboard runs separately from the technical C.A.O.S dashboard and exposes only the CompanyControlPort. It must provide Overview, Traders, Treasury, Markets, Supervisor and C.A.O.S health views.
+
+The UI/CLI must not expose raw broker orders, broker credentials, LIVE arming or kill-switch reset.
+
 ### Future Drizzt seam
 
 CompanyControlPort remains the only intended future Drizzt control surface.
@@ -221,8 +251,12 @@ Goal V2 is complete when:
 17. restart/recovery can continue a previously open paper position;
 18. Company Supervisor exposes exposure and reconciliation health;
 19. CompanyControlPort still has no broker credential/raw-order/LIVE bypass;
-20. CI and CLI smoke are green on the feature branch;
-21. no merge to `main` occurs until explicit final review.
+20. standalone Company runtime configuration survives restart;
+21. `company init/status/once/run` operate from persisted Company state;
+22. standalone dashboard reads Company state only through CompanyControlPort;
+23. dashboard/CLI expose no broker credential/raw-order/LIVE/reset bypass;
+24. CI and CLI smoke are green on the feature branch;
+25. no merge to `main` occurs until explicit final review.
 
 ## Non-goals
 
