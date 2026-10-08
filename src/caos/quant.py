@@ -541,3 +541,99 @@ def execution_plan_series(
         plans.append(plan)
         current_notional = plan.effective_target_notional
     return plans
+
+
+
+def backtest_execution_trace(
+    spec: StrategySpec,
+    bars: list[MarketBar],
+    *,
+    symbol: str,
+    requested_weight: float = 1.0,
+    equity: float = 1.0,
+    max_notional: float | None = None,
+    cost_bps: float = 8.0,
+) -> dict:
+    """Map the exact backtest trade log into Execution Fabric objects."""
+    result = backtest(spec, bars, cost_bps=cost_bps)
+    running_equity = float(equity)
+    events: list[dict] = []
+
+    for trade in result.trade_log:
+        ceiling = (
+            running_equity
+            if max_notional is None
+            else min(float(max_notional), running_equity)
+        )
+        entry_decision = decision_from_signal(
+            symbol=symbol,
+            strategy_id=spec.name,
+            signal="long",
+            requested_weight=float(requested_weight),
+            as_of=trade.entry_ts,
+            reason="backtest_entry",
+        )
+        entry_target = resolve_target_position(
+            entry_decision,
+            equity=running_equity,
+            max_notional=ceiling,
+        )
+        entry_plan = plan_execution(
+            entry_target,
+            current_notional=0.0,
+            reference_price=trade.entry,
+        )
+        events.append(
+            {
+                "phase": "entry",
+                "reason": "signal",
+                "decision": entry_decision.to_dict(),
+                "target": entry_target.to_dict(),
+                "plan": entry_plan.to_dict(),
+            }
+        )
+
+        marked_notional = (
+            entry_target.target_notional
+            * trade.exit
+            / trade.entry
+            if trade.entry > 0
+            else entry_target.target_notional
+        )
+        exit_decision = decision_from_signal(
+            symbol=symbol,
+            strategy_id=spec.name,
+            signal="flat",
+            requested_weight=0.0,
+            as_of=trade.exit_ts,
+            reason=f"backtest_exit:{trade.reason}",
+        )
+        exit_target = resolve_target_position(
+            exit_decision,
+            equity=running_equity,
+            max_notional=ceiling,
+        )
+        exit_plan = plan_execution(
+            exit_target,
+            current_notional=marked_notional,
+            reference_price=trade.exit,
+            allow_new_risk=False,
+        )
+        events.append(
+            {
+                "phase": "exit",
+                "reason": trade.reason,
+                "decision": exit_decision.to_dict(),
+                "target": exit_target.to_dict(),
+                "plan": exit_plan.to_dict(),
+            }
+        )
+        running_equity *= 1.0 + trade.pnl_pct / 100.0
+
+    return {
+        "strategy": spec.name,
+        "symbol": symbol.upper(),
+        "requested_weight": float(requested_weight),
+        "backtest": result.to_dict(),
+        "events": events,
+    }
