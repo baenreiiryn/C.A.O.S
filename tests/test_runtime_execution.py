@@ -237,6 +237,9 @@ class RuntimeExecutionTests(unittest.TestCase):
                 vault,
             )
             restarted._client = fake_client
+            company.set_resume_guard(None)
+            with self.assertRaises(TradeCompanyError):
+                company.start_operations()
             company.set_resume_guard(
                 restarted.resume_guard_reason
             )
