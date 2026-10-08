@@ -32,6 +32,7 @@ class CompanyDaemonCycle:
     errors: dict[str, str]
     audit: dict
     exposure: dict
+    rollout_events: list[dict]
     paused: bool = False
 
     def to_dict(self) -> dict:
@@ -46,6 +47,7 @@ class CompanyDaemonCycle:
             "errors": dict(self.errors),
             "audit": dict(self.audit),
             "exposure": dict(self.exposure),
+            "rollout_events": list(self.rollout_events),
             "paused": self.paused,
         }
 
@@ -82,6 +84,11 @@ class CompanyDaemon:
             assignment.symbol
             for assignment in self.company.market.assignments.values()
         )
+        symbols.update(
+            release.symbol
+            for release in self.company.rollout.releases.values()
+            if release.stage in {"shadow", "paper_canary"}
+        )
         return sorted(symbols)
 
     def _registered_strategy(
@@ -89,7 +96,13 @@ class CompanyDaemon:
         opportunity: Opportunity,
     ) -> str | None:
         for strategy_id in opportunity.strategy_candidates:
-            if strategy_id in self.company.strategies.strategies:
+            if (
+                strategy_id in self.company.strategies.strategies
+                and self.company.rollout.is_strategy_assignable(
+                    opportunity.symbol,
+                    strategy_id,
+                )
+            ):
                 return strategy_id
         return None
 
@@ -145,7 +158,12 @@ class CompanyDaemon:
                     direction=target.direction,
                     expires_at=now + self.opportunity_ttl_ms,
                     opportunity_id=oid,
-                    strategy_candidates=target.strategy_candidates,
+                    strategy_candidates=(
+                        self.company.rollout.production_candidates(
+                            symbol,
+                            target.strategy_candidates,
+                        )
+                    ),
                 )
                 created.append(opportunity.id)
             except Exception as exc:
@@ -349,6 +367,21 @@ class CompanyDaemon:
                     f"{type(exc).__name__}: {exc}"
                 )
 
+        rollout_events: list[dict] = []
+        if not self.company.operations_paused:
+            for symbol in refreshed:
+                try:
+                    rollout_events.extend(
+                        self.company.rollout.process_market(
+                            symbol,
+                            self.company.engine.bars(symbol),
+                        )
+                    )
+                except Exception as exc:
+                    errors[f"rollout:{symbol}"] = (
+                        f"{type(exc).__name__}: {exc}"
+                    )
+
         if self.company.operations_paused:
             opportunities: list[str] = []
             assignments: list[dict] = []
@@ -396,6 +429,7 @@ class CompanyDaemon:
                     "audit_status": audit["status"],
                     "gross_exposure": exposure["gross_notional"],
                     "operations_paused": self.company.operations_paused,
+                    "rollout_events": len(rollout_events),
                 },
             )
 
@@ -410,6 +444,7 @@ class CompanyDaemon:
             errors=errors,
             audit=audit,
             exposure=exposure,
+            rollout_events=rollout_events,
             paused=self.company.operations_paused,
         )
 
