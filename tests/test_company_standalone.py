@@ -7,7 +7,7 @@ import urllib.request
 from pathlib import Path
 
 from caos.cli import parser
-from caos.company import CAOSAdapter, TradeCompany
+from caos.company import CAOSAdapter, CityPresentationMapper, TradeCompany
 from caos.company.control import CompanyControlPort
 from caos.company.dashboard import serve_company
 from caos.company.standalone import (
@@ -120,6 +120,63 @@ class StandaloneConfigTests(unittest.TestCase):
         self.assertEqual(args.requested_exposure, 8.0)
 
 
+class FantasyCityPresentationTests(unittest.TestCase):
+    def test_mapper_exposes_all_fantasy_city_locations(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "company.db")
+            caos = make_runtime(store)
+            policy = build_policy(
+                initial_company_capital=10,
+                trader_initial_bucket=10,
+                trader_stop_floor=3,
+                default_trader_max_exposure_pct=20,
+                operational_trader_cap=6,
+                company_max_drawdown_pct=30,
+            )
+            company = TradeCompany(
+                CAOSAdapter(caos),
+                policy,
+                store=store,
+            )
+            initialize_company(
+                company,
+                parse_scan_targets("BTCUSDT:long:momentum"),
+            )
+            mapper = CityPresentationMapper()
+            city = mapper.build(
+                company.status(),
+                improvements=company.improvement_proposals(),
+                recent_events=store.recent_events(20),
+            )
+            self.assertEqual(city["city"]["mode"], "standalone")
+            self.assertEqual(
+                set(city["locations"]),
+                {
+                    "citadel",
+                    "treasury",
+                    "risk",
+                    "guild",
+                    "quests",
+                    "scout",
+                    "observatory",
+                    "tavern",
+                    "arena",
+                    "workshop",
+                    "nexus",
+                    "chronicle",
+                },
+            )
+            self.assertEqual(
+                city["locations"]["tavern"]["technical_name"],
+                "News / Sentiment",
+            )
+            self.assertEqual(
+                city["locations"]["risk"]["technical_name"],
+                "CompanyRiskGovernor + StrategyDiversity",
+            )
+            store.close()
+
+
 class CompanyDashboardTests(unittest.TestCase):
     def test_dashboard_reads_only_safe_company_surface(self):
         with tempfile.TemporaryDirectory() as d:
@@ -171,6 +228,62 @@ class CompanyDashboardTests(unittest.TestCase):
                 self.assertEqual(
                     payload["policy"]["operational_trader_cap"],
                     6,
+                )
+
+                with urllib.request.urlopen(
+                    base + "/api/company/city",
+                    timeout=2,
+                ) as response:
+                    city = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertEqual(
+                    city["city"]["subtitle"],
+                    "Arcane Trading City",
+                )
+                self.assertEqual(
+                    len(city["locations"]),
+                    12,
+                )
+
+                with urllib.request.urlopen(
+                    base + "/",
+                    timeout=2,
+                ) as response:
+                    html = response.read().decode("utf-8")
+                self.assertIn("city-world", html)
+                self.assertIn("Citadel of Oversight", html)
+                self.assertIn("Tower of Wards", html)
+                self.assertIn("Whispering Tankard", html)
+                self.assertIn("Grand Trading Guild", html)
+                self.assertIn("Arcane Nexus", html)
+                self.assertNotIn('data-tab="overview"', html)
+
+                exposure_request = urllib.request.Request(
+                    base + "/api/company/traders/A/exposure",
+                    data=json.dumps(
+                        {
+                            "max_trade_exposure_pct": 18,
+                            "trade_exposure_pct": 7,
+                        }
+                    ).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(
+                    exposure_request,
+                    timeout=2,
+                ) as response:
+                    exposure = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertEqual(
+                    exposure["max_trade_exposure_pct"],
+                    18.0,
+                )
+                self.assertEqual(
+                    exposure["trade_exposure_pct"],
+                    7.0,
                 )
 
                 request = urllib.request.Request(
