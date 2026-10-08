@@ -319,6 +319,30 @@ def parser() -> argparse.ArgumentParser:
     company_sub.add_parser("opportunities")
     company_sub.add_parser("audit")
     company_sub.add_parser("execution-plans")
+    company_sub.add_parser("research")
+
+    rh = company_sub.add_parser("research-hypothesis")
+    rh.add_argument("--symbol", required=True)
+    rh.add_argument(
+        "--family",
+        required=True,
+        choices=[
+            "trend",
+            "mean_reversion",
+            "breakout",
+            "momentum",
+        ],
+    )
+    rh.add_argument("--thesis", required=True)
+    rh.add_argument("--source", default="manual")
+    rh.add_argument("--parent-strategy", default=None)
+
+    rr = company_sub.add_parser("research-run")
+    rr.add_argument("hypothesis_id")
+    rr.add_argument("--generator", default="builtin_grid")
+    rr.add_argument("--candidate-limit", type=int, default=12)
+    rr.add_argument("--starting-capital", type=float, default=10.0)
+    rr.add_argument("--cost-bps", type=float, default=8.0)
 
     def add_runtime_overrides(sp):
         sp.add_argument("--targets", default=None)
@@ -531,6 +555,31 @@ def main() -> None:
             return
         if args.company_cmd == "execution-plans":
             _print_json(control.get_execution_plans())
+            return
+        if args.company_cmd == "research":
+            _print_json(control.get_research())
+            return
+        if args.company_cmd == "research-hypothesis":
+            _print_json(
+                control.submit_research_hypothesis(
+                    symbol=args.symbol,
+                    family=args.family,
+                    thesis=args.thesis,
+                    source=args.source,
+                    parent_strategy_id=args.parent_strategy,
+                )
+            )
+            return
+        if args.company_cmd == "research-run":
+            _print_json(
+                control.run_research_cycle(
+                    args.hypothesis_id,
+                    generator_id=args.generator,
+                    candidate_limit=args.candidate_limit,
+                    starting_capital=args.starting_capital,
+                    cost_bps=args.cost_bps,
+                )
+            )
             return
         if args.company_cmd in {"once", "run"}:
             (
