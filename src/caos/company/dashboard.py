@@ -6,6 +6,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
+from .cell import TradeCompanyCell
 from .city import CityPresentationMapper
 from .control import CompanyControlPort
 
@@ -517,6 +518,7 @@ def serve_company(
     open_browser: bool = True,
 ) -> ThreadingHTTPServer:
     mapper = CityPresentationMapper()
+    cell = TradeCompanyCell(control)
 
     class Handler(BaseHTTPRequestHandler):
         def _json(self, status: int, payload) -> None:
@@ -547,6 +549,27 @@ def serve_company(
 
         def do_GET(self):
             path = urlparse(self.path).path
+            if path == "/api/cell/v1/manifest":
+                self._json(200, cell.get_manifest())
+                return
+            if path == "/api/cell/v1/status":
+                self._json(200, cell.get_status())
+                return
+            if path == "/api/cell/v1/health":
+                self._json(200, cell.get_health())
+                return
+            if path == "/api/cell/v1/metrics":
+                self._json(200, cell.get_metrics())
+                return
+            if path == "/api/cell/v1/alerts":
+                self._json(200, cell.get_alerts())
+                return
+            if path == "/api/cell/v1/events":
+                self._json(200, cell.get_recent_events(50))
+                return
+            if path == "/api/cell/v1/report":
+                self._json(200, cell.get_report())
+                return
             if path == "/api/company/status":
                 self._json(200, control.get_company_status())
                 return
@@ -584,6 +607,16 @@ def serve_company(
         def do_POST(self):
             path = urlparse(self.path).path
             try:
+                if path == "/api/cell/v1/command":
+                    payload = self._read_json()
+                    self._json(
+                        200,
+                        cell.execute_command(
+                            str(payload["name"]),
+                            payload.get("args"),
+                        ),
+                    )
+                    return
                 if path == "/api/company/limit":
                     payload = self._read_json()
                     self._json(
