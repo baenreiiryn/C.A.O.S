@@ -15,6 +15,7 @@ from caos.execution_fabric import (
 from caos.llm import StaticLLM
 from caos.orchestrator import CAOS
 from caos.quant import (
+    backtest_execution_trace,
     current_decision,
     execution_plan_series,
     target_position_series,
@@ -203,6 +204,43 @@ class ExecutionFabricDomainTests(unittest.TestCase):
                 for plan in plans
             )
         )
+
+
+    def test_exact_backtest_trace_maps_entries_and_exits(self):
+        spec = StrategySpec(
+            "mom",
+            "momentum",
+            3,
+            21,
+            threshold=0.5,
+            take_profit_pct=2.0,
+        )
+        trace = backtest_execution_trace(
+            spec,
+            rising_bars(),
+            symbol="BTCUSDT",
+            requested_weight=0.2,
+            equity=10.0,
+            max_notional=2.0,
+            cost_bps=0.0,
+        )
+        trades = trace["backtest"]["trades"]
+        self.assertGreater(trades, 0)
+        self.assertEqual(len(trace["events"]), trades * 2)
+        for i in range(0, len(trace["events"]), 2):
+            self.assertEqual(
+                trace["events"][i]["plan"]["action"],
+                "increase",
+            )
+            self.assertEqual(
+                trace["events"][i + 1]["plan"]["action"],
+                "close",
+            )
+            self.assertTrue(
+                trace["events"][i + 1]["plan"][
+                    "risk_reducing"
+                ]
+            )
 
 
 
