@@ -200,6 +200,37 @@ Bybit TESTNET can consume an ExecutionPlan only through the existing explicit hu
 
 See [`docs/COMPANY_V4_EXECUTION_FABRIC.md`](docs/COMPANY_V4_EXECUTION_FABRIC.md).
 
+## Research Factory (Company V5)
+
+Trade Company includes a controlled autonomous strategy-research pipeline:
+
+```text
+Hypothesis
+   -> Candidate Generator
+   -> C.A.O.S Backtest + Robustness
+   -> Execution Fabric research trace
+   -> Training Arena
+   -> Champion / Challenger decision
+   -> Promote or Reject
+```
+
+The built-in generator works fully offline. Optional bridge adapters are defined for Qlib and RD-Agent callbacks without making either project a required dependency.
+
+Standalone commands:
+
+```bash
+caos --provider static company research
+caos --provider static company research-hypothesis --symbol BTCUSDT --family momentum --thesis "test a momentum variant"
+caos --provider static company research-run <hypothesis-id>
+caos --provider static company research-from-improvements --symbol BTCUSDT --family momentum
+```
+
+Promotion only registers a qualified strategy/champion. It does not spawn Traders, allocate Treasury capital, assign markets or execute orders.
+
+The Arcane Workshop in the themed city displays hypotheses, candidates, champions and promotion decisions.
+
+See [`docs/COMPANY_V5_RESEARCH_FACTORY.md`](docs/COMPANY_V5_RESEARCH_FACTORY.md).
+
 ## Bybit TESTNET
 
 TESTNET is a separate human-only execution surface. The client rejects production Bybit hosts in code and TESTNET orders require the exact confirmation `ARM TESTNET`.
