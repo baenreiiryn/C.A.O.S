@@ -83,6 +83,8 @@ class CompanyPaperBook:
         self.accounts: dict[str, PaperBroker] = {}
         self.last_plans: dict[str, dict] = {}
         self.visual_events: dict[str, list[dict]] = {}
+        self.pending_meta: dict[str, dict] = {}
+        self.order_events: dict[str, list[dict]] = {}
 
     def ensure_account(self, trader_id: str) -> PaperBroker:
         trader = self.registry.get(trader_id)
@@ -240,6 +242,365 @@ class CompanyPaperBook:
         if len(rows) > 500:
             del rows[:-500]
 
+    def _record_order_event(
+        self,
+        trader_id: str,
+        *,
+        kind: str,
+        ts: int,
+        meta: dict,
+        reason: str | None = None,
+    ) -> None:
+        rows = self.order_events.setdefault(trader_id, [])
+        row = {
+            "kind": str(kind),
+            "ts": int(ts),
+            "symbol": meta.get("symbol"),
+            "side": meta.get("side"),
+            "order_type": meta.get("order_type"),
+            "trigger_price": meta.get("trigger_price"),
+            "notional": meta.get("notional"),
+            "plan_id": meta.get("plan_id"),
+            "fill_action": meta.get("fill_action"),
+        }
+        if reason:
+            row["reason"] = str(reason)
+        rows.append(row)
+        if len(rows) > 500:
+            del rows[:-500]
+
+    def _active_pending_order(self, trader_id: str):
+        meta = self.pending_meta.get(trader_id)
+        account = self.accounts.get(trader_id)
+        if meta is None or account is None:
+            return None
+        order = account.pending_orders.get(
+            str(meta.get("order_id", ""))
+        )
+        if order is None or order.status != "open":
+            self.pending_meta.pop(trader_id, None)
+            return None
+        return account, order, meta
+
+    def has_pending_order(self, trader_id: str) -> bool:
+        return self._active_pending_order(trader_id) is not None
+
+    def pending_order_snapshot(
+        self,
+        trader_id: str,
+    ) -> dict | None:
+        active = self._active_pending_order(trader_id)
+        if active is None:
+            return None
+        _account, order, meta = active
+        return {
+            **dict(meta),
+            "id": order.id,
+            "symbol": order.symbol,
+            "side": order.side,
+            "notional": float(order.notional),
+            "order_type": order.order_type,
+            "trigger_price": float(order.trigger_price),
+            "strategy": order.strategy,
+            "status": order.status,
+        }
+
+    def cancel_pending_order(
+        self,
+        trader_id: str,
+        *,
+        reason: str = "cancelled",
+        ts: int | None = None,
+    ) -> bool:
+        active = self._active_pending_order(trader_id)
+        if active is None:
+            self.pending_meta.pop(trader_id, None)
+            return False
+        account, order, meta = active
+        cancelled = account.cancel_pending(order.id)
+        self.pending_meta.pop(trader_id, None)
+        if cancelled:
+            event_ts = ts
+            if event_ts is None:
+                trader = self.registry.get(trader_id)
+                bars = (
+                    self.engine.bars(trader.market)
+                    if trader.market
+                    else []
+                )
+                event_ts = (
+                    int(bars[-1].ts)
+                    if bars
+                    else int(meta.get("created_bar_ts", 0))
+                )
+            self._record_order_event(
+                trader_id,
+                kind="cancelled",
+                ts=int(event_ts),
+                meta=meta,
+                reason=reason,
+            )
+        return cancelled
+
+    @staticmethod
+    def _pending_touched(order, bar) -> bool:
+        if order.side == "buy" and order.order_type == "limit":
+            return float(bar.low) <= float(order.trigger_price)
+        if order.side == "buy" and order.order_type == "stop":
+            return float(bar.high) >= float(order.trigger_price)
+        if order.side == "sell" and order.order_type == "limit":
+            return float(bar.high) >= float(order.trigger_price)
+        if order.side == "sell" and order.order_type == "stop":
+            return float(bar.low) <= float(order.trigger_price)
+        return False
+
+    @staticmethod
+    def _fill_action_for_plan(plan: ExecutionPlan) -> str:
+        if plan.side == "buy":
+            return (
+                "open_long"
+                if plan.current_notional <= 1e-8
+                else "increase_long"
+            )
+        return (
+            "close_long"
+            if plan.action == "close"
+            else "reduce_long"
+        )
+
+    def _place_pending_from_plan(
+        self,
+        trader_id: str,
+        *,
+        account: PaperBroker,
+        plan: ExecutionPlan,
+        decision: StrategyDecision,
+        target: TargetPosition,
+        bar_ts: int,
+    ) -> dict:
+        if not plan.executable or plan.side is None:
+            raise CompanyPaperError(
+                "pending_order_requires_executable_plan"
+            )
+        if self.has_pending_order(trader_id):
+            raise CompanyPaperError(
+                "trader_already_has_pending_order"
+            )
+
+        if plan.side == "buy":
+            self.company_risk.validate(
+                trader_id,
+                symbol=plan.symbol,
+                notional=plan.effective_target_notional,
+            )
+        else:
+            self.company_risk.validate(
+                trader_id,
+                symbol=plan.symbol,
+                notional=plan.order_notional,
+                risk_reducing=True,
+            )
+
+        trigger_price = float(plan.reference_price)
+        order = account.place_pending(
+            plan.symbol,
+            plan.side,
+            float(plan.order_notional),
+            "limit",
+            trigger_price,
+            plan.strategy_id,
+        )
+        fill_action = self._fill_action_for_plan(plan)
+        phase = (
+            "pending_entry"
+            if plan.side == "buy"
+            else "pending_exit"
+        )
+        meta = {
+            "order_id": order.id,
+            "symbol": order.symbol,
+            "side": order.side,
+            "order_type": order.order_type,
+            "trigger_price": float(order.trigger_price),
+            "notional": float(order.notional),
+            "strategy": order.strategy,
+            "created_ts": int(bar_ts),
+            "created_bar_ts": int(bar_ts),
+            "plan_id": plan.plan_id,
+            "decision_id": plan.decision_id,
+            "plan_action": plan.action,
+            "fill_action": fill_action,
+            "phase": phase,
+            "effective_target_notional": float(
+                plan.effective_target_notional
+            ),
+            "decision": decision.to_dict(),
+            "target": target.to_dict(),
+            "plan": plan.to_dict(),
+        }
+        self.pending_meta[trader_id] = meta
+        self._record_order_event(
+            trader_id,
+            kind="opened",
+            ts=int(bar_ts),
+            meta=meta,
+        )
+        return meta
+
+    def _pending_matches_plan(
+        self,
+        trader_id: str,
+        plan: ExecutionPlan,
+    ) -> bool:
+        active = self._active_pending_order(trader_id)
+        if active is None or not plan.executable:
+            return False
+        _account, order, meta = active
+        if order.side != plan.side:
+            return False
+        if meta.get("fill_action") != self._fill_action_for_plan(plan):
+            return False
+        tolerance = max(
+            1e-8,
+            abs(float(plan.order_notional)) * 0.02,
+        )
+        return (
+            abs(
+                float(order.notional)
+                - float(plan.order_notional)
+            )
+            <= tolerance
+        )
+
+    def _fill_pending_if_touched(
+        self,
+        trader_id: str,
+        *,
+        bar,
+    ):
+        active = self._active_pending_order(trader_id)
+        if active is None:
+            return None
+        account, order, meta = active
+        if int(bar.ts) <= int(meta.get("created_bar_ts", 0)):
+            return None
+        if not self._pending_touched(order, bar):
+            return None
+
+        if order.side == "buy":
+            self.company_risk.validate(
+                trader_id,
+                symbol=order.symbol,
+                notional=float(
+                    meta.get(
+                        "effective_target_notional",
+                        order.notional,
+                    )
+                ),
+            )
+        else:
+            self.company_risk.validate(
+                trader_id,
+                symbol=order.symbol,
+                notional=float(order.notional),
+                risk_reducing=True,
+            )
+
+        fill = account.execute(
+            OrderRequest(
+                order.symbol,
+                order.side,
+                float(order.notional),
+                float(order.trigger_price),
+                order.strategy,
+            )
+        )
+        order.status = "filled"
+        self.pending_meta.pop(trader_id, None)
+        self._record_order_event(
+            trader_id,
+            kind="filled",
+            ts=int(bar.ts),
+            meta=meta,
+        )
+        self._record_visual_fill(
+            trader_id,
+            action=str(meta.get("fill_action", "fill")),
+            ts=int(bar.ts),
+            fill=fill,
+        )
+        self.reconcile_trader(trader_id)
+        return fill, meta
+
+    def _execute_plan_immediately(
+        self,
+        trader_id: str,
+        *,
+        trader,
+        account: PaperBroker,
+        plan: ExecutionPlan,
+        current_notional: float,
+        price: float,
+        ts: int,
+        max_notional: float,
+    ):
+        if plan.side == "buy":
+            if plan.effective_target_notional > max_notional + 1e-9:
+                raise CompanyPaperError(
+                    "execution_plan_exceeds_target_ceiling"
+                )
+            self.company_risk.validate(
+                trader_id,
+                symbol=trader.market,
+                notional=plan.effective_target_notional,
+            )
+            entry_price = self._execution_price(
+                trader.market,
+                "buy",
+                price,
+            )
+            fill = account.execute(
+                OrderRequest(
+                    trader.market,
+                    "buy",
+                    plan.order_notional,
+                    entry_price,
+                    trader.strategy_id,
+                )
+            )
+        else:
+            self.company_risk.validate(
+                trader_id,
+                symbol=trader.market,
+                notional=plan.order_notional,
+                risk_reducing=True,
+            )
+            exit_price = self._execution_price(
+                trader.market,
+                "sell",
+                price,
+            )
+            quantity_to_sell = plan.order_notional / price
+            execution_notional = quantity_to_sell * exit_price
+            fill = account.execute(
+                OrderRequest(
+                    trader.market,
+                    "sell",
+                    execution_notional,
+                    exit_price,
+                    trader.strategy_id,
+                )
+            )
+        action = self._fill_action_for_plan(plan)
+        self._record_visual_fill(
+            trader_id,
+            action=action,
+            ts=int(ts),
+            fill=fill,
+        )
+        self.reconcile_trader(trader_id)
+        return fill, action
+
     @staticmethod
     def _moving_average(
         bars,
@@ -312,6 +673,19 @@ class CompanyPaperBook:
                 (current_price / avg_price) - 1.0
             ) * 100.0
 
+        pending_order = self.pending_order_snapshot(trader_id)
+        if pending_order is not None and bars:
+            created_bar_ts = int(
+                pending_order.get("created_bar_ts", 0)
+            )
+            pending_order["age_bars"] = sum(
+                1
+                for bar in bars
+                if int(bar.ts) > created_bar_ts
+            )
+        elif pending_order is not None:
+            pending_order["age_bars"] = 0
+
         if trader.status == TraderStatus.WAITING_ASSIGNMENT:
             phase = "waiting_assignment"
         elif trader.status == TraderStatus.PAUSED:
@@ -320,6 +694,13 @@ class CompanyPaperBook:
             phase = "halted"
         elif trader.status == TraderStatus.RETIRED:
             phase = "retired"
+        elif pending_order is not None:
+            phase = str(
+                pending_order.get(
+                    "phase",
+                    "pending_entry",
+                )
+            )
         elif quantity > 1e-12:
             phase = "in_position"
         elif trader.market:
@@ -353,8 +734,14 @@ class CompanyPaperBook:
             )
         ][-100:]
 
+        order_events = [
+            dict(row)
+            for row in self.order_events.get(trader_id, [])
+            if not symbol or row.get("symbol") == symbol
+        ][-30:]
+
         return {
-            "version": "paper-trader-chart/v1",
+            "version": "paper-trader-chart/v2",
             "trader_id": trader_id,
             "symbol": symbol,
             "phase": phase,
@@ -383,6 +770,8 @@ class CompanyPaperBook:
                 "unrealized_pnl_pct": unrealized_pnl_pct,
             },
             "markers": marker_rows,
+            "pending_order": pending_order,
+            "order_events": order_events,
             "last_plan": self.last_plans.get(trader_id),
         }
 
@@ -418,6 +807,73 @@ class CompanyPaperBook:
         bars = self.engine.bars(trader.market)
         if not bars:
             raise CompanyPaperError("market_data_required")
+        latest_bar = bars[-1]
+
+        account = self.ensure_account(trader_id)
+        marks = {trader.market: latest_bar.close}
+        marked_equity = account.equity(marks)
+        account.risk.set_equity(marked_equity)
+
+        if self.policy.paper_pending_orders:
+            active_pending = self._active_pending_order(
+                trader_id
+            )
+            if self.company_risk.state.kill_switch:
+                if active_pending is not None:
+                    self.cancel_pending_order(
+                        trader_id,
+                        reason="company_kill_switch",
+                        ts=latest_bar.ts,
+                    )
+            elif (
+                not allow_new_risk
+                and active_pending is not None
+                and active_pending[1].side == "buy"
+            ):
+                self.cancel_pending_order(
+                    trader_id,
+                    reason="new_risk_blocked",
+                    ts=latest_bar.ts,
+                )
+
+            if not self.company_risk.state.kill_switch:
+                filled_pending = self._fill_pending_if_touched(
+                    trader_id,
+                    bar=latest_bar,
+                )
+                if filled_pending is not None:
+                    fill, meta = filled_pending
+                    stored_decision = meta.get("decision")
+                    stored_target = meta.get("target")
+                    stored_plan = meta.get("plan")
+                    return TraderPaperCycle(
+                        trader_id,
+                        str(meta.get("fill_action", "fill")),
+                        (
+                            stored_decision.get("signal")
+                            if isinstance(stored_decision, dict)
+                            else None
+                        ),
+                        self._fill_dict(fill),
+                        self.marked_equity(trader_id),
+                        self.realized_equity(trader_id),
+                        (
+                            dict(stored_decision)
+                            if isinstance(stored_decision, dict)
+                            else None
+                        ),
+                        (
+                            dict(stored_target)
+                            if isinstance(stored_target, dict)
+                            else None
+                        ),
+                        (
+                            dict(stored_plan)
+                            if isinstance(stored_plan, dict)
+                            else None
+                        ),
+                    )
+
         strategy = self.strategies.get(trader.strategy_id)
         requested_weight = (
             trader.requested_trade_exposure_pct() / 100.0
@@ -433,20 +889,19 @@ class CompanyPaperBook:
                 strategy_id=trader.strategy_id,
                 signal="flat",
                 requested_weight=0.0,
-                as_of=bars[-1].ts,
+                as_of=latest_bar.ts,
                 reason="company_kill_switch",
             )
 
-        account = self.ensure_account(trader_id)
-        marks = {trader.market: bars[-1].close}
-        marked_equity = account.equity(marks)
-        account.risk.set_equity(marked_equity)
-
         position = account.positions.get(trader.market)
         open_qty = position.quantity if position else 0.0
-        price = bars[-1].close
+        price = latest_bar.close
         current_notional = open_qty * price
 
+        marked_equity = account.equity(
+            {trader.market: price}
+        )
+        account.risk.set_equity(marked_equity)
         max_notional = min(
             self.company_risk.max_trade_notional(trader_id),
             account.risk.max_position_notional,
@@ -469,6 +924,111 @@ class CompanyPaperBook:
         )
         self.last_plans[trader_id] = plan.to_dict()
 
+        if self.policy.paper_pending_orders:
+            if self.company_risk.state.kill_switch:
+                if not plan.executable:
+                    return TraderPaperCycle(
+                        trader_id,
+                        "no_state_change",
+                        decision.signal,
+                        None,
+                        self.marked_equity(trader_id),
+                        self.realized_equity(trader_id),
+                        decision.to_dict(),
+                        target.to_dict(),
+                        plan.to_dict(),
+                    )
+                fill, action = self._execute_plan_immediately(
+                    trader_id,
+                    trader=trader,
+                    account=account,
+                    plan=plan,
+                    current_notional=current_notional,
+                    price=price,
+                    ts=latest_bar.ts,
+                    max_notional=max_notional,
+                )
+                return TraderPaperCycle(
+                    trader_id,
+                    action,
+                    decision.signal,
+                    self._fill_dict(fill),
+                    self.marked_equity(trader_id),
+                    self.realized_equity(trader_id),
+                    decision.to_dict(),
+                    target.to_dict(),
+                    plan.to_dict(),
+                )
+
+            active_pending = self._active_pending_order(
+                trader_id
+            )
+            if active_pending is not None:
+                if self._pending_matches_plan(
+                    trader_id,
+                    plan,
+                ):
+                    pending = self.pending_order_snapshot(
+                        trader_id
+                    )
+                    return TraderPaperCycle(
+                        trader_id,
+                        str(
+                            (
+                                pending
+                                or {}
+                            ).get(
+                                "phase",
+                                "pending_entry",
+                            )
+                        ),
+                        decision.signal,
+                        None,
+                        self.marked_equity(trader_id),
+                        self.realized_equity(trader_id),
+                        decision.to_dict(),
+                        target.to_dict(),
+                        plan.to_dict(),
+                    )
+                self.cancel_pending_order(
+                    trader_id,
+                    reason="strategy_plan_changed",
+                    ts=latest_bar.ts,
+                )
+
+            if not plan.executable:
+                return TraderPaperCycle(
+                    trader_id,
+                    "no_state_change",
+                    decision.signal,
+                    None,
+                    self.marked_equity(trader_id),
+                    self.realized_equity(trader_id),
+                    decision.to_dict(),
+                    target.to_dict(),
+                    plan.to_dict(),
+                )
+
+            pending = self._place_pending_from_plan(
+                trader_id,
+                account=account,
+                plan=plan,
+                decision=decision,
+                target=target,
+                bar_ts=latest_bar.ts,
+            )
+            return TraderPaperCycle(
+                trader_id,
+                str(pending["phase"]),
+                decision.signal,
+                None,
+                self.marked_equity(trader_id),
+                self.realized_equity(trader_id),
+                decision.to_dict(),
+                target.to_dict(),
+                plan.to_dict(),
+            )
+
         if not plan.executable:
             return TraderPaperCycle(
                 trader_id,
@@ -482,71 +1042,16 @@ class CompanyPaperBook:
                 plan.to_dict(),
             )
 
-        if plan.side == "buy":
-            if plan.effective_target_notional > max_notional + 1e-9:
-                raise CompanyPaperError(
-                    "execution_plan_exceeds_target_ceiling"
-                )
-            self.company_risk.validate(
-                trader_id,
-                symbol=trader.market,
-                notional=plan.effective_target_notional,
-            )
-            entry_price = self._execution_price(
-                trader.market,
-                "buy",
-                price,
-            )
-            fill = account.execute(
-                OrderRequest(
-                    trader.market,
-                    "buy",
-                    plan.order_notional,
-                    entry_price,
-                    trader.strategy_id,
-                )
-            )
-            action = (
-                "open_long"
-                if current_notional <= 1e-8
-                else "increase_long"
-            )
-        else:
-            self.company_risk.validate(
-                trader_id,
-                symbol=trader.market,
-                notional=plan.order_notional,
-                risk_reducing=True,
-            )
-            exit_price = self._execution_price(
-                trader.market,
-                "sell",
-                price,
-            )
-            quantity_to_sell = plan.order_notional / price
-            execution_notional = quantity_to_sell * exit_price
-            fill = account.execute(
-                OrderRequest(
-                    trader.market,
-                    "sell",
-                    execution_notional,
-                    exit_price,
-                    trader.strategy_id,
-                )
-            )
-            action = (
-                "close_long"
-                if plan.action == "close"
-                else "reduce_long"
-            )
-
-        self._record_visual_fill(
+        fill, action = self._execute_plan_immediately(
             trader_id,
-            action=action,
-            ts=bars[-1].ts,
-            fill=fill,
+            trader=trader,
+            account=account,
+            plan=plan,
+            current_notional=current_notional,
+            price=price,
+            ts=latest_bar.ts,
+            max_notional=max_notional,
         )
-        self.reconcile_trader(trader_id)
         return TraderPaperCycle(
             trader_id,
             action,
@@ -561,6 +1066,10 @@ class CompanyPaperBook:
 
     def force_flatten(self, trader_id: str) -> TraderPaperCycle:
         trader = self.registry.get(trader_id)
+        self.cancel_pending_order(
+            trader_id,
+            reason="force_flatten",
+        )
         account = self.accounts.get(trader_id)
         if account is None or not trader.market:
             return TraderPaperCycle(
@@ -655,6 +1164,8 @@ class CompanyPaperBook:
             return
         if self.has_open_position(trader_id):
             raise CompanyPaperError("cannot_adjust_cash_with_open_position")
+        if self.has_pending_order(trader_id):
+            raise CompanyPaperError("cannot_adjust_cash_with_pending_order")
         nxt = account.cash + float(delta)
         if nxt < -1e-9:
             raise CompanyPaperError("paper_cash_cannot_be_negative")
@@ -674,9 +1185,14 @@ class CompanyPaperBook:
     def remove_account_if_flat(self, trader_id: str) -> None:
         account = self.accounts.get(trader_id)
         if account is None:
+            self.pending_meta.pop(trader_id, None)
             return
         if self.has_open_position(trader_id):
             raise CompanyPaperError("cannot_remove_open_account")
+        self.cancel_pending_order(
+            trader_id,
+            reason="account_removed",
+        )
         del self.accounts[trader_id]
 
     def snapshot(self) -> dict:
@@ -686,6 +1202,14 @@ class CompanyPaperBook:
             "visual_events": {
                 trader_id: [dict(row) for row in rows]
                 for trader_id, rows in self.visual_events.items()
+            },
+            "pending_meta": {
+                trader_id: dict(meta)
+                for trader_id, meta in self.pending_meta.items()
+            },
+            "order_events": {
+                trader_id: [dict(row) for row in rows]
+                for trader_id, rows in self.order_events.items()
             },
             "accounts": {
                 trader_id: {
@@ -709,6 +1233,20 @@ class CompanyPaperBook:
             trader_id: [dict(row) for row in rows][-500:]
             for trader_id, rows in snapshot.get(
                 "visual_events",
+                {},
+            ).items()
+        }
+        self.pending_meta = {
+            trader_id: dict(meta)
+            for trader_id, meta in snapshot.get(
+                "pending_meta",
+                {},
+            ).items()
+        }
+        self.order_events = {
+            trader_id: [dict(row) for row in rows][-500:]
+            for trader_id, rows in snapshot.get(
+                "order_events",
                 {},
             ).items()
         }
@@ -757,3 +1295,7 @@ class CompanyPaperBook:
                 risk.get("current_equity", broker.cash)
             )
             self.accounts[trader_id] = broker
+
+        for trader_id in list(self.pending_meta):
+            if self._active_pending_order(trader_id) is None:
+                self.pending_meta.pop(trader_id, None)

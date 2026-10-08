@@ -42,6 +42,7 @@ class CompanyPolicy:
     allow_paper: bool = True
     allow_testnet: bool = True
     allow_live: bool = False
+    paper_pending_orders: bool = False
 
     def __post_init__(self) -> None:
         positive = {

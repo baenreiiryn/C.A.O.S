@@ -123,6 +123,7 @@ def build_policy(
     default_trader_max_exposure_pct: float,
     operational_trader_cap: int,
     company_max_drawdown_pct: float,
+    paper_pending_orders: bool = True,
 ) -> CompanyPolicy:
     return CompanyPolicy(
         initial_company_capital=float(initial_company_capital),
@@ -133,6 +134,7 @@ def build_policy(
         ),
         operational_trader_cap=int(operational_trader_cap),
         company_max_drawdown_pct=float(company_max_drawdown_pct),
+        paper_pending_orders=bool(paper_pending_orders),
     )
 
 
@@ -311,4 +313,6 @@ def load_saved_policy(store) -> CompanyPolicy | None:
         raise CompanyStandaloneError(
             "checkpoint_policy_missing"
         )
-    return CompanyPolicy(**policy)
+    migrated = dict(policy)
+    migrated.setdefault("paper_pending_orders", True)
+    return CompanyPolicy(**migrated)

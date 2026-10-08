@@ -42,7 +42,12 @@ class CompanyCheckpoint:
 
     @staticmethod
     def _validate_policy(company, payload: dict) -> None:
-        saved = CompanyPolicy(**payload["policy"])
+        policy_payload = dict(payload["policy"])
+        policy_payload.setdefault(
+            "paper_pending_orders",
+            company.policy.paper_pending_orders,
+        )
+        saved = CompanyPolicy(**policy_payload)
         if saved != company.policy:
             raise CompanyCheckpointError("company_policy_mismatch")
 
@@ -129,6 +134,21 @@ class CompanyCheckpoint:
 
         for trader_id in company.paper.accounts:
             company.registry.get(trader_id)
+
+        for trader_id, meta in company.paper.pending_meta.items():
+            company.registry.get(trader_id)
+            account = company.paper.accounts.get(trader_id)
+            if account is None:
+                raise CompanyCheckpointError(
+                    "pending_order_account_missing"
+                )
+            order = account.pending_orders.get(
+                str(meta.get("order_id", ""))
+            )
+            if order is None or order.status != "open":
+                raise CompanyCheckpointError(
+                    "pending_order_integrity_mismatch"
+                )
 
         for symbol, strategy_id in company.research.champions.items():
             try:

@@ -189,6 +189,7 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
 .trader-chart-title{font-weight:800;color:#ffe2a0}.trader-chart-meta{color:var(--muted);text-align:right}
 .trader-phase{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;border:1px solid rgba(255,255,255,.16);font-weight:800;letter-spacing:.05em}
 .trader-phase.waiting_entry,.trader-phase.waiting_assignment{color:var(--amber);border-color:rgba(255,200,102,.45)}
+.trader-phase.pending_entry,.trader-phase.pending_exit{color:#ffae42;border-color:rgba(255,174,66,.65);box-shadow:0 0 10px rgba(255,174,66,.12)}
 .trader-phase.in_position{color:var(--green);border-color:rgba(107,226,161,.45)}
 .trader-phase.paused,.trader-phase.halted,.trader-phase.retired{color:#b8c0ca}
 .trader-chart{display:block;width:100%;height:auto;min-height:260px;background:linear-gradient(180deg,#0a111b,#080d14)}
@@ -197,9 +198,15 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
 .chart-wick.up,.chart-body.up{stroke:#36d399;fill:#36d399}.chart-wick.down,.chart-body.down{stroke:#ff5c72;fill:#ff5c72}
 .chart-ma7{fill:none;stroke:#e4a84d;stroke-width:1.6}.chart-ma25{fill:none;stroke:#a86ee6;stroke-width:1.6}.chart-ma99{fill:none;stroke:#61c8d4;stroke-width:1.6}
 .chart-average{stroke:#79c7ff;stroke-width:1.4;stroke-dasharray:8 5}.chart-current{stroke:#f2d17c;stroke-width:1;stroke-dasharray:3 5;opacity:.65}
+.chart-pending{stroke:#ff9f2f;stroke-width:2;stroke-dasharray:10 6;filter:drop-shadow(0 0 3px rgba(255,159,47,.45))}
+.chart-pending-label{fill:#ffb45c;font:800 10px system-ui,sans-serif;text-anchor:end}
 .chart-buy{fill:#19c979;stroke:#d9ffec;stroke-width:1.5}.chart-sell{fill:#f05168;stroke:#ffe1e5;stroke-width:1.5}
 .chart-marker-text{fill:#fff;font:800 10px system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle}
 .chart-avg-label{fill:#9fd5ff;font:10px system-ui,sans-serif}
+.pending-order-card{margin:9px 10px;padding:9px 10px;border:1px solid rgba(255,159,47,.46);border-radius:9px;background:rgba(255,159,47,.07);font:11px system-ui,sans-serif;color:#d8c7a8}
+.pending-order-card strong{display:block;color:#ffb45c;margin-bottom:4px;letter-spacing:.04em}.pending-order-card code{color:#f5dfb4}
+.order-history{display:grid;gap:5px;padding:0 10px 10px}.order-history-row{border-left:2px solid rgba(255,159,47,.45);padding:4px 7px;background:rgba(255,255,255,.025);font:10px system-ui,sans-serif;color:var(--muted)}
+.order-history-row b{color:#e8d6af}
 .chart-legend{display:flex;gap:12px;flex-wrap:wrap;padding:7px 10px;border-top:1px solid rgba(255,255,255,.06);font:10px system-ui,sans-serif;color:var(--muted)}
 .chart-legend b{color:#f6e5b8}.chart-events{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;padding:0 10px 10px}
 .chart-event{background:rgba(255,255,255,.035);border-radius:7px;padding:6px 8px;font:10px system-ui,sans-serif;color:var(--muted)}
@@ -750,11 +757,11 @@ function price(v){
  return n.toPrecision(6);
 }
 function phaseLabel(phase){
- const labels={waiting_assignment:'WAITING ASSIGNMENT',waiting_entry:'WAITING ENTRY',in_position:'IN POSITION',paused:'PAUSED',halted:'HALTED',retired:'RETIRED',flat:'FLAT'};
+ const labels={waiting_assignment:'WAITING ASSIGNMENT',waiting_entry:'WAITING ENTRY',pending_entry:'OPEN ENTRY ORDER',pending_exit:'OPEN EXIT ORDER',in_position:'IN POSITION',paused:'PAUSED',halted:'HALTED',retired:'RETIRED',flat:'FLAT'};
  return labels[phase]||String(phase||'UNKNOWN').replaceAll('_',' ').toUpperCase();
 }
 function renderTraderChart(chart){
- const bars=chart&&chart.bars||[],position=chart&&chart.position||{},markers=chart&&chart.markers||[],ind=chart&&chart.indicators||{};
+ const bars=chart&&chart.bars||[],position=chart&&chart.position||{},markers=chart&&chart.markers||[],ind=chart&&chart.indicators||{},pending=chart&&chart.pending_order||null,orderEvents=chart&&chart.order_events||[];
  const phase=chart&&chart.phase||'flat';
  const title=esc((chart&&chart.symbol)||'No market assigned');
  const phaseHtml='<span class="trader-phase '+esc(phase)+'">'+esc(phaseLabel(phase))+'</span>';
@@ -764,6 +771,7 @@ function renderTraderChart(chart){
  const W=900,H=360,L=58,R=18,T=22,B=32,plotW=W-L-R,plotH=H-T-B;
  let lo=Math.min.apply(null,bars.map(function(b){return Number(b.low)})),hi=Math.max.apply(null,bars.map(function(b){return Number(b.high)}));
  if(position.avg_price){lo=Math.min(lo,Number(position.avg_price));hi=Math.max(hi,Number(position.avg_price))}
+ if(pending&&pending.trigger_price){lo=Math.min(lo,Number(pending.trigger_price));hi=Math.max(hi,Number(pending.trigger_price))}
  let span=hi-lo;if(!Number.isFinite(span)||span<=0)span=Math.max(Math.abs(hi)*.01,1);
  lo-=span*.06;hi+=span*.06;span=hi-lo;
  const x=function(i){return L+(bars.length<=1?plotW/2:(i/(bars.length-1))*plotW)};
@@ -777,12 +785,16 @@ function renderTraderChart(chart){
  svg+=poly(ind.ma7,'chart-ma7')+poly(ind.ma25,'chart-ma25')+poly(ind.ma99,'chart-ma99');
  if(position.avg_price){const yy=y(position.avg_price);svg+='<line class="chart-average" x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'"></line><text class="chart-avg-label" x="'+(L+5)+'" y="'+(yy-5).toFixed(1)+'">AVG '+esc(price(position.avg_price))+'</text>'}
  if(position.current_price){const yy=y(position.current_price);svg+='<line class="chart-current" x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'"></line>'}
+ if(pending&&pending.trigger_price){const yy=y(pending.trigger_price),label='OPEN '+String(pending.side||'').toUpperCase()+' '+String(pending.order_type||'').toUpperCase()+' '+price(pending.trigger_price);svg+='<line class="chart-pending" x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'"></line><text class="chart-pending-label" x="'+(W-R-4)+'" y="'+(yy-6).toFixed(1)+'">'+esc(label)+'</text>'}
  markers.forEach(function(m){let best=0,bestD=Infinity;bars.forEach(function(b,i){const d=Math.abs(Number(b.ts)-Number(m.ts));if(d<bestD){bestD=d;best=i}});const xx=x(best),yy=y(m.price),buy=m.kind==='buy',cy=buy?Math.min(H-B-14,yy+18):Math.max(T+14,yy-18),cls=buy?'chart-buy':'chart-sell',letter=buy?'B':'S';svg+='<line x1="'+xx.toFixed(1)+'" y1="'+yy.toFixed(1)+'" x2="'+xx.toFixed(1)+'" y2="'+cy.toFixed(1)+'" stroke="rgba(255,255,255,.28)" stroke-width="1"></line><circle class="'+cls+'" cx="'+xx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="10"></circle><text class="chart-marker-text" x="'+xx.toFixed(1)+'" y="'+(cy+.5).toFixed(1)+'">'+letter+'</text>'});
  const first=new Date(Number(bars[0].ts)).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),last=new Date(Number(bars[bars.length-1].ts)).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
  svg+='<text class="chart-axis" x="'+L+'" y="'+(H-8)+'">'+esc(first)+'</text><text class="chart-axis" text-anchor="end" x="'+(W-R)+'" y="'+(H-8)+'">'+esc(last)+'</text>';
  const pnl=position.unrealized_pnl_pct===null||position.unrealized_pnl_pct===undefined?'—':pct(position.unrealized_pnl_pct);
  const events=markers.slice(-8).reverse().map(function(m){return '<div class="chart-event"><strong>'+(m.kind==='buy'?'🟢 BUY':'🔴 SELL')+' · '+esc(price(m.price))+'</strong>'+esc(new Date(Number(m.ts)).toLocaleString())+' · '+esc(m.action||'fill')+'</div>'}).join('');
- return '<div class="trader-chart-shell"><div class="trader-chart-head"><div><div class="trader-chart-title">'+title+' · PAPER</div>'+phaseHtml+'</div><div class="trader-chart-meta">Last '+bars.length+' candles<br>Price '+esc(price(position.current_price))+(position.avg_price?'<br>Avg entry '+esc(price(position.avg_price))+' · PnL '+esc(pnl):'')+'</div></div><svg class="trader-chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="PAPER candlestick chart for '+title+'">'+svg+'</svg><div class="chart-legend"><span><b>MA7</b> gold</span><span><b>MA25</b> violet</span><span><b>MA99</b> cyan</span><span><b>B</b> PAPER buy</span><span><b>S</b> PAPER sell/reduce</span>'+(position.avg_price?'<span><b>AVG</b> active position average</span>':'')+'</div>'+(events?'<div class="chart-events">'+events+'</div>':'')+'</div>';
+ const pendingCard=pending?'<div class="pending-order-card"><strong>🟠 OPEN PAPER ORDER · '+esc(String(pending.side||'').toUpperCase())+' '+esc(String(pending.order_type||'').toUpperCase())+'</strong>Trigger <b>'+esc(price(pending.trigger_price))+'</b> · notional <b>'+esc(money(pending.notional))+'</b> · waiting <b>'+esc(String(pending.age_bars||0))+' candle(s)</b><br>Strategy '+esc(pending.strategy||'—')+' · plan <code>'+esc(String(pending.plan_id||'').slice(0,24))+'</code></div>':'';
+ const orderHistory=orderEvents.length?'<div class="order-history">'+orderEvents.slice(-6).reverse().map(function(o){const icon=o.kind==='opened'?'🟠':(o.kind==='filled'?'✅':'✕');return '<div class="order-history-row"><b>'+icon+' '+esc(String(o.kind||'order').toUpperCase())+' '+esc(String(o.side||'').toUpperCase())+'</b> · '+esc(price(o.trigger_price))+' · '+esc(new Date(Number(o.ts)).toLocaleString())+(o.reason?' · '+esc(o.reason):'')+'</div>'}).join('')+'</div>':'';
+ const headOrder=pending?'<br>Open '+esc(String(pending.side||'').toUpperCase())+' @ '+esc(price(pending.trigger_price)):'';
+ return '<div class="trader-chart-shell"><div class="trader-chart-head"><div><div class="trader-chart-title">'+title+' · PAPER</div>'+phaseHtml+'</div><div class="trader-chart-meta">Last '+bars.length+' candles<br>Price '+esc(price(position.current_price))+(position.avg_price?'<br>Avg entry '+esc(price(position.avg_price))+' · PnL '+esc(pnl):'')+headOrder+'</div></div><svg class="trader-chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="PAPER candlestick chart for '+title+'">'+svg+'</svg>'+pendingCard+'<div class="chart-legend"><span><b>MA7</b> gold</span><span><b>MA25</b> violet</span><span><b>MA99</b> cyan</span><span><b style="color:#ffae42">OPEN</b> pending limit order</span><span><b>B</b> PAPER buy</span><span><b>S</b> PAPER sell/reduce</span>'+(position.avg_price?'<span><b>AVG</b> active position average</span>':'')+'</div>'+(events?'<div class="chart-events">'+events+'</div>':'')+orderHistory+'</div>';
 }
 async function refreshTraderChart(id){
  const slot=byId('traderLiveChart');

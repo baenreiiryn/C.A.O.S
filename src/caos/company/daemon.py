@@ -340,6 +340,8 @@ class CompanyDaemon:
                 >= self.company.effective_trader_limit
             ):
                 break
+            if self.company.paper.has_pending_order(trader.id):
+                continue
             if (
                 decision.released_capital > 1e-9
                 and trader.id in self.company.paper.accounts
