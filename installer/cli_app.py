@@ -43,14 +43,14 @@ if os.name == "nt":
                     f"broker:{active_id}:api_secret"
                 )
                 if key and "BINANCE_TESTNET_API_KEY" not in os.environ:
-                    os.environ["BYBIT_TESTNET_API_KEY"] = key
+                    os.environ["BINANCE_TESTNET_API_KEY"] = key
                 if (
                     secret
                     and "BINANCE_TESTNET_API_SECRET"
                     not in os.environ
                 ):
                     os.environ[
-                        "BYBIT_TESTNET_API_SECRET"
+                        "BINANCE_TESTNET_API_SECRET"
                     ] = secret
     except Exception:
         # The CLI remains usable for PAPER/admin commands even if
