@@ -316,17 +316,17 @@ function renderSettings(){
    return '<div class="broker-card '+(active?'active':'')+'"><div class="list-title">'+esc(p.label||p.id)+(active?' · ACTIVE':'')+'</div><div class="list-sub">'+esc(p.provider)+' · '+esc(p.environment)+' · key '+(p.api_key_configured?'configured':'missing')+' · secret '+(p.api_secret_configured?'configured':'missing')+(support.activatable?'':' · adapter pending')+'</div><div class="control-row"><button class="btn" onclick="editBrokerProfile(\''+esc(p.id)+'\')">Edit</button><button class="btn" onclick="testBrokerProfile(\''+esc(p.id)+'\')">Test</button>'+(support.activatable&&!active?'<button class="btn" onclick="activateBrokerProfile(\''+esc(p.id)+'\')">Set Active</button>':'')+(!active?'<button class="btn danger" onclick="deleteBrokerProfile(\''+esc(p.id)+'\')">Delete</button>':'')+'</div></div>';
  }).join(''):'<div class="empty">No broker profiles configured.</div>';
  html+=section('⚓ Broker Embassy',
-   '<div class="settings-note">Broker credentials are stored in Windows Credential Manager, never in launcher.json or the Company database. Bybit TESTNET is the currently implemented execution adapter; Binance/OKX/Kraken profiles are schema-ready but cannot be activated until their adapters exist.</div>'+
+   '<div class="settings-note">Broker credentials are stored in Windows Credential Manager, never in launcher.json or the Company database. Binance Japan / Spot is the supported broker. Use spot-testnet for human-gated test orders or production-readonly to authenticate a real Binance Japan account without enabling LIVE orders.</div>'+
    cards+
    '<h3 id="brokerFormTitle">'+(editingBrokerId?'Edit broker profile':'Add broker profile')+'</h3>'+
    '<div class="settings-grid">'+
    settingsField('Label','brokerLabel','')+
-   settingsSelect('Broker','brokerProvider','bybit',Object.keys(supported).map(function(k){return {value:k,label:(supported[k]&&supported[k].label)||k}}))+
-   settingsField('Environment','brokerEnvironment','testnet')+
+   settingsSelect('Broker','brokerProvider','binance',Object.keys(supported).map(function(k){return {value:k,label:(supported[k]&&supported[k].label)||k}}))+
+   settingsField('Environment','brokerEnvironment','spot-testnet')+
    settingsField('API key','brokerApiKey','','password')+
    settingsField('API secret','brokerApiSecret','','password')+
    '</div>'+
-   '<div class="settings-note">When editing, blank credential fields keep the existing secret. Switching the active broker is blocked while unresolved external execution intents exist.</div>'+
+   '<div class="settings-note">When editing, blank credential fields keep the existing secret. Valid Binance environments are spot-testnet and production-readonly. Switching the active broker is blocked while unresolved external execution intents exist.</div>'+
    '<div class="control-row"><button class="btn" onclick="saveBrokerProfile()">Save Profile</button><button class="btn" onclick="newBrokerProfile()">New Profile</button></div>'+
    '<div id="brokerStatus" class="settings-status"></div>'
  );
@@ -335,7 +335,7 @@ function renderSettings(){
  drawerBody.innerHTML=html;
  if(editingBrokerId){
    const p=profiles.find(function(x){return x.id===editingBrokerId});
-   if(p){byId('brokerLabel').value=p.label||'';byId('brokerProvider').value=p.provider||'bybit';byId('brokerEnvironment').value=p.environment||'testnet'}
+   if(p){byId('brokerLabel').value=p.label||'';byId('brokerProvider').value=p.provider||'binance';byId('brokerEnvironment').value=p.environment||'spot-testnet'}
  }
  drawer.classList.add('open');drawerBackdrop.classList.add('open');drawer.setAttribute('aria-hidden','false');
 }
