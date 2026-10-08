@@ -4,7 +4,7 @@ from typing import Any
 
 from ..domain import StrategySpec
 from ..orchestrator import CAOS
-from ..quant import current_signal
+from ..quant import current_decision, current_signal
 
 
 class CAOSAdapter:
@@ -64,6 +64,23 @@ class CAOSAdapter:
         if not bars:
             raise RuntimeError("market_data_required")
         return current_signal(strategy, bars)
+
+    def current_decision(
+        self,
+        strategy: StrategySpec,
+        symbol: str,
+        *,
+        requested_weight: float = 1.0,
+    ):
+        bars = self.bars(symbol)
+        if not bars:
+            raise RuntimeError("market_data_required")
+        return current_decision(
+            strategy,
+            bars,
+            symbol=symbol,
+            requested_weight=requested_weight,
+        )
 
     def execution_cost_bps(self, symbol: str) -> float:
         return float(self.caos.execution_costs.get(symbol.upper(), 0.0))
