@@ -318,6 +318,7 @@ def parser() -> argparse.ArgumentParser:
     company_sub.add_parser("treasury")
     company_sub.add_parser("opportunities")
     company_sub.add_parser("audit")
+    company_sub.add_parser("execution-plans")
 
     def add_runtime_overrides(sp):
         sp.add_argument("--targets", default=None)
@@ -527,6 +528,9 @@ def main() -> None:
             return
         if args.company_cmd == "audit":
             _print_json(company.audit())
+            return
+        if args.company_cmd == "execution-plans":
+            _print_json(control.get_execution_plans())
             return
         if args.company_cmd in {"once", "run"}:
             (
