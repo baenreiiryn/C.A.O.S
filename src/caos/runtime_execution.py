@@ -281,7 +281,16 @@ class RuntimeExecutionService:
             raise RuntimeExecutionError(
                 "unsupported_execution_mode"
             )
-        if self.company.operational_state() != "stopped":
+        operational_state = self.company.operational_state()
+        if mode == "real-manual":
+            if operational_state not in {
+                "stopped",
+                "stopping",
+            }:
+                raise RuntimeExecutionError(
+                    "real_mode_change_requires_stopped_or_stopping_company"
+                )
+        elif operational_state != "stopped":
             raise RuntimeExecutionError(
                 "execution_mode_change_requires_stopped_company"
             )
