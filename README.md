@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.7.2 standalone Trade Company with Binance Japan / Spot integration and persistent in-app LLM/broker settings**. Public market/order-book data now comes from Binance Spot, test execution uses human-gated Binance Spot Testnet, and a real Binance Japan production profile can be authenticated read-only. Production order submission and LIVE remain deliberately unavailable.
+> Current milestone: **v0.7.3 standalone Trade Company with Binance Japan / Spot and continuous news intelligence**. The Whispering Tankard ships with trusted market/crypto/regulatory RSS sources, accepts custom HTTPS news sites/feeds, and can conservatively block only new risk when directly relevant critical negative news is detected. News never creates an order. Production order submission and LIVE remain deliberately unavailable.
 
 ## Why it is built this way
 
@@ -82,16 +82,18 @@ The Founding Charter is only the first-run onboarding. After installation, confi
 
 Broker API keys and secrets are stored in **Windows Credential Manager**, not in `launcher.json` or `caos.db`. The packaged `caos.exe` automatically loads credentials from the active Binance Spot Testnet profile, so PowerShell environment-variable setup is not required when that profile is configured in the installed application.
 
+**Whispering Tankard / News Sources** is also persistent after onboarding. Fresh installations start with enabled feeds from CoinDesk, Cointelegraph, Decrypt, CryptoSlate, Nasdaq Markets, Investing.com Market News, U.S. SEC press releases, Federal Reserve press releases and Bank of Japan updates. Settings can enable/disable/remove sources, restore defaults, test a feed, preview headlines, or paste a normal HTTPS news-site URL and let C.A.O.S discover its RSS/Atom feed.
+
 Changing the active broker is blocked while unresolved external execution intents exist.
 
-Installing v0.7.2 over v0.7.1 preserves:
+Installing v0.7.3 over v0.7.2 preserves:
 
 ```text
 %LOCALAPPDATA%\CAOS\caos.db
 %LOCALAPPDATA%\CAOS\launcher.json
 ```
 
-so existing Treasury, Traders, research, rollout and reliability state remain intact.
+so existing Treasury, Traders, research, rollout and reliability state remain intact. Existing v0.7.2 installations without a `news_sources` field automatically receive the v0.7.3 default news catalog.
 
 ## Development install
 
@@ -173,6 +175,32 @@ caos --experts kronos,chronos2,finbert status
 ```
 
 Before forecast evidence is promoted into portfolio logic, C.A.O.S can walk-forward evaluate it against a naive last-price baseline.
+
+## News intelligence
+
+The **Whispering Tankard / Bard of Rumors** reads configured RSS/Atom sources on a bounded cache interval and maps relevant headlines to Company markets.
+
+Default sources cover:
+
+- crypto: CoinDesk, Cointelegraph, Decrypt, CryptoSlate;
+- stocks/markets: Nasdaq Markets, Investing.com Market News;
+- official regulation/macro: U.S. SEC, Federal Reserve, Bank of Japan.
+
+Users can add a direct RSS/Atom URL or paste a normal HTTPS news-site URL; C.A.O.S attempts feed discovery through HTML alternate-feed metadata and common feed paths.
+
+News is deliberately asymmetric:
+
+```text
+positive news  -> context only; never increases exposure
+negative news  -> may reduce opportunity confidence
+trusted critical negative news -> may block NEW risk for that symbol
+existing position reduction/exit -> remains allowed
+news by itself -> never creates an opportunity or order
+```
+
+A custom user-added feed cannot trigger the hard new-risk block by itself; custom-source critical headlines are downgraded to caution/penalty unless the source is part of the built-in trusted catalog.
+
+See [`docs/NEWS_INTELLIGENCE.md`](docs/NEWS_INTELLIGENCE.md).
 
 ## Public market data and paper automation
 
@@ -360,7 +388,7 @@ See [`docs/COMPANY_V7_PRODUCTION_RELIABILITY.md`](docs/COMPANY_V7_PRODUCTION_REL
 
 ## Binance Japan / Spot
 
-Binance is the supported broker family in v0.7.2.
+Binance is the supported broker family in v0.7.3.
 
 - `spot-testnet` — human-gated Binance Spot Testnet order submission and durable recovery;
 - `production-readonly` — authenticate a real Binance Japan account and read safe account metadata; production order submission is blocked in code.
@@ -396,7 +424,7 @@ python -m unittest discover -s tests -v
 
 GitHub Actions executes the same suite on every push and pull request.
 
-## Safety boundaries in v0.7.2
+## Safety boundaries in v0.7.3
 
 - research, paper trading and explicitly armed Binance Spot TESTNET only;
 - configurable position cap (20% default);
