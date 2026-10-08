@@ -7,9 +7,11 @@ from statistics import mean, pstdev
 
 from .domain import BacktestResult, Mandate, MarketBar, StrategySpec, Trade
 from .execution_fabric import (
+    ExecutionPlan,
     StrategyDecision,
     TargetPosition,
     decision_from_signal,
+    plan_execution,
     resolve_target_position,
 )
 
@@ -502,3 +504,40 @@ def target_position_series(
             )
         )
     return targets
+
+
+
+def execution_plan_series(
+    spec: StrategySpec,
+    bars: list[MarketBar],
+    *,
+    symbol: str,
+    requested_weight: float = 1.0,
+    equity: float = 1.0,
+    max_notional: float | None = None,
+) -> list[ExecutionPlan]:
+    """Historical Execution Fabric trace for research/backtest diagnostics.
+
+    The trace uses the same target resolver and planner as paper/testnet.
+    It intentionally models strategy state transitions, not venue slippage.
+    """
+    targets = target_position_series(
+        spec,
+        bars,
+        symbol=symbol,
+        requested_weight=requested_weight,
+        equity=equity,
+        max_notional=max_notional,
+    )
+    plans: list[ExecutionPlan] = []
+    current_notional = 0.0
+    for bar, target in zip(bars, targets):
+        plan = plan_execution(
+            target,
+            current_notional=current_notional,
+            reference_price=bar.close,
+            allow_new_risk=True,
+        )
+        plans.append(plan)
+        current_notional = plan.effective_target_notional
+    return plans
