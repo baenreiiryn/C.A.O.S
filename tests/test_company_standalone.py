@@ -330,6 +330,55 @@ class FantasyCityPresentationTests(unittest.TestCase):
             store.close()
 
 
+    def test_execution_reliability_survives_company_checkpoint_restore(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "company.db")
+            caos = make_runtime(store)
+            policy = build_policy(
+                initial_company_capital=10,
+                trader_initial_bucket=10,
+                trader_stop_floor=3,
+                default_trader_max_exposure_pct=20,
+                operational_trader_cap=6,
+                company_max_drawdown_pct=30,
+            )
+            company = TradeCompany(
+                CAOSAdapter(caos),
+                policy,
+                store=store,
+            )
+            initialize_company(
+                company,
+                parse_scan_targets(
+                    "BTCUSDT:long:momentum"
+                ),
+            )
+            add_uncertain_execution_intent(company)
+            company.checkpoint()
+
+            restored = TradeCompany(
+                CAOSAdapter(caos),
+                policy,
+                store=store,
+            )
+            self.assertTrue(restored.restore_checkpoint())
+            self.assertEqual(
+                restored.execution_reliability.summary()[
+                    "recovery_required"
+                ],
+                1,
+            )
+            self.assertEqual(
+                len(
+                    restored.execution_reliability.list(
+                        limit=10
+                    )
+                ),
+                1,
+            )
+            store.close()
+
+
 class CompanyDashboardTests(unittest.TestCase):
     def test_dashboard_reads_only_safe_company_surface(self):
         with tempfile.TemporaryDirectory() as d:
@@ -390,6 +439,19 @@ class CompanyDashboardTests(unittest.TestCase):
                     city = json.loads(
                         response.read().decode("utf-8")
                     )
+
+                with urllib.request.urlopen(
+                    base + "/api/company/reliability",
+                    timeout=2,
+                ) as response:
+                    reliability = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertTrue(reliability["enabled"])
+                self.assertIn(
+                    "recovery_required",
+                    reliability["summary"],
+                )
                 self.assertEqual(
                     city["city"]["subtitle"],
                     "Arcane Trading City",
