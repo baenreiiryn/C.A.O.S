@@ -194,6 +194,11 @@ class DurableExecutionJournal:
             from_statuses=("prepared",),
             to_status="submitting",
         )
+        if claimed:
+            self.store.event(
+                "execution_intent_submitting",
+                {"intent_id": intent_id},
+            )
         if not claimed:
             row = self.get(intent_id)
             if row["status"] in {"acknowledged", "reconciled"}:
@@ -221,6 +226,15 @@ class DurableExecutionJournal:
             reconciliation_payload=raw,
             last_error=None,
         )
+        if changed:
+            self.store.event(
+                "execution_intent_acknowledged",
+                {
+                    "intent_id": intent_id,
+                    "broker_order_id": broker_order_id,
+                    "broker_order_link_id": broker_order_link_id,
+                },
+            )
         if not changed:
             current = self.get(intent_id)
             if current["status"] in {
@@ -239,13 +253,21 @@ class DurableExecutionJournal:
         *,
         error: str,
     ) -> dict:
-        self.store.transition_execution_intent(
+        changed = self.store.transition_execution_intent(
             intent_id,
             from_statuses=("submitting",),
             to_status="uncertain",
             reconciliation_status="required",
             last_error=error,
         )
+        if changed:
+            self.store.event(
+                "execution_intent_uncertain",
+                {
+                    "intent_id": intent_id,
+                    "error": error,
+                },
+            )
         return self.get(intent_id)
 
     def reconcile(
@@ -255,18 +277,34 @@ class DurableExecutionJournal:
     ) -> ReconciliationResult:
         current = self.get(intent_id)
         if broker_order is None:
+            if (
+                current["status"] == "reconciled"
+                and current.get("reconciliation_status") == "matched"
+            ):
+                return ReconciliationResult(
+                    intent_id=intent_id,
+                    status="reconciled",
+                    reconciliation_status="matched",
+                    issues=(),
+                    broker_order=current.get(
+                        "reconciliation_payload"
+                    ),
+                )
             self.store.transition_execution_intent(
                 intent_id,
                 from_statuses=(
                     "submitting",
                     "uncertain",
                     "acknowledged",
-                    "reconciled",
                 ),
                 to_status="uncertain",
                 reconciliation_status="not_found",
                 reconciliation_payload=None,
                 last_error=current.get("last_error"),
+            )
+            self.store.event(
+                "execution_intent_reconciliation_not_found",
+                {"intent_id": intent_id},
             )
             row = self.get(intent_id)
             return ReconciliationResult(
@@ -304,6 +342,13 @@ class DurableExecutionJournal:
                 reconciliation_payload=broker_order,
                 last_error=";".join(issues),
             )
+            self.store.event(
+                "execution_intent_reconciliation_mismatch",
+                {
+                    "intent_id": intent_id,
+                    "issues": list(issues),
+                },
+            )
             row = self.get(intent_id)
             return ReconciliationResult(
                 intent_id=intent_id,
@@ -331,6 +376,15 @@ class DurableExecutionJournal:
             reconciliation_status="matched",
             reconciliation_payload=broker_order,
             last_error=None,
+        )
+        self.store.event(
+            "execution_intent_reconciled",
+            {
+                "intent_id": intent_id,
+                "broker_order_id": str(
+                    broker_order.get("order_id", "")
+                ),
+            },
         )
         row = self.get(intent_id)
         return ReconciliationResult(
