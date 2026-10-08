@@ -423,9 +423,11 @@ function locationDetails(id){
    body+=section('Technical diagnostics','<button class="btn" onclick="window.open(\'http://127.0.0.1:5190\',\'_blank\')">Open technical C.A.O.S dashboard</button>');
  }
  if(id==='chronicle'){
-   const events=c.recent_events||[];
+   const events=c.recent_events||[], rel=c.execution_reliability||{}, intents=rel.recent_intents||[], counts=rel.counts||{};
+   body+=section('Execution Reliability','<div class="metric-grid">'+metric('Intent journal',rel.version||'—')+metric('Total intents',rel.total||0)+metric('Prepared',counts.prepared||0)+metric('Acknowledged',counts.acknowledged||0)+metric('Reconciled',counts.reconciled||0)+metric('Recovery required',rel.recovery_required||0)+'</div>');
+   body+=section('External Execution Intents',intents.length?'<div class="list">'+intents.map(function(x){return listItem((x.status||'intent').toUpperCase()+' · '+(x.symbol||''),(x.intent_id||'')+' · plan '+(x.plan_id||'')+(x.reconciliation_status?' · '+x.reconciliation_status:'')+(x.last_error?' · '+x.last_error:''))}).join('')+'</div>':'<div class="empty">No external execution intents are recorded.</div>');
    body+=section('Recent Chronicles',events.length?'<div class="list">'+events.slice(0,30).map(function(e){return listItem(e.kind,e.created_at+' · '+JSON.stringify(e.payload).slice(0,150))}).join('')+'</div>':'<div class="empty">No recent chronicles are available.</div>');
-   body+=section('Recovery State','<div class="metric-grid">'+metric('Reconciliation',(s.reconciliation_mismatches||[]).length?'MISMATCH':'OK')+metric('Paper accounts',Object.keys((s.paper&&s.paper.accounts)||{}).length)+'</div>');
+   body+=section('Recovery State','<div class="metric-grid">'+metric('Paper reconciliation',(s.reconciliation_mismatches||[]).length?'MISMATCH':'OK')+metric('External recovery',(rel.recovery_required||0)?'REQUIRED':'CLEAR')+metric('Paper accounts',Object.keys((s.paper&&s.paper.accounts)||{}).length)+'</div><div class="story">Broker credentials are never stored or exposed here. Ambiguous external intents must be reconciled before any retry.</div>');
  }
  if(alerts.length)body+=section('Attention requested','<div class="list">'+alerts.map(function(a){return listItem(a.kind,a.severity||'attention')}).join('')+'</div>');
  body+='<details class="detail-section"><summary style="cursor:pointer;color:#f1d796;font-weight:700">Technical truth</summary>'+json({location:loc,status_snapshot:technicalSnapshot(id,s)})+'</details>';
