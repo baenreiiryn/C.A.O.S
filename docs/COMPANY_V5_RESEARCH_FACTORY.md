@@ -1,6 +1,6 @@
 # Company V5 — Research Factory
 
-Status: **IN DEVELOPMENT on `feature/trade-company`**
+Status: **COMPLETE on `feature/trade-company`**
 
 ## Goal
 
@@ -476,3 +476,32 @@ Company V5 does not:
 - implement production strategy rollout/canary logic.
 
 Those remain later stages after the research catalog is reliable.
+
+
+## Validation result
+
+Final validated implementation:
+
+```text
+Ran 120 tests
+OK
+
+CI: SUCCESS
+CLI smoke: SUCCESS
+Research Factory inspection smoke: SUCCESS
+Research hypothesis creation smoke: SUCCESS
+Builtin generator tests: SUCCESS
+Qlib/RD-Agent bridge tests: SUCCESS
+Backtest/robustness evaluation tests: SUCCESS
+Execution Fabric research trace tests: SUCCESS
+Champion/challenger promotion tests: SUCCESS
+Promotion rejection tests: SUCCESS
+Improvement Manager seeding tests: SUCCESS
+Checkpoint compatibility/integrity tests: SUCCESS
+```
+
+The validated branch remains `feature/trade-company`.
+
+No merge to `main` has occurred.
+
+**COMPANY V5 — RESEARCH FACTORY: COMPLETE**
