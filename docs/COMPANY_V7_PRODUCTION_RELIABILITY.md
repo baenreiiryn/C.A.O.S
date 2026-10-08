@@ -1,12 +1,12 @@
 # Company V7 — Production Reliability / Broker Reconciliation
 
-Status: **COMPLETE on `feature/trade-company`**
+Status: **COMPLETE — current broker implementation updated for Binance Spot in v0.7.2**
 
 ## Goal
 
-Make external ExecutionPlan submission crash-safe and duplicate-resistant before any future autonomous TESTNET or LIVE rollout.
+Make external ExecutionPlan submission crash-safe and duplicate-resistant before any future autonomous production rollout.
 
-The reliability path is:
+The current reliability path is:
 
 ```text
 ExecutionPlan
@@ -43,67 +43,32 @@ ACKNOWLEDGED              UNCERTAIN
                     ABANDONED
 ```
 
-The system never automatically resubmits a `SUBMITTING`, `UNCERTAIN`, `ACKNOWLEDGED`, `RECONCILED` or `ABANDONED` intent.
+No uncertain intent is automatically resent.
 
-## Versions
+## Current broker scope
 
-Execution reliability contract:
-
-```text
-execution-reliability/v1
-```
-
-Implementation:
+v0.7.2 uses:
 
 ```text
-src/caos/execution_reliability.py
+venue       = binance
+environment = spot-testnet
 ```
 
-Durable storage lives in the normal SQLite Store, but in a dedicated table independent from the Trade Company checkpoint.
+for money-moving test execution.
 
-## Durable execution outbox
-
-The Store migration creates:
+A second Binance environment is available in the Broker Embassy:
 
 ```text
-execution_intents
+production-readonly
 ```
 
-Each row persists:
+It authenticates a real Binance Japan Spot account and exposes safe account metadata. Production order creation is rejected in code.
 
-- intent ID;
-- ExecutionPlan plan ID;
-- venue;
-- environment;
-- symbol;
-- canonical order payload;
-- payload hash;
-- intent status;
-- broker order ID;
-- broker order-link ID;
-- reconciliation status;
-- reconciliation payload;
-- last error;
-- created/updated timestamps.
-
-The database enforces:
-
-```text
-UNIQUE(venue, environment, plan_id)
-```
-
-This is the durable duplicate-prevention boundary.
+LIVE remains unavailable.
 
 ## Intent identity
 
-For V7:
-
-```text
-venue       = bybit
-environment = testnet
-```
-
-The intent ID is deterministic from:
+Each durable intent is unique by:
 
 ```text
 venue
@@ -111,544 +76,353 @@ environment
 plan_id
 ```
 
-The Bybit `orderLinkId` remains the deterministic Execution Fabric `plan_id`.
+For Binance Spot Testnet, the deterministic Execution Fabric `plan_id` is propagated as:
 
-A second preparation of the same canonical plan returns the existing intent.
+```text
+newClientOrderId
+```
 
-If the same plan ID is presented with a different translated payload, preparation fails closed with a payload conflict.
+and later queried as:
 
-## Credentials
+```text
+origClientOrderId
+```
 
-The durable journal accepts no API key or API secret.
+The ID is limited to the exchange-supported client-order identifier length.
 
-Persisted intent payload contains only order information such as:
+## Durable SQLite outbox
 
-- category;
+The `execution_intents` table persists:
+
+- intent ID;
+- plan ID;
+- venue;
+- environment;
 - symbol;
-- side;
-- order type;
-- quantity;
-- reduce-only flag;
-- orderLinkId;
-- optional limit price.
+- canonical order payload;
+- payload hash;
+- status;
+- broker order ID;
+- broker client-order ID;
+- reconciliation status/payload;
+- last error;
+- timestamps.
 
-Broker credentials remain runtime-only inputs to the Bybit TESTNET client.
+The database enforces:
+
+```text
+UNIQUE(venue, environment, plan_id)
+```
+
+The journal is separate from the normal Trade Company checkpoint so restoring an internal Company snapshot cannot erase external execution history.
+
+## Broker credentials
+
+The durable journal never accepts or stores API keys or secrets.
+
+On Windows, Broker Embassy secrets are stored in Windows Credential Manager. The SQLite journal stores only order intent and reconciliation data.
+
+## Spot semantics
+
+The current adapter is Spot-only.
+
+```text
+BUY   -> open/increase a long Spot position
+SELL  -> allowed only when the ExecutionPlan is risk-reducing
+```
+
+A SELL intended to create naked short exposure fails closed with:
+
+```text
+binance_spot_shorting_not_supported
+```
+
+No derivatives or leveraged-short semantics are implied by the Spot adapter.
 
 ## PREPARED
 
-`prepare_plan()` translates an ExecutionPlan using the existing V4 adapter and writes the intent before any money-moving network call.
+`prepare_plan()` translates the venue-agnostic ExecutionPlan into a Binance Spot order payload and persists it before any submit.
 
-Preparation itself does not require TESTNET arming because it does not submit an order.
+Preparation is not money-moving and does not require TESTNET arming.
 
 ## SUBMITTING
 
-Before calling the broker, the journal performs an atomic:
+Immediately before the network call:
 
 ```text
 PREPARED -> SUBMITTING
 ```
 
-transition.
+is claimed atomically.
 
-Only one caller can claim a PREPARED intent.
+A second process cannot submit the same durable plan while it is already SUBMITTING, UNCERTAIN, ACKNOWLEDGED, RECONCILED or ABANDONED.
 
-Concurrent/restarted callers seeing SUBMITTING are forbidden from submitting the same plan again.
+## Crash window protection
 
-This closes the local duplicate race.
-
-## Crash window
-
-The critical failure case is:
+The critical case is:
 
 ```text
 persist SUBMITTING
       |
-send request
+POST order
       |
 broker accepts
       |
-process/network dies before ACK is persisted
+process/network dies before local ACK persistence
 ```
 
-On restart, the intent is still SUBMITTING/UNCERTAIN.
+After restart the executor does not resend the order.
 
-The reliable executor does **not** resend it.
+It reconciles by the original client-order ID.
 
-It queries the broker by the original `orderLinkId`.
+## Binance Spot Testnet client
+
+The test execution client is hard-locked to:
+
+```text
+https://testnet.binance.vision
+```
+
+Signed requests use the Binance Spot REST contract:
+
+```text
+X-MBX-APIKEY
+timestamp
+recvWindow
+HMAC-SHA256 signature
+```
+
+Unknown/cross-environment hosts are rejected.
 
 ## ACKNOWLEDGED
 
-If Bybit order creation returns a valid response, V7 verifies:
+An order ACK must contain:
 
-- non-empty broker order ID;
-- non-empty orderLinkId;
-- returned orderLinkId exactly matches the planned orderLinkId.
+- non-empty broker `orderId`;
+- non-empty `clientOrderId`;
+- `clientOrderId` equal to the expected plan-derived ID.
 
-Only then:
+Invalid ACK identity becomes UNCERTAIN rather than trusted success.
 
-```text
-SUBMITTING -> ACKNOWLEDGED
-```
+## Reconciliation
 
-An empty/wrong ACK identity becomes UNCERTAIN and requires reconciliation.
-
-ACKNOWLEDGED remains part of `recovery_required` because an asynchronous broker ACK is not considered final reconciliation.
-
-## Bybit TESTNET reconciliation
-
-The Bybit client remains hard-locked to:
+Recovery queries:
 
 ```text
-https://api-testnet.bybit.com
+GET /api/v3/order
+  symbol=<symbol>
+  origClientOrderId=<plan-derived-id>
 ```
 
-Reconciliation searches by the persisted orderLinkId.
+The local intent is compared with the normalized broker order:
 
-The lookup order is:
-
-```text
-GET /v5/order/realtime
-          |
-      not found
-          v
-GET /v5/order/history
-```
-
-This follows the current Bybit V5 model where real-time orders can be queried by orderLinkId and older/cleared order records are available through order history.
-
-## Broker identity reconciliation
-
-When a broker order is found, V7 compares persisted intent against broker state:
-
-- orderLinkId;
+- client-order ID;
 - symbol;
 - side;
 - order type;
-- quantity;
-- reduce-only.
+- original quantity.
 
 If all identity fields match:
 
 ```text
--> RECONCILED
+RECONCILED
 reconciliation_status = matched
 ```
 
-The broker order state itself is preserved in the reconciliation payload, including fields such as order status, cumulative executed quantity and average price when returned.
+The returned broker status, executed quantity and average-price evidence are kept in the reconciliation payload.
 
-`RECONCILED` means the intended order identity is accounted for at the broker. It does not claim that the order necessarily filled.
+## Not found
+
+Binance error code `-2013` is treated as order not found.
+
+The intent remains:
+
+```text
+UNCERTAIN
+reconciliation_status = not_found
+```
+
+No retry happens automatically.
+
+A confirmed missing intent may be explicitly resolved as ABANDONED. The same plan ID remains recorded and therefore cannot be accidentally replayed.
 
 ## Mismatch
 
-If the broker returns the same lookup record but the order identity differs:
-
-```text
-status = UNCERTAIN
-reconciliation_status = mismatch
-```
-
-Mismatch issues are recorded, e.g.:
+If broker identity conflicts with the durable payload, the intent remains UNCERTAIN with explicit issues such as:
 
 ```text
 qty_mismatch
 side_mismatch
-reduce_only_mismatch
+order_type_mismatch
 ```
 
-No retry occurs.
+No automatic corrective order is submitted.
 
-## Not found
+## Human TESTNET gate
 
-If both real-time and history lookups return no order:
-
-```text
-status = UNCERTAIN
-reconciliation_status = not_found
-```
-
-The system still does not automatically retry.
-
-This deliberately favors duplicate prevention over automatic recovery from a possibly delayed broker record.
-
-## Stable reconciliation
-
-After an intent has been matched and moved to RECONCILED, a later transient broker query returning no record does not downgrade the already reconciled local state.
-
-A real conflicting broker record can still surface as a mismatch.
-
-## Explicit abandonment
-
-A confirmed-not-found intent can be resolved without resubmission:
-
-```text
-UNCERTAIN + not_found
-        |
- explicit operator action
-        v
-    ABANDONED
-```
-
-Only intents whose latest reconciliation state is exactly `not_found` can be abandoned.
-
-CLI confirmation is exact:
-
-```text
-ABANDON MISSING TESTNET INTENT
-```
-
-Abandonment does not create a new order.
-
-The same plan ID remains persisted, so replaying that plan is still blocked.
-
-A later strategy decision must produce a genuinely new plan ID before it can create a new intent.
-
-## ReliableHumanTestnetExecutor
-
-V7 adds:
-
-```text
-ReliableHumanTestnetExecutor
-```
-
-Operations:
-
-```text
-prepare_plan(plan)
-submit_plan(plan)
-reconcile_intent(intent_id)
-recover()
-```
-
-### Submit boundary
-
-`submit_plan()` still requires:
+Money-moving test submission still requires exact confirmation:
 
 ```text
 ARM TESTNET
 ```
 
-before any network submit.
-
 If TESTNET is not armed:
 
-- no broker request is sent;
-- no intent is prepared as a side effect of submit.
+- no broker POST is performed;
+- no execution intent is created as a side effect of submit.
 
-### Recovery boundary
+Reconciliation/recovery is read-only and may run without arming TESTNET.
 
-Reconciliation/recovery is read-only broker activity.
+## Broker Embassy environments
 
-It does not require TESTNET arming.
+### spot-testnet
 
-This allows recovery after a restart without opening a money-moving execution window.
+- authenticated Binance Spot Testnet;
+- human-gated order submission;
+- durable V7 journal/recovery;
+- no naked shorting.
 
-## Recovery
+### production-readonly
 
-`recover()` scans durable intents in:
+Uses the production Binance Spot REST host:
+
+```text
+https://api.binance.com
+```
+
+C.A.O.S may authenticate the account and read safe metadata such as:
+
+- account type;
+- permissions;
+- non-zero balances;
+- trading capability flags.
+
+Calling `place_order()` in this environment raises:
+
+```text
+binance_production_trading_forbidden
+```
+
+Therefore adding a real Binance Japan profile does not enable real-money orders.
+
+## Broker switching
+
+Switching active Binance profiles is blocked if any Binance execution intent in any environment is still:
 
 - SUBMITTING;
 - UNCERTAIN;
 - ACKNOWLEDGED.
 
-It reconciles each one against Bybit TESTNET.
+This prevents changing broker context while external execution state still requires reconciliation.
 
-It never calls order creation.
+## Legacy venue history
 
-## Audit events
+Older durable rows from previous broker adapters are preserved in SQLite for audit history.
 
-Reliability transitions emit normal Store events including:
-
-- execution_intent_submitting;
-- execution_intent_acknowledged;
-- execution_intent_uncertain;
-- execution_intent_reconciled;
-- execution_intent_reconciliation_not_found;
-- execution_intent_reconciliation_mismatch;
-- execution_intent_abandoned.
-
-These appear in normal Company recent-event/Chronicle history.
-
-## Independent persistence
-
-Execution intents are not serialized inside:
+The active Binance reliability journal is scoped by:
 
 ```text
-trade_company_checkpoint_v1
+venue = binance
+environment = <active environment>
 ```
 
-They live in their own SQLite table.
+so legacy rows do not contaminate current Binance recovery counts.
 
-Therefore:
+## CLI
+
+Inspect current Company reliability:
+
+```bash
+caos company reliability
+```
+
+Inspect the active Binance Spot Testnet intent journal:
+
+```bash
+caos execution-intents
+```
+
+Recover one or all pending Spot Testnet intents:
+
+```bash
+caos testnet-recover
+caos testnet-recover --intent-id <intent-id>
+```
+
+Development/CLI credentials can be supplied through:
+
+```powershell
+$env:BINANCE_TESTNET_API_KEY="..."
+$env:BINANCE_TESTNET_API_SECRET="..."
+```
+
+Installed Windows users can instead save the Spot Testnet profile in Broker Embassy; the packaged CLI loads that profile from Windows Credential Manager.
+
+## Company / City observability
+
+TradeCompany exposes read-only reliability status:
 
 ```text
-Company checkpoint restore
-Company checkpoint replacement
-Company state rollback
+version
+venue
+environment
+counts
+total
+recovery_required
+recent_intents
 ```
 
-cannot erase the external execution journal.
-
-Creating a new TradeCompany over the same Store sees the same unresolved execution intents.
-
-## Company observability
-
-TradeCompany status includes:
-
-```text
-execution_reliability:
-  version
-  venue
-  environment
-  persistent
-  counts
-  total
-  recovery_required
-  recent_intents
-```
-
-The Company itself receives no broker credentials and no submit method from this integration.
-
-## CompanyControlPort
-
-Read-only surface:
-
-```text
-get_execution_reliability()
-```
-
-It returns summary + intents.
-
-No order submit/retry endpoint is exposed.
-
-## Company Cell Protocol
-
-Trade Company advertises:
+The Company Cell advertises:
 
 ```text
 domain.trade.execution_reliability
 ```
 
-Generic metrics include:
+When recovery is pending:
 
 ```text
-execution_intents
-execution_recovery_required
-```
-
-If recovery is pending, Cell health becomes:
-
-```text
-attention
-```
-
-and an alert is emitted:
-
-```text
-execution_reconciliation_required
-```
-
-A future Drizzt supervisor can therefore report an ambiguous broker execution without knowing Bybit internals.
-
-## Standalone CLI
-
-Read the Company view:
-
-```text
-caos company reliability
-```
-
-Read the generic intent journal:
-
-```text
-caos execution-intents
-caos execution-intents --limit 25
-```
-
-Reconcile one or all pending TESTNET intents:
-
-```text
-caos testnet-recover
-caos testnet-recover --intent-id <intent-id>
-```
-
-This requires TESTNET credentials to query the private broker account but does not require `ARM TESTNET` because it performs no submit.
-
-Resolve a confirmed-missing intent:
-
-```text
-caos testnet-abandon-missing <intent-id> \
-  --confirm "ABANDON MISSING TESTNET INTENT"
-```
-
-No command automatically retries an uncertain intent.
-
-## Themed City
-
-The Chronicle Vault now represents:
-
-```text
-CompanyCheckpoint
-+ Store
-+ ExecutionReliabilityJournal
-```
-
-It displays:
-
-- journal version;
-- total intents;
-- PREPARED count;
-- ACKNOWLEDGED count;
-- RECONCILED count;
-- recovery-required count;
-- recent intent status;
-- plan ID;
-- reconciliation status;
-- last error.
-
-When recovery is required:
-
-```text
+Cell health      -> attention
 Chronicle Vault -> attention
 City mood        -> attention
 ```
 
-The interface explicitly states that credentials are not stored and ambiguous intents require reconciliation before retry.
+The themed UI never exposes raw broker credentials or a production-order endpoint.
 
-Read-only HTTP:
+## Safety boundary
 
-```text
-GET /api/company/reliability
-```
-
-The themed server still exposes no broker credential endpoint and no external submit endpoint.
-
-## Legacy raw TESTNET command
-
-The older:
+The current architecture permits:
 
 ```text
-caos testnet-order
+PAPER                         yes
+Binance public market data    yes
+Binance Spot Testnet          human-gated
+Binance Japan account read    yes
+Binance Japan production buy  no
+Binance Japan production sell no
+LIVE                          no
+naked Spot short              no
 ```
 
-remains a direct human-only compatibility/admin surface.
+A later production milestone must add separate explicit production authorization and further position/fill reconciliation before real-money order submission can exist.
 
-It is not used by Trade Company autonomy and is not the V7 durable ExecutionPlan path.
+## Validation requirements
 
-Future autonomous TESTNET rollout must use ReliableHumanTestnetExecutor or an equivalent durable intent contract.
+The Binance migration preserves the original V7 invariants:
 
-## LIVE
-
-V7 does not add:
-
-- LIVE broker URL;
-- LIVE execution coordinator;
-- LIVE credentials;
-- autonomous LIVE arming;
-- autonomous TESTNET arming.
-
-LIVE remains unavailable to the Trade Company.
-
-## Acceptance criteria
-
-Company V7 is complete when:
-
-1. execution reliability has an explicit version;
-2. SQLite migration creates a dedicated durable intent table;
-3. intent uniqueness is enforced by venue/environment/plan ID;
-4. intent IDs are deterministic;
-5. journal stores no API credentials;
-6. same plan/payload preparation is idempotent;
-7. same plan with conflicting payload fails closed;
-8. PREPARED is durable before broker submit;
-9. PREPARED -> SUBMITTING is an atomic claim;
-10. concurrent journal users cannot claim the same plan twice;
-11. SUBMITTING/UNCERTAIN intents cannot auto-resubmit;
-12. valid broker ACK is durably recorded;
-13. invalid/mismatched ACK identity becomes UNCERTAIN;
-14. successful submit replay after restart does not create a second request;
-15. ambiguous network failure persists UNCERTAIN;
-16. restart recovery reconciles by the original orderLinkId;
-17. Bybit reconciliation checks real-time orders;
-18. Bybit reconciliation falls back to order history;
-19. GET requests use authenticated signed query strings;
-20. matched broker identity becomes RECONCILED;
-21. broker identity mismatch fails closed as UNCERTAIN;
-22. double lookup not-found remains UNCERTAIN;
-23. not-found never triggers automatic retry;
-24. matched RECONCILED state is not downgraded by a later transient not-found lookup;
-25. confirmed-not-found intent can be explicitly abandoned;
-26. abandonment performs no submit;
-27. abandoned same-plan replay remains blocked;
-28. recovery scans SUBMITTING/UNCERTAIN/ACKNOWLEDGED only;
-29. recovery performs no order creation;
-30. TESTNET submit still requires explicit human arming;
-31. read-only recovery does not require TESTNET arming;
-32. Bybit client remains hard-locked to TESTNET;
-33. reliability transitions are written to audit events;
-34. external execution journal survives Company checkpoint restore independently;
-35. Company status exposes reliability summary/intents;
-36. CompanyControlPort reliability surface is read-only;
-37. Company Cell advertises reliability capability;
-38. Company Cell exposes reliability metrics;
-39. pending recovery creates a generic Cell alert/attention health;
-40. Chronicle Vault displays real reliability state;
-41. city mood/Chronicle location surface unresolved execution attention;
-42. themed HTTP reliability endpoint is read-only;
-43. themed broker endpoint remains absent;
-44. standalone reliability/intents CLI inspection works without credentials;
-45. TESTNET recovery CLI does not submit orders;
-46. no autonomous TESTNET execution is enabled;
-47. no LIVE execution is enabled;
-48. all V2/V3/V4/V5/V6 regressions remain green;
-49. dedicated V7 crash/restart/idempotency/reconciliation tests are green;
-50. no merge to `main` occurs without explicit user approval.
-
-## Non-goals
-
-Company V7 does not:
-
-- automatically retry ambiguous external orders;
-- automatically abandon missing orders;
-- enable Company daemon TESTNET trading;
-- route rollout ACTIVE strategies to TESTNET;
-- implement position-level broker/Company reconciliation;
-- implement websocket order streams;
-- implement exchange fills ledger/accounting;
-- implement cancel/amend reliability;
-- implement LIVE execution;
-- migrate the legacy raw human `testnet-order` command into the durable plan path.
-
-Those are later production-readiness steps after order-intent reliability is proven.
-
-
-## Validation result
-
-Final validated implementation:
-
-```text
-Ran 149 tests
-OK
-
-CI: SUCCESS
-CLI smoke: SUCCESS
-Company reliability inspection smoke: SUCCESS
-Execution-intents inspection smoke: SUCCESS
-durable outbox/idempotency tests: SUCCESS
-crash-window/restart recovery tests: SUCCESS
-Bybit realtime/history reconciliation tests: SUCCESS
-broker payload mismatch fail-closed tests: SUCCESS
-invalid ACK identity fail-closed tests: SUCCESS
-confirmed-missing abandonment tests: SUCCESS
-human TESTNET submit gate tests: SUCCESS
-read-only unarmed recovery tests: SUCCESS
-checkpoint-independent persistence tests: SUCCESS
-Company Cell reliability alert/metrics tests: SUCCESS
-Chronicle Vault reliability tests: SUCCESS
-read-only themed reliability endpoint tests: SUCCESS
-```
-
-The validated branch remains `feature/trade-company`.
-
-No merge to `main` has occurred.
-
-**COMPANY V7 — PRODUCTION RELIABILITY / BROKER RECONCILIATION: COMPLETE**
+1. intent preparation is durable and idempotent;
+2. venue/environment/plan ID uniqueness prevents duplicates;
+3. credentials never enter the journal;
+4. SUBMITTING is persisted before the network call;
+5. crash/restart never causes automatic resend;
+6. reconciliation uses the deterministic client-order ID;
+7. invalid ACK identity fails closed;
+8. quantity/side/type mismatches fail closed;
+9. not-found never retries automatically;
+10. explicit abandonment performs no submit;
+11. human TESTNET arming is still required for money-moving calls;
+12. recovery is read-only and can run unarmed;
+13. production-readonly cannot submit orders;
+14. Spot naked shorts are rejected;
+15. legacy venue rows remain isolated from the active Binance journal;
+16. Company/Cell/Chronicle reliability visibility remains read-only;
+17. LIVE remains unavailable.
