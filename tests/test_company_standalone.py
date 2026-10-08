@@ -22,9 +22,46 @@ from caos.company.standalone import (
     targets_from_runtime_config,
 )
 from caos.domain import Mandate, StrategySpec
+from caos.execution_fabric import (
+    decision_from_signal,
+    plan_execution,
+    resolve_target_position,
+)
+from caos.testnet import execution_plan_to_bybit_order
 from caos.llm import StaticLLM
 from caos.orchestrator import CAOS
 from caos.store import Store
+
+
+def add_uncertain_execution_intent(company):
+    decision = decision_from_signal(
+        symbol="BTCUSDT",
+        strategy_id="city-reliability",
+        signal="long",
+        requested_weight=0.1,
+        as_of=1,
+    )
+    target = resolve_target_position(
+        decision,
+        equity=10.0,
+        max_notional=1.0,
+    )
+    plan = plan_execution(
+        target,
+        current_notional=0.0,
+        reference_price=100.0,
+    )
+    journal = company.execution_reliability
+    row = journal.prepare(
+        plan,
+        execution_plan_to_bybit_order(plan),
+    )
+    journal.claim_for_submit(row["intent_id"])
+    journal.mark_uncertain(
+        row["intent_id"],
+        error="simulated_network_ambiguity",
+    )
+    return row["intent_id"]
 
 
 def make_runtime(store):
@@ -121,6 +158,45 @@ class StandaloneConfigTests(unittest.TestCase):
         self.assertEqual(args.requested_exposure, 8.0)
 
 
+    def test_cli_parser_exposes_reliability_commands(self):
+        company_args = parser().parse_args(
+            [
+                "--provider",
+                "static",
+                "company",
+                "reliability",
+            ]
+        )
+        self.assertEqual(
+            company_args.company_cmd,
+            "reliability",
+        )
+        recovery_args = parser().parse_args(
+            [
+                "--provider",
+                "static",
+                "testnet-recover",
+            ]
+        )
+        self.assertEqual(
+            recovery_args.cmd,
+            "testnet-recover",
+        )
+        intents_args = parser().parse_args(
+            [
+                "--provider",
+                "static",
+                "execution-intents",
+                "--limit",
+                "25",
+            ]
+        )
+        self.assertEqual(
+            intents_args.limit,
+            25,
+        )
+
+
 class FantasyCityPresentationTests(unittest.TestCase):
     def test_mapper_exposes_all_fantasy_city_locations(self):
         with tempfile.TemporaryDirectory() as d:
@@ -174,6 +250,47 @@ class FantasyCityPresentationTests(unittest.TestCase):
             self.assertEqual(
                 city["locations"]["risk"]["technical_name"],
                 "CompanyRiskGovernor + StrategyDiversity",
+            )
+            store.close()
+
+    def test_mapper_flags_execution_reconciliation_in_chronicle(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "company.db")
+            caos = make_runtime(store)
+            policy = build_policy(
+                initial_company_capital=10,
+                trader_initial_bucket=10,
+                trader_stop_floor=3,
+                default_trader_max_exposure_pct=20,
+                operational_trader_cap=6,
+                company_max_drawdown_pct=30,
+            )
+            company = TradeCompany(
+                CAOSAdapter(caos),
+                policy,
+                store=store,
+            )
+            initialize_company(
+                company,
+                parse_scan_targets(
+                    "BTCUSDT:long:momentum"
+                ),
+            )
+            add_uncertain_execution_intent(company)
+            city = CityPresentationMapper().build(
+                company.status(),
+                improvements=company.improvement_proposals(),
+                recent_events=store.recent_events(20),
+            )
+            self.assertEqual(
+                city["locations"]["chronicle"]["state"],
+                "attention",
+            )
+            self.assertEqual(
+                city["execution_reliability"][
+                    "recovery_required"
+                ],
+                1,
             )
             store.close()
 
@@ -293,6 +410,7 @@ class CompanyDashboardTests(unittest.TestCase):
                 self.assertIn("Whispering Tankard", html)
                 self.assertIn("Grand Trading Guild", html)
                 self.assertIn("Arcane Nexus", html)
+                self.assertIn("Execution Reliability", html)
                 self.assertIn("guildAdventurers", html)
                 self.assertNotIn('data-tab="overview"', html)
                 self.assertNotIn("King Drizzt", html)
