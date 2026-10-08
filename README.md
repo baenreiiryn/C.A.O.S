@@ -173,6 +173,33 @@ The Cell Protocol never exposes broker credentials, raw orders, LIVE arming or k
 
 See [`docs/COMPANY_V3_CELL_PROTOCOL.md`](docs/COMPANY_V3_CELL_PROTOCOL.md).
 
+## Execution Fabric (Company V4)
+
+Trade Company and the original C.A.O.S paper runner share a versioned, venue-agnostic execution pipeline:
+
+```text
+StrategyDecision
+      ->
+TargetPosition
+      ->
+ExecutionPlan
+      -> paper / human-gated TESTNET / future venue adapters
+```
+
+`ExecutionPlan` expresses only the delta between current exposure and the allowed target. It supports hold, increase, reduce and close, with deterministic plan IDs.
+
+Research/backtest can produce target/plan traces using the same schema. Company Paper stores the latest plan per Trader and exposes it through:
+
+```bash
+caos --provider static company execution-plans
+```
+
+The fantasy city Trader detail also shows the latest Execution Plan.
+
+Bybit TESTNET can consume an ExecutionPlan only through the existing explicit human gate. LIVE execution remains unavailable.
+
+See [`docs/COMPANY_V4_EXECUTION_FABRIC.md`](docs/COMPANY_V4_EXECUTION_FABRIC.md).
+
 ## Bybit TESTNET
 
 TESTNET is a separate human-only execution surface. The client rejects production Bybit hosts in code and TESTNET orders require the exact confirmation `ARM TESTNET`.
