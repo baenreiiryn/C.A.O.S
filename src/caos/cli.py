@@ -243,6 +243,10 @@ def parser() -> argparse.ArgumentParser:
     trecover = sub.add_parser("testnet-recover")
     trecover.add_argument("--intent-id", default=None)
 
+    tabandon = sub.add_parser("testnet-abandon-missing")
+    tabandon.add_argument("intent_id")
+    tabandon.add_argument("--confirm", required=True)
+
     tnet = sub.add_parser("testnet-order")
     tnet.add_argument("--confirm", required=True)
     tnet.add_argument("--category", choices=["linear", "inverse", "spot"], default="linear")
@@ -873,6 +877,21 @@ def main() -> None:
                     "summary": journal.summary(),
                     "environment": "BYBIT_TESTNET_ONLY",
                 },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    elif args.cmd == "testnet-abandon-missing":
+        if args.confirm != "ABANDON MISSING TESTNET INTENT":
+            raise CompanyStandaloneError(
+                "explicit_abandon_confirmation_required"
+            )
+        journal = DurableExecutionJournal(c.store)
+        print(
+            json.dumps(
+                journal.abandon_not_found(
+                    args.intent_id
+                ),
                 indent=2,
                 ensure_ascii=False,
             )
