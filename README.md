@@ -143,6 +143,36 @@ The standalone dashboard defaults to `http://127.0.0.1:5191`. The existing techn
 
 Safe operator controls include Trader pause/resume, runtime Trader concurrency limit, per-Trader exposure configuration and emergency stop. The Company surface does not expose broker credentials, raw broker orders, LIVE arming or kill-switch reset.
 
+## Company Cell Protocol (V3)
+
+Trade Company is also exposed as the first generic autonomous **Company Cell**. This is the future integration boundary for Drizzt and for other independent companies.
+
+Generic cell inspection:
+
+```bash
+caos --provider static company cell-manifest
+caos --provider static company cell-status
+caos --provider static company cell-health
+caos --provider static company cell-metrics
+caos --provider static company cell-alerts
+caos --provider static company cell-report
+```
+
+Generic safe controls:
+
+```bash
+caos --provider static company cell-pause
+caos --provider static company cell-resume
+```
+
+The themed city HTTP server also exposes the versioned protocol under `/api/cell/v1/*`.
+
+Cell-wide pause blocks new opportunities, assignments, new risk entries and Trader expansion while continuing market refresh, audits, stop-floor handling and risk-reducing exits. Resume cannot bypass active Company or C.A.O.S kill switches.
+
+The Cell Protocol never exposes broker credentials, raw orders, LIVE arming or kill-switch reset.
+
+See [`docs/COMPANY_V3_CELL_PROTOCOL.md`](docs/COMPANY_V3_CELL_PROTOCOL.md).
+
 ## Bybit TESTNET
 
 TESTNET is a separate human-only execution surface. The client rejects production Bybit hosts in code and TESTNET orders require the exact confirmation `ARM TESTNET`.
