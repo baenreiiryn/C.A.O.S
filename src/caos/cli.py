@@ -337,6 +337,19 @@ def parser() -> argparse.ArgumentParser:
     rh.add_argument("--source", default="manual")
     rh.add_argument("--parent-strategy", default=None)
 
+    rfi = company_sub.add_parser("research-from-improvements")
+    rfi.add_argument("--symbol", required=True)
+    rfi.add_argument(
+        "--family",
+        required=True,
+        choices=[
+            "trend",
+            "mean_reversion",
+            "breakout",
+            "momentum",
+        ],
+    )
+
     rr = company_sub.add_parser("research-run")
     rr.add_argument("hypothesis_id")
     rr.add_argument("--generator", default="builtin_grid")
@@ -567,6 +580,14 @@ def main() -> None:
                     thesis=args.thesis,
                     source=args.source,
                     parent_strategy_id=args.parent_strategy,
+                )
+            )
+            return
+        if args.company_cmd == "research-from-improvements":
+            _print_json(
+                control.seed_research_from_improvements(
+                    symbol=args.symbol,
+                    family=args.family,
                 )
             )
             return
