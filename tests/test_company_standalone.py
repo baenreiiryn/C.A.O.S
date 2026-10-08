@@ -107,7 +107,7 @@ class StandaloneConfigTests(unittest.TestCase):
                 "company",
                 "set-exposure",
                 "A",
-                "--max",
+                "--max-exposure",
                 "20",
                 "--size",
                 "8",
