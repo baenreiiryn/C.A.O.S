@@ -702,6 +702,7 @@ class TradeCompany:
             "execution_reliability": (
                 {
                     **self.execution_reliability.summary(),
+                    "persistent": True,
                     "recent_intents": (
                         self.execution_reliability.list(
                             limit=20
