@@ -819,11 +819,6 @@ class CompanyPaperBook:
         requested_weight = (
             trader.requested_trade_exposure_pct() / 100.0
         )
-        decision = self.engine.current_decision(
-            strategy,
-            trader.market,
-            requested_weight=requested_weight,
-        )
         if self.company_risk.state.kill_switch:
             decision = decision_from_signal(
                 symbol=trader.market,
@@ -832,6 +827,12 @@ class CompanyPaperBook:
                 requested_weight=0.0,
                 as_of=latest_bar.ts,
                 reason="company_kill_switch",
+            )
+        else:
+            decision = self.engine.current_decision(
+                strategy,
+                trader.market,
+                requested_weight=requested_weight,
             )
 
         position = account.positions.get(trader.market)
@@ -1047,11 +1048,6 @@ class CompanyPaperBook:
         requested_weight = (
             trader.requested_trade_exposure_pct() / 100.0
         )
-        decision = self.engine.current_decision(
-            strategy,
-            trader.market,
-            requested_weight=requested_weight,
-        )
         if self.company_risk.state.kill_switch:
             decision = decision_from_signal(
                 symbol=trader.market,
@@ -1060,6 +1056,12 @@ class CompanyPaperBook:
                 requested_weight=0.0,
                 as_of=latest_bar.ts,
                 reason="company_kill_switch",
+            )
+        else:
+            decision = self.engine.current_decision(
+                strategy,
+                trader.market,
+                requested_weight=requested_weight,
             )
 
         position = account.positions.get(trader.market)
