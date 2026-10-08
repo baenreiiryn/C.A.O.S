@@ -459,6 +459,8 @@ function openTrader(id){
  const requested=t.trade_exposure_pct===null||t.trade_exposure_pct===undefined?t.max_trade_exposure_pct:t.trade_exposure_pct;
  const maxNotional=Number(bal)*Number(t.max_trade_exposure_pct||0)/100;
  const requestedNotional=Number(bal)*Number(requested||0)/100;
+ const fabric=currentStatus.execution_fabric||{};
+ const lastPlan=(fabric.last_plans||{})[id]||null;
  drawerTitle.textContent='Adventurer '+id;
  drawerTech.textContent='Trader '+id+' · '+t.status;
  let actions='';
@@ -468,6 +470,7 @@ function openTrader(id){
  drawerBody.innerHTML='<div class="story">'+traderAvatar(t.status)+' This adventurer is '+esc(t.status)+' and follows the real Trader state beneath the fantasy skin.</div>'+
  section('Current Quest','<div class="metric-grid">'+metric('Market',t.market||'none')+metric('Direction',t.direction||'—')+metric('Strategy',t.strategy_id||'—')+metric('Mode',t.mode)+'</div>')+
  section('Capital & Risk Seal','<div class="metric-grid">'+metric('Realized capital',money(bal))+metric('Open exposure',money(exp))+metric('Chosen sizing',pct(requested))+metric('Maximum exposure',pct(t.max_trade_exposure_pct))+metric('Requested notional',money(requestedNotional))+metric('Maximum notional',money(maxNotional))+'</div>')+
+ section('Execution Fabric',lastPlan?'<div class="metric-grid">'+metric('Fabric',fabric.version||'—')+metric('Plan action',lastPlan.action||'—')+metric('Desired target',money(lastPlan.desired_target_notional))+metric('Effective target',money(lastPlan.effective_target_notional))+metric('Order delta',money(lastPlan.order_notional))+metric('Risk reducing',lastPlan.risk_reducing?'YES':'NO')+'</div><div class="list-sub">Plan '+esc(lastPlan.plan_id||'')+'</div>':'<div class="empty">No execution plan has been produced for this Trader yet.</div>')+
  section('Guild Controls',actions+exposureControls)+
  '<details class="detail-section"><summary style="cursor:pointer;color:#f1d796;font-weight:700">Technical truth</summary>'+json({trader:t,paper:currentStatus.paper&&currentStatus.paper.accounts&&currentStatus.paper.accounts[id],assignment:currentStatus.assignments&&currentStatus.assignments[id]})+'</details>';
  drawer.classList.add('open');drawerBackdrop.classList.add('open');drawer.setAttribute('aria-hidden','false');
