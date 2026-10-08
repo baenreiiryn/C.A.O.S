@@ -73,6 +73,7 @@ class CompanyDaemon:
         interval: str = "60",
         candle_limit: int = 500,
         opportunity_ttl_ms: int = 3_600_000,
+        execution_service=None,
     ):
         if candle_limit <= 0:
             raise ValueError("candle_limit must be positive")
@@ -83,6 +84,7 @@ class CompanyDaemon:
         self.interval = interval
         self.candle_limit = int(candle_limit)
         self.opportunity_ttl_ms = int(opportunity_ttl_ms)
+        self.execution_service = execution_service
 
     def _symbols_to_refresh(self) -> list[str]:
         symbols = {target.symbol.upper() for target in self.targets}
@@ -261,7 +263,12 @@ class CompanyDaemon:
                     self.company.news_intelligence
                     .context_for(trader.market)
                 )
-                result = self.company.paper.cycle_trader(
+                cycle_runner = (
+                    self.execution_service
+                    if self.execution_service is not None
+                    else self.company.paper
+                )
+                result = cycle_runner.cycle_trader(
                     trader.id,
                     allow_new_risk=(
                         allow_new_risk
@@ -341,6 +348,13 @@ class CompanyDaemon:
             ):
                 break
             if self.company.paper.has_pending_order(trader.id):
+                continue
+            if (
+                self.execution_service is not None
+                and self.execution_service.has_outstanding(
+                    trader.id
+                )
+            ):
                 continue
             if (
                 decision.released_capital > 1e-9
