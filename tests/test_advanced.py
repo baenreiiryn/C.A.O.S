@@ -159,7 +159,7 @@ class AdvancedCoreTests(unittest.TestCase):
         self.assertGreater(c.roundtrip_cost_bps, 10)
 
     def test_public_orderbook_parser(self):
-        book = CostBinance().orderbook("BTCUSDT", limit=2)
+        book = CostBinance().orderbook("BTCUSDT", limit=5)
         self.assertEqual(book["bids"][0], [99.0, 2.0])
         self.assertEqual(book["asks"][0], [101.0, 1.0])
 
