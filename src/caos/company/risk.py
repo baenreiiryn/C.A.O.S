@@ -99,8 +99,8 @@ class CompanyRiskGovernor:
         if notional <= 0:
             raise CompanyRiskViolation("invalid_notional")
         trader = self.registry.get(trader_id)
-        if trader.status != TraderStatus.ACTIVE:
-            raise CompanyRiskViolation("trader_not_active")
+        if trader.status == TraderStatus.RETIRED:
+            raise CompanyRiskViolation("retired_trader")
         assignment = self.market_allocator.assignments.get(trader_id)
         if assignment is None:
             raise CompanyRiskViolation("market_not_assigned")
@@ -108,6 +108,8 @@ class CompanyRiskGovernor:
             raise CompanyRiskViolation("market_assignment_mismatch")
         if risk_reducing:
             return
+        if trader.status != TraderStatus.ACTIVE:
+            raise CompanyRiskViolation("trader_not_active")
         if self.state.kill_switch:
             raise CompanyRiskViolation("company_kill_switch_active")
         if self.drawdown_pct() >= self.policy.company_max_drawdown_pct:
