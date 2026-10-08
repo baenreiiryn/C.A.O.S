@@ -204,14 +204,14 @@ class TradeCompanyCell:
                 "company_equity",
                 "Company Equity",
                 values["company_equity"],
-                "currency",
+                "USD",
                 "finance",
             ).to_dict(),
             CellMetric(
                 "treasury_reserve",
                 "Treasury Reserve",
                 values["treasury_reserve"],
-                "currency",
+                "USD",
                 "finance",
             ).to_dict(),
             CellMetric(
@@ -232,14 +232,14 @@ class TradeCompanyCell:
                 "gross_exposure",
                 "Gross Exposure",
                 values["gross_exposure"],
-                "currency",
+                "USD",
                 "risk",
             ).to_dict(),
             CellMetric(
                 "company_drawdown_pct",
                 "Company Drawdown",
                 values["company_drawdown_pct"],
-                "percent",
+                "%",
                 "risk",
             ).to_dict(),
             CellMetric(
@@ -260,6 +260,7 @@ class TradeCompanyCell:
         return {
             "cell_id": self.manifest.cell_id,
             "values": values,
+            "items": descriptors,
             "metrics": descriptors,
         }
 
