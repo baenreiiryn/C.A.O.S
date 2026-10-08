@@ -588,6 +588,17 @@ class TradeCompany:
     ) -> list[dict]:
         bars = self.engine.bars(symbol)
         if not bars:
+            try:
+                self.engine.fetch_market(
+                    symbol,
+                    limit=500,
+                )
+            except Exception as exc:
+                raise TradeCompanyError(
+                    "rollout_market_data_required"
+                ) from exc
+            bars = self.engine.bars(symbol)
+        if not bars:
             raise TradeCompanyError("rollout_market_data_required")
         events = self.rollout.process_market(
             symbol,
