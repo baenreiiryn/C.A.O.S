@@ -118,6 +118,31 @@ Before forecast evidence is promoted into portfolio logic, C.A.O.S can walk-forw
 
 C.A.O.S includes a public Bybit kline client that requires no API key, a local SQLite store, portfolio scoring and a deterministic paper runner/daemon. The LLM is not called on every market tick.
 
+## Trade Company standalone
+
+The `feature/trade-company` branch adds a standalone Company layer above C.A.O.S. It owns Treasury, Trader lifecycle, market allocation, Company risk, per-Trader paper accounts, recovery and autonomous daemon operation. Drizzt is not required.
+
+Initialize once:
+
+```bash
+caos --provider static company init \
+  --company-capital 20 \
+  --targets "BTCUSDT:long:momentum,ETHUSDT:long:trend"
+```
+
+Then restore and operate from the saved checkpoint:
+
+```bash
+caos --provider static company status
+caos --provider static company once
+caos --provider static company run
+caos --provider static company dashboard
+```
+
+The standalone dashboard defaults to `http://127.0.0.1:5191`. The existing technical C.A.O.S dashboard remains on port 5190.
+
+Safe operator controls include Trader pause/resume, runtime Trader concurrency limit, per-Trader exposure configuration and emergency stop. The Company surface does not expose broker credentials, raw broker orders, LIVE arming or kill-switch reset.
+
 ## Bybit TESTNET
 
 TESTNET is a separate human-only execution surface. The client rejects production Bybit hosts in code and TESTNET orders require the exact confirmation `ARM TESTNET`.
