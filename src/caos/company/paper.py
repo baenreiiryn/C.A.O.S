@@ -1066,6 +1066,10 @@ class CompanyPaperBook:
 
     def force_flatten(self, trader_id: str) -> TraderPaperCycle:
         trader = self.registry.get(trader_id)
+        self.cancel_pending_order(
+            trader_id,
+            reason="force_flatten",
+        )
         account = self.accounts.get(trader_id)
         if account is None or not trader.market:
             return TraderPaperCycle(
@@ -1160,6 +1164,8 @@ class CompanyPaperBook:
             return
         if self.has_open_position(trader_id):
             raise CompanyPaperError("cannot_adjust_cash_with_open_position")
+        if self.has_pending_order(trader_id):
+            raise CompanyPaperError("cannot_adjust_cash_with_pending_order")
         nxt = account.cash + float(delta)
         if nxt < -1e-9:
             raise CompanyPaperError("paper_cash_cannot_be_negative")
@@ -1179,9 +1185,14 @@ class CompanyPaperBook:
     def remove_account_if_flat(self, trader_id: str) -> None:
         account = self.accounts.get(trader_id)
         if account is None:
+            self.pending_meta.pop(trader_id, None)
             return
         if self.has_open_position(trader_id):
             raise CompanyPaperError("cannot_remove_open_account")
+        self.cancel_pending_order(
+            trader_id,
+            reason="account_removed",
+        )
         del self.accounts[trader_id]
 
     def snapshot(self) -> dict:
@@ -1191,6 +1202,14 @@ class CompanyPaperBook:
             "visual_events": {
                 trader_id: [dict(row) for row in rows]
                 for trader_id, rows in self.visual_events.items()
+            },
+            "pending_meta": {
+                trader_id: dict(meta)
+                for trader_id, meta in self.pending_meta.items()
+            },
+            "order_events": {
+                trader_id: [dict(row) for row in rows]
+                for trader_id, rows in self.order_events.items()
             },
             "accounts": {
                 trader_id: {
@@ -1214,6 +1233,20 @@ class CompanyPaperBook:
             trader_id: [dict(row) for row in rows][-500:]
             for trader_id, rows in snapshot.get(
                 "visual_events",
+                {},
+            ).items()
+        }
+        self.pending_meta = {
+            trader_id: dict(meta)
+            for trader_id, meta in snapshot.get(
+                "pending_meta",
+                {},
+            ).items()
+        }
+        self.order_events = {
+            trader_id: [dict(row) for row in rows][-500:]
+            for trader_id, rows in snapshot.get(
+                "order_events",
                 {},
             ).items()
         }
@@ -1262,3 +1295,7 @@ class CompanyPaperBook:
                 risk.get("current_equity", broker.cash)
             )
             self.accounts[trader_id] = broker
+
+        for trader_id in list(self.pending_meta):
+            if self._active_pending_order(trader_id) is None:
+                self.pending_meta.pop(trader_id, None)
