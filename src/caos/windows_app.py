@@ -193,11 +193,31 @@ def validate_launcher_config(
         state_db = (data_dir or app_data_dir()) / state_db
 
     raw_profiles = merged.get("broker_profiles", [])
-    broker_profiles = (
-        [dict(row) for row in raw_profiles if isinstance(row, dict)]
-        if isinstance(raw_profiles, list)
-        else []
-    )
+    broker_profiles = []
+    if isinstance(raw_profiles, list):
+        for row in raw_profiles:
+            if not isinstance(row, dict):
+                continue
+            profile_id = str(row.get("id", "")).strip()
+            provider_name = str(
+                row.get("provider", "")
+            ).strip().lower()
+            environment = str(
+                row.get("environment", "")
+            ).strip().lower()
+            if not profile_id or not provider_name or not environment:
+                continue
+            broker_profiles.append(
+                {
+                    "id": profile_id,
+                    "label": str(
+                        row.get("label", profile_id)
+                    ).strip()
+                    or profile_id,
+                    "provider": provider_name,
+                    "environment": environment,
+                }
+            )
     active_broker_profile = merged.get(
         "active_broker_profile"
     )
