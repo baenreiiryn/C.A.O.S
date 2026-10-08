@@ -1,6 +1,6 @@
 # Trade Company Goal V2 — autonomous operating company
 
-Status: **IN DEVELOPMENT on `feature/trade-company`**.
+Status: **IMPLEMENTATION PASSING CI on `feature/trade-company` — local operator validation pending**.
 
 This Goal turns the already-created Trade Company architecture into an operating, recoverable Company that continuously coordinates independent Trader workers through the shared C.A.O.S engine.
 
