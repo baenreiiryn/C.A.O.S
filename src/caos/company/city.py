@@ -84,6 +84,8 @@ class CityPresentationMapper:
         )
         experiments = status.get("training", {})
         research = status.get("research_summary", {})
+        rollout = status.get("rollout_summary", {})
+        rollout_stages = rollout.get("stages", {})
         opportunities = status.get("opportunities", {})
         available = sum(
             row.get("status") == "available"
@@ -201,10 +203,22 @@ class CityPresentationMapper:
             loc(
                 "arena",
                 "Grand Tournament Arena",
-                "TrainingArena",
+                "TrainingArena + StrategyRolloutManager",
                 "Arena Master",
-                "active" if experiments else "quiet",
-                f"{len(experiments)} experiment(s) recorded.",
+                (
+                    "active"
+                    if (
+                        experiments
+                        or rollout.get("releases", 0)
+                    )
+                    else "quiet"
+                ),
+                (
+                    f"{len(experiments)} tournament(s); "
+                    f"{rollout_stages.get('paper_canary', 0)} canary, "
+                    f"{rollout_stages.get('eligible', 0)} eligible, "
+                    f"{rollout_stages.get('active', 0)} active release(s)."
+                ),
             ),
             loc(
                 "workshop",
@@ -283,5 +297,7 @@ class CityPresentationMapper:
             "improvements": improvements,
             "research": status.get("research", {}),
             "research_summary": research,
+            "rollout": status.get("rollout", {}),
+            "rollout_summary": rollout,
             "recent_events": events,
         }
