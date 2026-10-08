@@ -44,6 +44,7 @@ class TradeCompany:
         self.store = store if store is not None else engine.store
         self.effective_trader_limit = self.policy.operational_trader_cap
         self.operations_paused = False
+        self._resume_guard = None
         self.execution_reliability = (
             DurableExecutionJournal(self.store)
             if self.store is not None
@@ -110,6 +111,9 @@ class TradeCompany:
             paper=self.paper,
         )
         self.improvement = ImprovementManager()
+
+    def set_resume_guard(self, guard) -> None:
+        self._resume_guard = guard
 
     def _save(self) -> None:
         if self.store is not None:
@@ -507,6 +511,10 @@ class TradeCompany:
         return self.pause_operations()
 
     def resume_operations(self) -> dict:
+        if self._resume_guard is not None:
+            reason = self._resume_guard()
+            if reason:
+                raise TradeCompanyError(str(reason))
         if self.risk.state.kill_switch:
             raise TradeCompanyError(
                 "company_kill_switch_active_cannot_resume"
