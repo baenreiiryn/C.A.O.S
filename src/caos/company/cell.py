@@ -325,6 +325,7 @@ class TradeCompanyCell:
         health = self.get_health()
         metrics = self.get_metrics()["values"]
         alerts = self.get_alerts()
+        recent_events = self.get_recent_events(5)
         highlights = [
             (
                 f"Company equity {metrics['company_equity']:.4f}; "
@@ -353,6 +354,7 @@ class TradeCompanyCell:
             "highlights": highlights,
             "alert_count": len(alerts),
             "alerts": alerts[:5],
+            "recent_events": recent_events,
             "metrics": metrics,
             "ui": dict(self.manifest.ui),
         }
