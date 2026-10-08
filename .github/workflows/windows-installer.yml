@@ -1,0 +1,85 @@
+name: Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feature/windows-installer
+    paths:
+      - "src/caos/**"
+      - "installer/**"
+      - "pyproject.toml"
+      - ".github/workflows/windows-installer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: "x64"
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+          python -m pip install pyinstaller
+
+      - name: Run unit tests
+        shell: pwsh
+        run: python -m unittest discover -s tests -v
+
+      - name: Build GUI executable
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name CAOS-Trade-Company --collect-submodules caos --hidden-import tkinter --hidden-import tkinter.ttk --hidden-import tkinter.messagebox installer/company_app.py
+
+      - name: Build CLI executable
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --console --name caos --collect-submodules caos installer/cli_app.py
+
+      - name: Smoke test packaged CLI
+        shell: pwsh
+        run: |
+          $db = Join-Path $env:RUNNER_TEMP "caos-installer-smoke.db"
+          & .\dist\caos.exe --provider static --state-db $db status
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke test packaged GUI launcher
+        shell: pwsh
+        run: |
+          & .\dist\CAOS-Trade-Company.exe --self-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build CAOS Setup
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          & $iscc installer\caos.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify installer exists
+        shell: pwsh
+        run: |
+          if (-not (Test-Path ".\installer-output\CAOS-Setup.exe")) {
+            throw "CAOS-Setup.exe was not created"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CAOS-Windows-Installer
+          path: installer-output/CAOS-Setup.exe
+          if-no-files-found: error
