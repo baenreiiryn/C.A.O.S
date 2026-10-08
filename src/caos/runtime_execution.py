@@ -185,6 +185,50 @@ class RuntimeExecutionService:
             for trader_id in self.company.paper.accounts
         )
 
+    def real_open_positions(self) -> dict[str, float]:
+        net: dict[str, float] = {}
+        for row in self.list_proposals():
+            meta = row.get("meta") or {}
+            if (
+                row.get("environment") != "production-manual"
+                or not meta.get("mirrored")
+            ):
+                continue
+            qty = float(meta.get("fill_quantity") or 0.0)
+            trader_id = str(meta.get("trader_id", ""))
+            if not trader_id or qty <= 0:
+                continue
+            side = str(
+                (row.get("payload") or {}).get("side", "")
+            ).upper()
+            delta = qty if side == "BUY" else -qty
+            net[trader_id] = net.get(trader_id, 0.0) + delta
+        return {
+            trader_id: quantity
+            for trader_id, quantity in net.items()
+            if quantity > 1e-10
+        }
+
+    def resume_guard_reason(self) -> str | None:
+        if self.mode == "real-manual":
+            return None
+        if self.real_open_positions():
+            return "real_positions_require_real_manual_mode"
+        unresolved_real = self.list_proposals(
+            statuses=(
+                "submitting",
+                "acknowledged",
+                "uncertain",
+            )
+        )
+        if any(
+            row.get("environment") == "production-manual"
+            and not (row.get("meta") or {}).get("mirrored")
+            for row in unresolved_real
+        ):
+            return "unresolved_real_execution_requires_real_manual_mode"
+        return None
+
     def status(self) -> dict:
         profile = None
         try:
@@ -213,6 +257,8 @@ class RuntimeExecutionService:
                 for row in pending
             ),
             "unresolved": len(pending),
+            "real_open_positions": self.real_open_positions(),
+            "resume_blocked_reason": self.resume_guard_reason(),
         }
 
     def set_mode(
