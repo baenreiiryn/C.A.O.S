@@ -17,6 +17,7 @@ from .risk import CompanyRiskGovernor, CompanyRiskViolation
 from .adapter import CAOSAdapter
 from .company import TradeCompany
 from .city import CityPresentationMapper, CityLocation
+from .cell import TradeCompanyCell
 from .daemon import CompanyDaemon, CompanyDaemonCycle, ScanTarget
 from .control import CompanyControlPort
 from .diversity import StrategyDiversity
@@ -54,6 +55,7 @@ __all__ = [
     "OpportunityStatus",
     "StrategyDiversity",
     "TradeCompany",
+    "TradeCompanyCell",
     "TrainingArena",
     "TrainingVariant",
     "Trader",
