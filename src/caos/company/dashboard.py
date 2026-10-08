@@ -939,6 +939,7 @@ def serve_company(
     port: int = 5191,
     open_browser: bool = True,
     settings_service=None,
+    execution_service=None,
 ) -> ThreadingHTTPServer:
     mapper = CityPresentationMapper()
     cell = TradeCompanyCell(control)
@@ -1048,6 +1049,33 @@ def serve_company(
             if path == "/api/company/events":
                 self._json(200, control.get_recent_events(50))
                 return
+            if path == "/api/execution/status":
+                if execution_service is None:
+                    self._json(
+                        200,
+                        {
+                            "enabled": False,
+                            "mode": "paper",
+                        },
+                    )
+                else:
+                    self._json(
+                        200,
+                        {
+                            "enabled": True,
+                            **execution_service.status(),
+                        },
+                    )
+                return
+            if path == "/api/execution/proposals":
+                if execution_service is None:
+                    self._json(200, [])
+                else:
+                    self._json(
+                        200,
+                        execution_service.list_proposals(),
+                    )
+                return
             if path == "/api/settings":
                 if settings_service is None:
                     self._json(
@@ -1096,7 +1124,14 @@ def serve_company(
                     self._json(200, control.start_operations())
                     return
                 if path == "/api/company/stop":
-                    self._json(200, control.stop_operations())
+                    rejected = (
+                        execution_service.cancel_new_risk_proposals()
+                        if execution_service is not None
+                        else []
+                    )
+                    result = control.stop_operations()
+                    result["rejected_external_entries"] = rejected
+                    self._json(200, result)
                     return
                 if path == "/api/company/limit":
                     payload = self._read_json()
@@ -1108,7 +1143,59 @@ def serve_company(
                     )
                     return
                 if path == "/api/company/emergency-stop":
-                    self._json(200, control.emergency_stop())
+                    self._json(
+                        200,
+                        (
+                            execution_service.emergency_stop()
+                            if execution_service is not None
+                            else control.emergency_stop()
+                        ),
+                    )
+                    return
+                if path == "/api/execution/mode":
+                    if execution_service is None:
+                        raise RuntimeError(
+                            "runtime_execution_unavailable"
+                        )
+                    payload = self._read_json()
+                    self._json(
+                        200,
+                        execution_service.set_mode(
+                            str(payload.get("mode", "paper")),
+                            confirmation=str(
+                                payload.get("confirmation", "")
+                            ),
+                        ),
+                    )
+                    return
+                if path == "/api/execution/confirm":
+                    if execution_service is None:
+                        raise RuntimeError(
+                            "runtime_execution_unavailable"
+                        )
+                    payload = self._read_json()
+                    self._json(
+                        200,
+                        execution_service.confirm_real(
+                            str(payload["intent_id"]),
+                            confirmation=str(
+                                payload.get("confirmation", "")
+                            ),
+                        ),
+                    )
+                    return
+                if path == "/api/execution/reject":
+                    if execution_service is None:
+                        raise RuntimeError(
+                            "runtime_execution_unavailable"
+                        )
+                    payload = self._read_json()
+                    self._json(
+                        200,
+                        execution_service.reject_real(
+                            str(payload["intent_id"])
+                        ),
+                    )
                     return
                 if path.startswith("/api/settings/"):
                     if settings_service is None:
