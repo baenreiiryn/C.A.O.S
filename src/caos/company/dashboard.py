@@ -314,7 +314,7 @@ function updateHud(){
  hudTraders.textContent=String(c.trader_slots)+' / '+String(c.effective_trader_limit);
  hudRisk.textContent=currentStatus.risk&&currentStatus.risk.kill_switch?'WARD LOCK':pct(currentStatus.risk&&currentStatus.risk.drawdown_pct);
  healthRune.textContent='CITY '+String(c.health||'unknown').toUpperCase();
- healthRune.className='rune '+(c.mood==='healthy'?'ok':c.mood==='attention'?'warn':'bad');
+ healthRune.className='rune '+(c.mood==='healthy'?'ok':(c.mood==='attention'||c.mood==='paused')?'warn':'bad');
  alertRune.textContent=String(c.alerts)+' alert'+(c.alerts===1?'':'s');
  alertRune.className='rune '+(c.alerts?'warn':'ok');
  cityWorld.classList.toggle('emergency',!!c.emergency);
@@ -322,7 +322,8 @@ function updateHud(){
   healthy:['The Arcane Trading City prospers.','Wards stable. Guilds and institutions are operating normally.'],
   attention:['The city watch requests attention.','One or more institutions have raised an operational warning.'],
   critical:['Critical runes burn over the city.','A serious operational condition requires inspection.'],
-  emergency:['The city gates are sealed.','Emergency Stop is active. New risk is blocked by the wards.']
+  emergency:['The city gates are sealed.','Emergency Stop is active. New risk is blocked by the wards.'],
+  paused:['The city rests under a quiet bell.','Autonomous actions are paused; observation and health checks remain active.']
  };
  const m=messages[c.mood]||messages.attention;
  cityMoodTitle.textContent=m[0];cityMoodText.textContent=m[1];
