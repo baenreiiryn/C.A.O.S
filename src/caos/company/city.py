@@ -111,6 +111,18 @@ class CityPresentationMapper:
             for row in opportunities.values()
         )
         news = status.get("caos", {}).get("news", {})
+        news_intelligence = status.get(
+            "news_intelligence",
+            {},
+        )
+        news_contexts = news_intelligence.get(
+            "contexts",
+            {},
+        )
+        news_blocked = sum(
+            bool(row.get("block_new_risk"))
+            for row in news_contexts.values()
+        )
         experts = status.get("caos", {}).get("experts", {})
         reserve = float(status.get("treasury", {}).get("reserve", 0.0))
         spawn_capacity = int(status.get("treasury_spawn_capacity", 0))
@@ -210,11 +222,23 @@ class CityPresentationMapper:
             loc(
                 "tavern",
                 "The Whispering Tankard",
-                "News / Sentiment",
+                "News / Sentiment / NewsIntelligence",
                 "Bard of Rumors",
-                "active" if news.get("configured") else "quiet",
                 (
-                    f"{news.get('feeds', 0)} news feed(s) configured."
+                    "attention"
+                    if (
+                        news_blocked
+                        or news_intelligence.get("errors")
+                    )
+                    else (
+                        "active"
+                        if news.get("configured")
+                        else "quiet"
+                    )
+                ),
+                (
+                    f"{news.get('feeds', 0)} news feed(s); "
+                    f"{news_blocked} market(s) under news ward."
                     if news.get("configured")
                     else "No news messengers configured."
                 ),
@@ -330,5 +354,6 @@ class CityPresentationMapper:
             "rollout": status.get("rollout", {}),
             "rollout_summary": rollout,
             "execution_reliability": reliability,
+            "news_intelligence": news_intelligence,
             "recent_events": events,
         }
