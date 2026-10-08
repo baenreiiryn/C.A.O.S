@@ -7,6 +7,8 @@ from unittest.mock import patch
 from caos.company import (
     CAOSAdapter,
     CallableResearchGeneratorAdapter,
+    QlibResearchGeneratorAdapter,
+    RDAgentResearchGeneratorAdapter,
     ResearchCandidateGenerator,
     ResearchFactory,
     TradeCompany,
@@ -164,6 +166,18 @@ class ResearchFactoryDomainTests(unittest.TestCase):
                 "fake_qlib_bridge",
             )
             store.close()
+
+    def test_named_external_bridges_use_stable_provider_ids(self):
+        def generate(hypothesis, parent, limit):
+            del hypothesis, parent, limit
+            return []
+
+        qlib = QlibResearchGeneratorAdapter(generate)
+        rd_agent = RDAgentResearchGeneratorAdapter(generate)
+        self.assertEqual(qlib.name, "qlib")
+        self.assertEqual(rd_agent.name, "rd_agent")
+        self.assertIsInstance(qlib, ResearchCandidateGenerator)
+        self.assertIsInstance(rd_agent, ResearchCandidateGenerator)
 
     def test_real_evaluation_uses_backtest_robustness_and_fabric_trace(self):
         with tempfile.TemporaryDirectory() as d:
@@ -481,6 +495,57 @@ class ResearchFactoryCompanyTests(unittest.TestCase):
             self.assertEqual(
                 restored.research.summary()["hypotheses"],
                 0,
+            )
+            store.close()
+
+    def test_improvement_manager_seeds_research_without_running_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, company = make_company(d)
+            proposal = {
+                "id": "improve-1",
+                "kind": "run_diversity_experiment",
+                "target": None,
+                "reason": "Portfolio concentration is elevated.",
+                "requires_human": False,
+                "metadata": {},
+            }
+            fills_before = sum(
+                len(account.fills)
+                for account in company.paper.accounts.values()
+            )
+            with patch.object(
+                company,
+                "improvement_proposals",
+                return_value=[proposal],
+            ):
+                first = company.seed_research_from_improvements(
+                    symbol="BTCUSDT",
+                    family="momentum",
+                )
+                second = company.seed_research_from_improvements(
+                    symbol="BTCUSDT",
+                    family="momentum",
+                )
+            self.assertEqual(len(first), 1)
+            self.assertEqual(second, [])
+            self.assertEqual(
+                company.research.summary()["hypotheses"],
+                1,
+            )
+            self.assertEqual(
+                company.research.summary()["candidates"],
+                0,
+            )
+            self.assertEqual(
+                company.research.summary()["promotion_decisions"],
+                0,
+            )
+            self.assertEqual(
+                sum(
+                    len(account.fills)
+                    for account in company.paper.accounts.values()
+                ),
+                fills_before,
             )
             store.close()
 
