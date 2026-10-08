@@ -279,6 +279,20 @@ class CallableResearchGeneratorAdapter:
         return rows
 
 
+class QlibResearchGeneratorAdapter(CallableResearchGeneratorAdapter):
+    """Dependency-free bridge point for a future Qlib generator callback."""
+
+    def __init__(self, generate_fn):
+        super().__init__("qlib", generate_fn)
+
+
+class RDAgentResearchGeneratorAdapter(CallableResearchGeneratorAdapter):
+    """Dependency-free bridge point for a future RD-Agent callback."""
+
+    def __init__(self, generate_fn):
+        super().__init__("rd_agent", generate_fn)
+
+
 def _candidate_id(
     hypothesis_id: str,
     generator: str,
@@ -359,6 +373,47 @@ class ResearchFactory:
         )
         self.hypotheses[hypothesis.id] = hypothesis
         return hypothesis
+
+    def seed_from_improvement_proposals(
+        self,
+        proposals: list[dict],
+        *,
+        symbol: str,
+        family: str,
+    ) -> list[ResearchHypothesis]:
+        """Turn research-relevant improvement proposals into hypotheses only.
+
+        This never runs candidates or promotes strategies by itself.
+        """
+        family = family.strip().lower()
+        if family not in SUPPORTED_FAMILIES:
+            raise ResearchFactoryError("unsupported_strategy_family")
+        created: list[ResearchHypothesis] = []
+        existing_sources = {
+            hypothesis.source
+            for hypothesis in self.hypotheses.values()
+        }
+        for proposal in proposals:
+            if proposal.get("kind") != "run_diversity_experiment":
+                continue
+            proposal_id = str(proposal.get("id", "unknown"))
+            source = f"improvement:{proposal_id}"
+            if source in existing_sources:
+                continue
+            hypothesis = self.submit_hypothesis(
+                symbol=symbol,
+                family=family,
+                thesis=str(
+                    proposal.get(
+                        "reason",
+                        "Investigate portfolio diversity.",
+                    )
+                ),
+                source=source,
+            )
+            created.append(hypothesis)
+            existing_sources.add(source)
+        return created
 
     def generate_candidates(
         self,
