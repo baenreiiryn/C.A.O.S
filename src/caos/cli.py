@@ -320,6 +320,21 @@ def parser() -> argparse.ArgumentParser:
     company_sub.add_parser("audit")
     company_sub.add_parser("execution-plans")
     company_sub.add_parser("research")
+    company_sub.add_parser("rollout")
+    company_sub.add_parser("rollout-sync")
+
+    rp = company_sub.add_parser("rollout-process")
+    rp.add_argument("--symbol", required=True)
+
+    ra = company_sub.add_parser("rollout-activate")
+    ra.add_argument("release_id")
+
+    rrback = company_sub.add_parser("rollout-rollback")
+    rrback.add_argument("release_id")
+    rrback.add_argument(
+        "--reason",
+        default="manual_rollback",
+    )
 
     rh = company_sub.add_parser("research-hypothesis")
     rh.add_argument("--symbol", required=True)
@@ -571,6 +586,34 @@ def main() -> None:
             return
         if args.company_cmd == "research":
             _print_json(control.get_research())
+            return
+        if args.company_cmd == "rollout":
+            _print_json(control.get_strategy_rollouts())
+            return
+        if args.company_cmd == "rollout-sync":
+            _print_json(control.sync_strategy_rollouts())
+            return
+        if args.company_cmd == "rollout-process":
+            _print_json(
+                control.process_strategy_rollouts(
+                    args.symbol
+                )
+            )
+            return
+        if args.company_cmd == "rollout-activate":
+            _print_json(
+                control.activate_strategy_release(
+                    args.release_id
+                )
+            )
+            return
+        if args.company_cmd == "rollout-rollback":
+            _print_json(
+                control.rollback_strategy_release(
+                    args.release_id,
+                    reason=args.reason,
+                )
+            )
             return
         if args.company_cmd == "research-hypothesis":
             _print_json(
