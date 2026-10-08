@@ -626,7 +626,8 @@ async function openExecution(){
   drawerTech.textContent='Human-only runtime mode · '+executionModeLabel(mode);
   let modeButtons='<div class="control-row"><button class="btn" onclick="setExecutionMode(\'paper\')">PAPER</button><button class="btn" onclick="setExecutionMode(\'testnet\')">BINANCE TESTNET</button><button class="btn danger" onclick="setExecutionMode(\'real-manual\')">BINANCE REAL</button></div>';
   let body='<div class="story">Only this local UI can change the execution mode. The LLM and Company Cell do not receive a mode-switch or order-confirmation command.</div>';
-  body+=section('Execution Mode','<div class="metric-grid">'+metric('Current mode',executionModeLabel(mode))+metric('Resets on restart',currentExecution.resets_to_paper_on_restart?'PAPER':'—')+metric('Pending confirmations',currentExecution.pending_confirmations||0)+metric('Unresolved intents',currentExecution.unresolved||0)+'</div>'+modeButtons+'<div class="list-sub">Mode changes require the Company to be STOPPED and the internal execution ledger to be flat.</div>');
+  body+=section('Execution Mode','<div class="metric-grid">'+metric('Current mode',executionModeLabel(mode))+metric('Resets on restart',currentExecution.resets_to_paper_on_restart?'PAPER':'—')+metric('Pending confirmations',currentExecution.pending_confirmations||0)+metric('Unresolved intents',currentExecution.unresolved||0)+'</div>'+modeButtons+'<div class="list-sub">PAPER/TESTNET changes require STOPPED + flat. REAL may be re-armed from STOPPING only when every open position is a previously confirmed REAL position.</div>');
+  if(currentExecution.resume_blocked_reason)body+='<div class="execution-warning"><b>START BLOCKED</b><br>'+esc(currentExecution.resume_blocked_reason)+'<br>Re-arm REAL · MANUAL to manage the persisted production exposure.</div>';
   body+=section('Active Broker','<div class="metric-grid">'+metric('Profile',broker.label||'none')+metric('Environment',broker.environment||'—')+'</div>');
   if(mode==='real-manual')body+='<div class="execution-warning"><b>REAL MONEY MODE</b><br>Agents may create proposals, but no production order is submitted until you click Confirm Order for that exact intent. Restarting Trade Company returns the runtime to PAPER.</div>';
   const realRows=proposals.filter(function(x){return x.environment==='production-manual'}).slice(0,30);
@@ -690,7 +691,7 @@ function updateHud(){
  const opState=String(currentStatus.operational_state||c.operational_state||(currentStatus.operations_paused?'stopped':'running'));
  operationRune.textContent=opState.replaceAll('_',' ').toUpperCase();
  operationRune.className='rune '+(opState==='running'?'ok':(opState==='stopping'||opState==='stopped'?'warn':'bad'));
- startOpsBtn.disabled=(opState==='running'||opState==='emergency_stopped');
+ startOpsBtn.disabled=(opState==='running'||opState==='emergency_stopped'||!!(currentExecution&&currentExecution.resume_blocked_reason));
  stopOpsBtn.disabled=(opState==='stopping'||opState==='stopped'||opState==='emergency_stopped');
  emergencyOpsBtn.disabled=(opState==='emergency_stopped');
  const messages={
