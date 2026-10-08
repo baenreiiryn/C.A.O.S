@@ -128,6 +128,38 @@ class CompanyCheckpoint:
         for trader_id in company.paper.accounts:
             company.registry.get(trader_id)
 
+        for symbol, strategy_id in company.research.champions.items():
+            try:
+                company.strategies.get(strategy_id)
+            except Exception as exc:
+                raise CompanyCheckpointError(
+                    "research_champion_strategy_missing"
+                ) from exc
+            if not symbol:
+                raise CompanyCheckpointError(
+                    "research_champion_symbol_invalid"
+                )
+
+        for candidate in company.research.candidates.values():
+            if candidate.hypothesis_id not in company.research.hypotheses:
+                raise CompanyCheckpointError(
+                    "research_candidate_hypothesis_missing"
+                )
+            if (
+                candidate.evaluation_id is not None
+                and candidate.evaluation_id
+                not in company.research.evaluations
+            ):
+                raise CompanyCheckpointError(
+                    "research_candidate_evaluation_missing"
+                )
+
+        for evaluation in company.research.evaluations.values():
+            if evaluation.candidate_id not in company.research.candidates:
+                raise CompanyCheckpointError(
+                    "research_evaluation_candidate_missing"
+                )
+
         mismatches = company.paper.audit_reconciliation()
         if mismatches:
             raise CompanyCheckpointError(
