@@ -217,7 +217,7 @@ class NewsIntelligenceTests(unittest.TestCase):
                         "BTC withdrawals suspended after breach"
                     ),
                     "link": "https://example.com/a",
-                    "source": "https://example.com/feed",
+                    "source": "https://www.coindesk.com/arc/outboundfeeds/rss/",
                     "published": "2026-10-09T10:00:00+00:00",
                     "sentiment": {
                         "signed_score": -0.9
@@ -245,6 +245,45 @@ class NewsIntelligenceTests(unittest.TestCase):
         )
         self.assertFalse(eth["block_new_risk"])
 
+    def test_custom_source_cannot_hard_block_new_risk_alone(self):
+        analyzer = FakeAnalyzer(
+            [
+                {
+                    "title": (
+                        "Bitcoin exchange hack suspends withdrawals"
+                    ),
+                    "summary": "BTC breach and trading halt",
+                    "link": "https://custom.example/a",
+                    "source": "https://custom.example/feed",
+                    "published": "2026-10-09T10:30:00+00:00",
+                    "sentiment": {
+                        "signed_score": -0.95
+                    },
+                }
+            ]
+        )
+        caos = type(
+            "FakeCAOS",
+            (),
+            {"news_analyzer": analyzer},
+        )()
+        intel = CompanyNewsIntelligence(caos)
+        ctx = intel.refresh(
+            ["BTCUSDT"],
+            now=1_000_000,
+        )["contexts"]["BTCUSDT"]
+        self.assertFalse(ctx["block_new_risk"])
+        self.assertEqual(ctx["severity"], "medium")
+        self.assertGreater(
+            ctx["score_penalty"],
+            0.0,
+        )
+        self.assertFalse(
+            ctx["headlines"][0][
+                "trusted_source"
+            ]
+        )
+
     def test_positive_news_never_adds_risk_or_score_bonus(self):
         analyzer = FakeAnalyzer(
             [
@@ -254,7 +293,7 @@ class NewsIntelligenceTests(unittest.TestCase):
                     ),
                     "summary": "BTC sees record inflows",
                     "link": "https://example.com/b",
-                    "source": "https://example.com/feed",
+                    "source": "https://www.coindesk.com/arc/outboundfeeds/rss/",
                     "published": "2026-10-09T11:00:00+00:00",
                     "sentiment": {
                         "signed_score": 0.95
@@ -331,7 +370,7 @@ class CompanyNewsDaemonTests(unittest.TestCase):
                     ),
                     "summary": "BTC market under attack",
                     "link": "https://example.com/c",
-                    "source": "https://example.com/feed",
+                    "source": "https://www.coindesk.com/arc/outboundfeeds/rss/",
                     "published": "2026-10-09T12:00:00+00:00",
                     "sentiment": {
                         "signed_score": -0.95
