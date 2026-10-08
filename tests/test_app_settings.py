@@ -148,9 +148,9 @@ class BrokerSettingsTests(unittest.TestCase):
         service, _, config, persisted, vault = make_service()
         profile = service.save_broker_profile(
             profile_id=None,
-            label="My Bybit TESTNET",
-            provider="bybit",
-            environment="testnet",
+            label="My Binance Spot TESTNET",
+            provider="binance",
+            environment="spot-testnet",
             api_key="broker-key",
             api_secret="broker-secret",
         )
@@ -179,34 +179,51 @@ class BrokerSettingsTests(unittest.TestCase):
         self.assertNotIn("broker-key", serialized)
         self.assertNotIn("broker-secret", serialized)
 
-    def test_unsupported_adapter_profile_can_be_saved_but_not_activated(self):
+    def test_bybit_profile_is_rejected_after_migration(self):
+        service, *_ = make_service()
+        with self.assertRaises(SettingsError):
+            service.save_broker_profile(
+                profile_id=None,
+                label="Legacy Bybit",
+                provider="bybit",
+                environment="testnet",
+                api_key="key",
+                api_secret="secret",
+            )
+
+    def test_binance_production_readonly_profile_can_be_active(self):
         service, *_ = make_service()
         profile = service.save_broker_profile(
             profile_id=None,
-            label="Future Binance",
+            label="Binance Japan",
             provider="binance",
-            environment="testnet",
+            environment="production-readonly",
             api_key="key",
             api_secret="secret",
         )
-        with self.assertRaises(SettingsError):
-            service.set_active_broker(profile["id"])
+        brokers = service.set_active_broker(
+            profile["id"]
+        )
+        self.assertEqual(
+            brokers["active_profile_id"],
+            profile["id"],
+        )
 
     def test_switch_is_blocked_by_unresolved_external_intents(self):
         service, *_ = make_service(recovery_required=1)
         first = service.save_broker_profile(
             profile_id=None,
-            label="Bybit A",
-            provider="bybit",
-            environment="testnet",
+            label="Binance A",
+            provider="binance",
+            environment="spot-testnet",
             api_key="a",
             api_secret="a-secret",
         )
         second = service.save_broker_profile(
             profile_id=None,
-            label="Bybit B",
-            provider="bybit",
-            environment="testnet",
+            label="Binance B",
+            provider="binance",
+            environment="spot-testnet",
             api_key="b",
             api_secret="b-secret",
         )
@@ -214,13 +231,62 @@ class BrokerSettingsTests(unittest.TestCase):
         with self.assertRaises(SettingsError):
             service.set_active_broker(second["id"])
 
+    def test_legacy_bybit_profiles_are_removed_from_runtime_metadata(self):
+        config = {
+            "version": 1,
+            "provider": "static",
+            "model": "qwen3:8b",
+            "base_url": "",
+            "broker_profiles": [
+                {
+                    "id": "legacy",
+                    "label": "Legacy",
+                    "provider": "bybit",
+                    "environment": "testnet",
+                }
+            ],
+            "active_broker_profile": "legacy",
+        }
+        saved = []
+
+        def persist(proposal):
+            row = dict(proposal)
+            saved.append(row)
+            return row
+
+        service = RuntimeSettingsService(
+            SimpleNamespace(
+                llm=StaticLLM(
+                    '{"tool":"status","args":{}}'
+                )
+            ),
+            SimpleNamespace(
+                execution_reliability=FakeReliability()
+            ),
+            config,
+            persist,
+            MemoryCredentialVault(),
+        )
+        settings = service.get_settings()
+        self.assertEqual(
+            settings["brokers"]["profiles"],
+            [],
+        )
+        self.assertIsNone(
+            settings["brokers"]["active_profile_id"]
+        )
+        self.assertEqual(
+            saved[-1]["broker_profiles"],
+            [],
+        )
+
     def test_active_profile_cannot_be_deleted(self):
         service, *_ = make_service()
         profile = service.save_broker_profile(
             profile_id=None,
-            label="Bybit",
-            provider="bybit",
-            environment="testnet",
+            label="Binance",
+            provider="binance",
+            environment="spot-testnet",
             api_key="key",
             api_secret="secret",
         )
