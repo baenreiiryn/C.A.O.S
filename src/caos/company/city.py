@@ -86,6 +86,10 @@ class CityPresentationMapper:
         research = status.get("research_summary", {})
         rollout = status.get("rollout_summary", {})
         rollout_stages = rollout.get("stages", {})
+        reliability = status.get(
+            "execution_reliability",
+            {},
+        )
         opportunities = status.get("opportunities", {})
         available = sum(
             row.get("status") == "available"
@@ -252,10 +256,21 @@ class CityPresentationMapper:
             loc(
                 "chronicle",
                 "Chronicle Vault",
-                "CompanyCheckpoint + Store",
+                "CompanyCheckpoint + Store + ExecutionReliabilityJournal",
                 "Keeper of Chronicles",
-                "active" if events else "quiet",
-                f"{len(events)} recent persisted event(s) available.",
+                (
+                    "attention"
+                    if reliability.get(
+                        "recovery_required",
+                        0,
+                    )
+                    else ("active" if events else "quiet")
+                ),
+                (
+                    f"{len(events)} persisted event(s); "
+                    f"{reliability.get('total', 0)} execution intent(s), "
+                    f"{reliability.get('recovery_required', 0)} require reconciliation."
+                ),
             ),
         ]
 
@@ -299,5 +314,6 @@ class CityPresentationMapper:
             "research_summary": research,
             "rollout": status.get("rollout", {}),
             "rollout_summary": rollout,
+            "execution_reliability": reliability,
             "recent_events": events,
         }
