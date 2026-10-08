@@ -7,7 +7,12 @@ import urllib.request
 from pathlib import Path
 
 from caos.cli import parser
-from caos.company import CAOSAdapter, CityPresentationMapper, TradeCompany
+from caos.company import (
+    CAOSAdapter,
+    CityPresentationMapper,
+    Opportunity,
+    TradeCompany,
+)
 from caos.company.control import CompanyControlPort
 from caos.company.dashboard import serve_company
 from caos.company.research import PromotionDecision
@@ -21,7 +26,7 @@ from caos.company.standalone import (
     save_runtime_config,
     targets_from_runtime_config,
 )
-from caos.domain import Mandate, StrategySpec
+from caos.domain import Mandate, MarketBar, StrategySpec
 from caos.execution_fabric import (
     decision_from_signal,
     plan_execution,
@@ -621,6 +626,107 @@ class FantasyCityPresentationTests(unittest.TestCase):
             store.close()
 
 
+class PaperTraderChartTests(unittest.TestCase):
+    def test_chart_records_paper_fill_and_survives_restore(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "company.db")
+            caos = make_runtime(store)
+            policy = build_policy(
+                initial_company_capital=10,
+                trader_initial_bucket=10,
+                trader_stop_floor=3,
+                default_trader_max_exposure_pct=20,
+                operational_trader_cap=6,
+                company_max_drawdown_pct=30,
+            )
+            company = TradeCompany(
+                CAOSAdapter(caos),
+                policy,
+                store=store,
+            )
+            initialize_company(
+                company,
+                parse_scan_targets(
+                    "BTCUSDT:long:momentum"
+                ),
+            )
+            bars = [
+                MarketBar(
+                    ts=1_700_000_000_000 + i * 60_000,
+                    open=100.0 + i * 0.2,
+                    high=100.15 + i * 0.2,
+                    low=99.85 + i * 0.2,
+                    close=100.1 + i * 0.2,
+                    volume=1000.0,
+                )
+                for i in range(120)
+            ]
+            caos.load_bars("BTCUSDT", bars)
+            company.publish_opportunity(
+                Opportunity(
+                    id="chart-btc",
+                    symbol="BTCUSDT",
+                    direction="long",
+                    score=90.0,
+                    strategy_candidates=("momentum",),
+                )
+            )
+            company.assign_best("A", now=bars[-1].ts)
+
+            result = company.paper.cycle_trader("A")
+            self.assertEqual(result.action, "open_long")
+
+            chart = company.paper.chart_snapshot(
+                "A",
+                limit=120,
+            )
+            self.assertEqual(
+                chart["version"],
+                "paper-trader-chart/v1",
+            )
+            self.assertEqual(chart["phase"], "in_position")
+            self.assertEqual(chart["symbol"], "BTCUSDT")
+            self.assertEqual(len(chart["bars"]), 120)
+            self.assertEqual(len(chart["indicators"]["ma7"]), 114)
+            self.assertEqual(len(chart["indicators"]["ma25"]), 96)
+            self.assertEqual(len(chart["indicators"]["ma99"]), 22)
+            self.assertEqual(len(chart["markers"]), 1)
+            self.assertEqual(chart["markers"][0]["kind"], "buy")
+            self.assertEqual(
+                chart["markers"][0]["action"],
+                "open_long",
+            )
+            self.assertEqual(
+                chart["markers"][0]["ts"],
+                bars[-1].ts,
+            )
+            self.assertGreater(
+                chart["position"]["quantity"],
+                0,
+            )
+
+            company.checkpoint()
+            restored = TradeCompany(
+                CAOSAdapter(caos),
+                policy,
+                store=store,
+            )
+            self.assertTrue(restored.restore_checkpoint())
+            restored_chart = restored.paper.chart_snapshot(
+                "A",
+                limit=120,
+            )
+            self.assertEqual(
+                restored_chart["markers"],
+                chart["markers"],
+            )
+            self.assertEqual(
+                restored_chart["phase"],
+                "in_position",
+            )
+            store.close()
+
+
 class CompanyDashboardTests(unittest.TestCase):
     def test_dashboard_reads_only_safe_company_surface(self):
         with tempfile.TemporaryDirectory() as d:
@@ -683,6 +789,23 @@ class CompanyDashboardTests(unittest.TestCase):
                     city = json.loads(
                         response.read().decode("utf-8")
                     )
+
+                with urllib.request.urlopen(
+                    base + "/api/company/traders/A/chart?limit=80",
+                    timeout=2,
+                ) as response:
+                    chart = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertEqual(
+                    chart["version"],
+                    "paper-trader-chart/v1",
+                )
+                self.assertEqual(
+                    chart["phase"],
+                    "waiting_assignment",
+                )
+                self.assertEqual(chart["bars"], [])
 
                 with urllib.request.urlopen(
                     base + "/api/company/reliability",
@@ -880,6 +1003,9 @@ class CompanyDashboardTests(unittest.TestCase):
                     html,
                 )
                 self.assertIn("guildAdventurers", html)
+                self.assertIn("Live PAPER Chart", html)
+                self.assertIn("renderTraderChart", html)
+                self.assertIn("WAITING ENTRY", html)
                 self.assertNotIn('data-tab="overview"', html)
                 self.assertNotIn("King Drizzt", html)
 
