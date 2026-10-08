@@ -1,13 +1,24 @@
 import hashlib
 import hmac
+import tempfile
 import urllib.parse
 import unittest
+from pathlib import Path
 
 from caos.compliance import ComplianceEngine, ComplianceViolation
+from caos.execution_fabric import (
+    decision_from_signal,
+    plan_execution,
+    resolve_target_position,
+)
+from caos.execution_reliability import DurableExecutionJournal
+from caos.store import Store
 from caos.testnet import (
     BinanceSpotClient,
     HumanTestnetExecutor,
+    ManualProductionExecutor,
     TestnetError,
+    execution_plan_to_binance_order,
 )
 
 
@@ -187,6 +198,108 @@ class BinanceSpotTestnetTests(unittest.TestCase):
                 order_type="MARKET",
                 qty="0.001",
             )
+
+    def test_production_manual_requires_per_order_confirmation(self):
+        with tempfile.TemporaryDirectory() as d:
+            calls = {"count": 0}
+
+            def transport(method, url, data, headers):
+                del method, url, headers
+                calls["count"] += 1
+                body = dict(
+                    urllib.parse.parse_qsl(
+                        data.decode()
+                    )
+                )
+                qty = body["quantity"]
+                return {
+                    "symbol": body["symbol"],
+                    "orderId": 99,
+                    "clientOrderId": body[
+                        "newClientOrderId"
+                    ],
+                    "origQty": qty,
+                    "executedQty": qty,
+                    "cummulativeQuoteQty": "2.0",
+                    "status": "FILLED",
+                    "type": body["type"],
+                    "side": body["side"],
+                }
+
+            blocked = BinanceSpotClient(
+                "key",
+                "secret",
+                environment="production-manual",
+                transport=transport,
+            )
+            with self.assertRaises(TestnetError):
+                blocked.place_order(
+                    symbol="BTCUSDT",
+                    side="BUY",
+                    order_type="MARKET",
+                    qty="0.001",
+                )
+            self.assertEqual(calls["count"], 0)
+
+            store = Store(Path(d) / "manual.db")
+            decision = decision_from_signal(
+                symbol="BTCUSDT",
+                strategy_id="manual-live",
+                signal="long",
+                requested_weight=0.2,
+                as_of=1,
+            )
+            target = resolve_target_position(
+                decision,
+                equity=10.0,
+                max_notional=2.0,
+            )
+            plan = plan_execution(
+                target,
+                current_notional=0.0,
+                reference_price=2000.0,
+            )
+            journal = DurableExecutionJournal(
+                store,
+                venue="binance",
+                environment="production-manual",
+            )
+            intent = journal.prepare(
+                plan,
+                execution_plan_to_binance_order(plan),
+            )
+            client = BinanceSpotClient(
+                "key",
+                "secret",
+                environment="production-manual",
+                transport=transport,
+                allow_manual_production_orders=True,
+            )
+            executor = ManualProductionExecutor(
+                ComplianceEngine(),
+                client,
+                journal,
+            )
+
+            with self.assertRaises(ComplianceViolation):
+                executor.submit_intent(
+                    intent["intent_id"],
+                    confirmation="CONFIRM SOMETHING ELSE",
+                )
+            self.assertEqual(calls["count"], 0)
+
+            confirmed = executor.submit_intent(
+                intent["intent_id"],
+                confirmation=(
+                    "CONFIRM " + intent["intent_id"]
+                ),
+            )
+            self.assertEqual(
+                confirmed["status"],
+                "acknowledged",
+            )
+            self.assertEqual(calls["count"], 1)
+            store.close()
 
     def test_human_gate_required_for_testnet_order(self):
         compliance = ComplianceEngine()
