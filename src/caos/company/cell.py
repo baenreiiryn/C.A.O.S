@@ -172,6 +172,7 @@ class TradeCompanyCell:
         risk = status.get("risk", {})
         traders = status.get("traders", {})
         opportunities = status.get("opportunities", {})
+        research = status.get("research_summary", {})
         values = {
             "company_equity": status.get(
                 "marked_company_equity",
@@ -197,6 +198,17 @@ class TradeCompanyCell:
             "opportunities": len(opportunities),
             "alerts": len(
                 status.get("audit", {}).get("alerts", [])
+            ),
+            "research_hypotheses": research.get(
+                "hypotheses",
+                0,
+            ),
+            "research_candidates": research.get(
+                "candidates",
+                0,
+            ),
+            "research_champions": len(
+                research.get("champions", {})
             ),
         }
         descriptors = [
@@ -255,6 +267,27 @@ class TradeCompanyCell:
                 values["alerts"],
                 "count",
                 "health",
+            ).to_dict(),
+            CellMetric(
+                "research_hypotheses",
+                "Research Hypotheses",
+                values["research_hypotheses"],
+                "count",
+                "research",
+            ).to_dict(),
+            CellMetric(
+                "research_candidates",
+                "Research Candidates",
+                values["research_candidates"],
+                "count",
+                "research",
+            ).to_dict(),
+            CellMetric(
+                "research_champions",
+                "Research Champions",
+                values["research_champions"],
+                "count",
+                "research",
             ).to_dict(),
         ]
         return {
