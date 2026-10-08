@@ -1,6 +1,6 @@
 # Windows Installer
 
-C.A.O.S v0.8.3 ships a self-contained Windows installer for the standalone Trade Company with a managed Ollama runtime, visual PAPER Trader chart V2 and explicit Start / graceful Stop / Emergency Stop controls.
+C.A.O.S v0.8.4 ships a self-contained Windows installer for the standalone Trade Company with managed Ollama, visual Trader charts, explicit Start / graceful Stop / Emergency Stop controls, and a local execution gate for PAPER, Binance Spot TESTNET, and human-confirmed Binance production orders.
 
 ## What gets installed
 
