@@ -8,6 +8,7 @@ import random
 import time
 
 from .dashboard import serve
+from .company.cell import TradeCompanyCell
 from .company.control import CompanyControlPort
 from .company.dashboard import serve_company
 from .company.domain import TraderMode
@@ -357,6 +358,14 @@ def parser() -> argparse.ArgumentParser:
     cresume = company_sub.add_parser("resume")
     cresume.add_argument("trader_id")
     company_sub.add_parser("emergency-stop")
+    company_sub.add_parser("cell-manifest")
+    company_sub.add_parser("cell-status")
+    company_sub.add_parser("cell-health")
+    company_sub.add_parser("cell-metrics")
+    company_sub.add_parser("cell-alerts")
+    company_sub.add_parser("cell-report")
+    company_sub.add_parser("cell-pause")
+    company_sub.add_parser("cell-resume")
 
     return p
 
@@ -477,6 +486,32 @@ def main() -> None:
 
         company = _load_company_for_command(c)
         control = CompanyControlPort(company)
+        cell = TradeCompanyCell(control)
+
+        if args.company_cmd == "cell-manifest":
+            _print_json(cell.get_manifest())
+            return
+        if args.company_cmd == "cell-status":
+            _print_json(cell.get_status())
+            return
+        if args.company_cmd == "cell-health":
+            _print_json(cell.get_health())
+            return
+        if args.company_cmd == "cell-metrics":
+            _print_json(cell.get_metrics())
+            return
+        if args.company_cmd == "cell-alerts":
+            _print_json(cell.get_alerts())
+            return
+        if args.company_cmd == "cell-report":
+            _print_json(cell.get_report())
+            return
+        if args.company_cmd == "cell-pause":
+            _print_json(cell.execute_command("pause"))
+            return
+        if args.company_cmd == "cell-resume":
+            _print_json(cell.execute_command("resume"))
+            return
 
         if args.company_cmd == "status":
             _print_json(control.get_company_status())
