@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.8.0 standalone Trade Company with managed Ollama, Binance Japan / Spot and continuous news intelligence**. The Whispering Tankard ships with trusted market/crypto/regulatory RSS sources, accepts custom HTTPS news sites/feeds, and can conservatively block only new risk when directly relevant critical negative news is detected. News never creates an order. Production order submission and LIVE remain deliberately unavailable.
+> Current milestone: **v0.8.1 standalone Trade Company with managed Ollama, visual PAPER Trader charts, Binance Japan / Spot and continuous news intelligence**. Each Trader drawer now renders the live market candles used by the Company, MA7/MA25/MA99, PAPER buy/sell markers, current position average and waiting/in-position state. The Whispering Tankard ships with trusted market/crypto/regulatory RSS sources, accepts custom HTTPS news sites/feeds, and can conservatively block only new risk when directly relevant critical negative news is detected. News never creates an order. Production order submission and LIVE remain deliberately unavailable.
 
 ## Why it is built this way
 
