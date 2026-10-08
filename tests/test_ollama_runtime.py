@@ -99,11 +99,11 @@ class ManagedOllamaRuntimeTests(unittest.TestCase):
                 stderr="",
             )
             with patch.object(
-                runtime,
+                ManagedOllamaRuntime,
                 "start",
                 return_value={"running": True},
             ), patch.object(
-                runtime,
+                ManagedOllamaRuntime,
                 "status",
                 return_value={"running": True},
             ), patch(
