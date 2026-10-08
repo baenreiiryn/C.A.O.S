@@ -176,6 +176,9 @@ class RuntimeExecutionService:
                 }
         return None
 
+    def has_outstanding(self, trader_id: str) -> bool:
+        return self._outstanding_for_trader(trader_id) is not None
+
     def _all_positions_flat(self) -> bool:
         return all(
             self.company.paper.positions_flat(trader_id)
