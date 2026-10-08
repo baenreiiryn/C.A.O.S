@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from ..execution_fabric import EXECUTION_FABRIC_VERSION
+from ..execution_reliability import (
+    EXECUTION_RELIABILITY_VERSION,
+    DurableExecutionJournal,
+)
 from .adapter import CAOSAdapter
 from .capital import CapitalAllocator, ExpansionDecision
 from .diversity import StrategyDiversity
@@ -690,6 +694,27 @@ class TradeCompany:
                 "version": EXECUTION_FABRIC_VERSION,
                 "last_plans": dict(self.paper.last_plans),
             },
+            "execution_reliability": (
+                {
+                    **self.execution_reliability.summary(),
+                    "recent_intents": (
+                        self.execution_reliability.list(
+                            limit=20
+                        )
+                    ),
+                }
+                if self.execution_reliability is not None
+                else {
+                    "version": EXECUTION_RELIABILITY_VERSION,
+                    "venue": "bybit",
+                    "environment": "testnet",
+                    "counts": {},
+                    "total": 0,
+                    "recovery_required": 0,
+                    "recent_intents": [],
+                    "persistent": False,
+                }
+            ),
             "exposure": self.paper.exposure(),
             "reconciliation_mismatches": self.paper.audit_reconciliation(),
             "training": self.training.snapshot(),
