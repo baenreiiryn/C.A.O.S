@@ -390,17 +390,17 @@ function renderSettings(){
    return '<div class="broker-card '+(active?'active':'')+'"><div class="list-title">'+esc(p.label||p.id)+(active?' · ACTIVE':'')+'</div><div class="list-sub">'+esc(p.provider)+' · '+esc(p.environment)+' · key '+(p.api_key_configured?'configured':'missing')+' · secret '+(p.api_secret_configured?'configured':'missing')+(support.activatable?'':' · adapter pending')+'</div><div class="control-row"><button class="btn" onclick="editBrokerProfile(\''+esc(p.id)+'\')">Edit</button><button class="btn" onclick="testBrokerProfile(\''+esc(p.id)+'\')">Test</button>'+(support.activatable&&!active?'<button class="btn" onclick="activateBrokerProfile(\''+esc(p.id)+'\')">Set Active</button>':'')+(!active?'<button class="btn danger" onclick="deleteBrokerProfile(\''+esc(p.id)+'\')">Delete</button>':'')+'</div></div>';
  }).join(''):'<div class="empty">No broker profiles configured.</div>';
  html+=section('⚓ Broker Embassy',
-   '<div class="settings-note">Broker credentials are stored in Windows Credential Manager, never in launcher.json or the Company database. Binance Japan / Spot is the supported broker. Use spot-testnet for human-gated test orders or production-readonly to authenticate a real Binance Japan account without enabling LIVE orders.</div>'+
+   '<div class="settings-note">Broker credentials are stored in Windows Credential Manager, never in launcher.json or the Company database. Binance Japan / Spot is the supported broker. Use spot-testnet for autonomous test execution, production-readonly for observation only, or production-manual for REAL proposals that still require your confirmation on every order.</div>'+
    cards+
    '<h3 id="brokerFormTitle">'+(editingBrokerId?'Edit broker profile':'Add broker profile')+'</h3>'+
    '<div class="settings-grid">'+
    settingsField('Label','brokerLabel','')+
    settingsSelect('Broker','brokerProvider','binance',Object.keys(supported).map(function(k){return {value:k,label:(supported[k]&&supported[k].label)||k}}))+
-   settingsSelect('Environment','brokerEnvironment','spot-testnet',[{value:'spot-testnet',label:'Spot Testnet (human-gated orders)'},{value:'production-readonly',label:'Binance Japan Production (read-only)'}])+
+   settingsSelect('Environment','brokerEnvironment','spot-testnet',[{value:'spot-testnet',label:'Spot Testnet (autonomous after mode selection)'},{value:'production-readonly',label:'Binance Japan Production (read-only)'},{value:'production-manual',label:'Binance Japan Production (manual confirmation per order)'}])+
    settingsField('API key','brokerApiKey','','password')+
    settingsField('API secret','brokerApiSecret','','password')+
    '</div>'+
-   '<div class="settings-note">When editing, blank credential fields keep the existing secret. Valid Binance environments are spot-testnet and production-readonly. Switching the active broker is blocked while unresolved external execution intents exist.</div>'+
+   '<div class="settings-note">When editing, blank credential fields keep the existing secret. Switching the active broker is blocked while unresolved external execution intents exist. REAL mode is runtime-only and returns to PAPER whenever Trade Company restarts.</div>'+
    '<div class="control-row"><button class="btn" onclick="saveBrokerProfile()">Save Profile</button><button class="btn" onclick="newBrokerProfile()">New Profile</button></div>'+
    '<div id="brokerStatus" class="settings-status"></div>'
  );
