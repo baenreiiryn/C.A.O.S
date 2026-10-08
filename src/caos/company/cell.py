@@ -200,67 +200,67 @@ class TradeCompanyCell:
             ),
         }
         descriptors = [
-            {
-                "key": "company_equity",
-                "label": "Company Equity",
-                "value": values["company_equity"],
-                "unit": "currency",
-                "kind": "gauge",
-            },
-            {
-                "key": "treasury_reserve",
-                "label": "Treasury Reserve",
-                "value": values["treasury_reserve"],
-                "unit": "currency",
-                "kind": "gauge",
-            },
-            {
-                "key": "trader_slots",
-                "label": "Active Trader Slots",
-                "value": values["trader_slots"],
-                "unit": "count",
-                "kind": "gauge",
-            },
-            {
-                "key": "effective_trader_limit",
-                "label": "Trader Capacity",
-                "value": values["effective_trader_limit"],
-                "unit": "count",
-                "kind": "limit",
-            },
-            {
-                "key": "gross_exposure",
-                "label": "Gross Exposure",
-                "value": values["gross_exposure"],
-                "unit": "currency",
-                "kind": "gauge",
-            },
-            {
-                "key": "company_drawdown_pct",
-                "label": "Company Drawdown",
-                "value": values["company_drawdown_pct"],
-                "unit": "percent",
-                "kind": "gauge",
-            },
-            {
-                "key": "opportunities",
-                "label": "Open Opportunities",
-                "value": values["opportunities"],
-                "unit": "count",
-                "kind": "gauge",
-            },
-            {
-                "key": "alerts",
-                "label": "Alerts",
-                "value": values["alerts"],
-                "unit": "count",
-                "kind": "gauge",
-            },
+            CellMetric(
+                "company_equity",
+                "Company Equity",
+                values["company_equity"],
+                "currency",
+                "finance",
+            ).to_dict(),
+            CellMetric(
+                "treasury_reserve",
+                "Treasury Reserve",
+                values["treasury_reserve"],
+                "currency",
+                "finance",
+            ).to_dict(),
+            CellMetric(
+                "trader_slots",
+                "Active Trader Slots",
+                values["trader_slots"],
+                "count",
+                "operations",
+            ).to_dict(),
+            CellMetric(
+                "effective_trader_limit",
+                "Trader Capacity",
+                values["effective_trader_limit"],
+                "count",
+                "operations",
+            ).to_dict(),
+            CellMetric(
+                "gross_exposure",
+                "Gross Exposure",
+                values["gross_exposure"],
+                "currency",
+                "risk",
+            ).to_dict(),
+            CellMetric(
+                "company_drawdown_pct",
+                "Company Drawdown",
+                values["company_drawdown_pct"],
+                "percent",
+                "risk",
+            ).to_dict(),
+            CellMetric(
+                "opportunities",
+                "Open Opportunities",
+                values["opportunities"],
+                "count",
+                "operations",
+            ).to_dict(),
+            CellMetric(
+                "alerts",
+                "Alerts",
+                values["alerts"],
+                "count",
+                "health",
+            ).to_dict(),
         ]
         return {
             "cell_id": self.manifest.cell_id,
-            "metrics": values,
-            "descriptors": descriptors,
+            "values": values,
+            "metrics": descriptors,
         }
 
     def get_alerts(self) -> list[dict]:
@@ -284,24 +284,27 @@ class TradeCompanyCell:
             )
             target = raw.get("trader_id")
             title = code.replace("_", " ").title()
-            message = title
+            message = self.ALERT_MESSAGES.get(code, title)
             if target:
-                message = f"{title}: {target}"
-            normalized.append(
-                {
-                    "id": (
-                        f"{self.manifest.cell_id}:"
-                        f"{code}:{index}"
-                    ),
+                message = f"{message} Target: {target}."
+            payload = CellAlert(
+                id=(
+                    f"{self.manifest.cell_id}:"
+                    f"{code}:{index}"
+                ),
+                severity=severity,
+                code=code,
+                title=title,
+                message=message,
+                data={
                     "cell_id": self.manifest.cell_id,
-                    "severity": severity,
-                    "code": code,
-                    "title": title,
-                    "message": message,
                     "target": target,
-                    "data": raw,
-                }
-            )
+                    "raw": raw,
+                },
+            ).to_dict()
+            payload["cell_id"] = self.manifest.cell_id
+            payload["target"] = target
+            normalized.append(payload)
         return normalized
 
     def get_recent_events(self, limit: int = 30) -> list[dict]:
