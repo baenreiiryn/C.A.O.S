@@ -501,6 +501,25 @@ class StrategyRolloutManager:
         self._transition(release, "rolled_back", reason)
         return release
 
+    def is_strategy_assignable(
+        self,
+        symbol: str,
+        strategy_id: str,
+    ) -> bool:
+        symbol = symbol.upper()
+        managed = [
+            row
+            for row in self.releases.values()
+            if row.strategy_id == strategy_id
+        ]
+        if not managed:
+            # Research strategies fail closed until a release is synced.
+            return not strategy_id.startswith("research:")
+        return any(
+            row.symbol == symbol and row.stage == "active"
+            for row in managed
+        )
+
     def production_candidates(
         self,
         symbol: str,
