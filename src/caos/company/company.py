@@ -43,6 +43,11 @@ class TradeCompany:
         self.store = store if store is not None else engine.store
         self.effective_trader_limit = self.policy.operational_trader_cap
         self.operations_paused = False
+        self.execution_reliability = (
+            DurableExecutionJournal(self.store)
+            if self.store is not None
+            else None
+        )
 
         self.treasury = Treasury(self.policy.initial_company_capital)
         self.registry = TraderRegistry()
