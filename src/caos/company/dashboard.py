@@ -302,7 +302,7 @@ function renderSettings(){
  html+=section('🔮 Arcane Nexus · LLM Configuration',
    '<div class="settings-grid">'+
    settingsSelect('Provider','settingsProvider',llm.provider||'static',providerOpts)+
-   settingsField('Model','settingsModel',llm.model||'')+
+   '<label for="settingsModel">Model</label><div><input id="settingsModel" list="settingsModelList" value="'+esc(llm.model||'')+'"><datalist id="settingsModelList"></datalist></div>'+
    settingsField('Base URL','settingsBaseUrl',llm.base_url||'')+
    settingsField('API key (optional)','settingsLlmKey','','password')+
    '</div>'+
@@ -350,8 +350,11 @@ async function discoverModels(){
  try{
   const payload={provider:byId('settingsProvider').value,base_url:byId('settingsBaseUrl').value,api_key:byId('settingsLlmKey').value||null};
   const r=await api('/api/settings/llm/discover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  const models=r.models||[];if(models.length){const current=byId('settingsModel').value;if(models.indexOf(current)<0)byId('settingsModel').value=models[0]}
-  byId('settingsLlmStatus').textContent=models.length?'Models: '+models.join(', '):'Connection succeeded; provider returned no model list.';
+  const models=r.models||[];
+  const list=byId('settingsModelList');
+  if(list)list.innerHTML=models.map(function(m){return '<option value="'+esc(m)+'"></option>'}).join('');
+  if(models.length){const current=byId('settingsModel').value;if(models.indexOf(current)<0)byId('settingsModel').value=models[0]}
+  byId('settingsLlmStatus').textContent=models.length?'Discovered '+models.length+' model(s). Choose one from the Model field.':'Connection succeeded; provider returned no model list.';
  }catch(e){byId('settingsLlmStatus').textContent='Error: '+e.message}
 }
 async function testLLMSettings(){
