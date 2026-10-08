@@ -38,7 +38,7 @@ from .llm import (
 from .orchestrator import CAOS
 from .store import Store
 from .testnet import (
-    BybitTestnetClient,
+    BinanceSpotClient,
     HumanTestnetExecutor,
     ReliableHumanTestnetExecutor,
 )
@@ -249,15 +249,14 @@ def parser() -> argparse.ArgumentParser:
 
     tnet = sub.add_parser("testnet-order")
     tnet.add_argument("--confirm", required=True)
-    tnet.add_argument("--category", choices=["linear", "inverse", "spot"], default="linear")
     tnet.add_argument("symbol")
-    tnet.add_argument("side", choices=["Buy", "Sell"])
-    tnet.add_argument("order_type", choices=["Market", "Limit"])
+    tnet.add_argument("side", choices=["BUY", "SELL"])
+    tnet.add_argument(
+        "order_type",
+        choices=["MARKET", "LIMIT"],
+    )
     tnet.add_argument("qty")
     tnet.add_argument("--price")
-    tnet.add_argument("--reduce-only", action="store_true")
-    tnet.add_argument("--trigger-price")
-    tnet.add_argument("--trigger-direction", type=int, choices=[1, 2])
     dash = sub.add_parser("dashboard")
     dash.add_argument(
         "--port",
@@ -854,14 +853,25 @@ def main() -> None:
             )
         )
     elif args.cmd == "testnet-recover":
-        api_key = os.getenv("BYBIT_TESTNET_API_KEY", "")
-        api_secret = os.getenv("BYBIT_TESTNET_API_SECRET", "")
-        journal = DurableExecutionJournal(c.store)
+        api_key = os.getenv(
+            "BINANCE_TESTNET_API_KEY",
+            "",
+        )
+        api_secret = os.getenv(
+            "BINANCE_TESTNET_API_SECRET",
+            "",
+        )
+        journal = DurableExecutionJournal(
+            c.store,
+            venue="binance",
+            environment="spot-testnet",
+        )
         executor = ReliableHumanTestnetExecutor(
             c.compliance,
-            BybitTestnetClient(
+            BinanceSpotClient(
                 api_key=api_key,
                 api_secret=api_secret,
+                environment="spot-testnet",
             ),
             journal,
         )
@@ -875,7 +885,7 @@ def main() -> None:
                 {
                     "reconciled": result,
                     "summary": journal.summary(),
-                    "environment": "BYBIT_TESTNET_ONLY",
+                    "environment": "BINANCE_SPOT_TESTNET_ONLY",
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -897,28 +907,31 @@ def main() -> None:
             )
         )
     elif args.cmd == "testnet-order":
-        api_key = os.getenv("BYBIT_TESTNET_API_KEY", "")
-        api_secret = os.getenv("BYBIT_TESTNET_API_SECRET", "")
+        api_key = os.getenv(
+            "BINANCE_TESTNET_API_KEY",
+            "",
+        )
+        api_secret = os.getenv(
+            "BINANCE_TESTNET_API_SECRET",
+            "",
+        )
         c.compliance.human_arm_testnet(
             confirmation=args.confirm
         )
         executor = HumanTestnetExecutor(
             c.compliance,
-            BybitTestnetClient(
+            BinanceSpotClient(
                 api_key=api_key,
                 api_secret=api_secret,
+                environment="spot-testnet",
             ),
         )
         ack = executor.place_order(
-            category=args.category,
             symbol=args.symbol,
             side=args.side,
             order_type=args.order_type,
             qty=args.qty,
             price=args.price,
-            reduce_only=args.reduce_only,
-            trigger_price=args.trigger_price,
-            trigger_direction=args.trigger_direction,
         )
         print(
             json.dumps(
