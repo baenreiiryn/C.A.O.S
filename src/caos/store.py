@@ -198,6 +198,8 @@ class Store:
         *,
         limit: int = 100,
         statuses: tuple[str, ...] | None = None,
+        venue: str | None = None,
+        environment: str | None = None,
     ) -> list[dict]:
         limit = max(1, min(int(limit), 1000))
         query = (
@@ -207,11 +209,20 @@ class Store:
             "reconciliation_payload,last_error,created_at,updated_at "
             "FROM execution_intents"
         )
+        clauses: list[str] = []
         params: list = []
         if statuses:
             placeholders = ",".join("?" for _ in statuses)
-            query += f" WHERE status IN ({placeholders})"
+            clauses.append(f"status IN ({placeholders})")
             params.extend(statuses)
+        if venue is not None:
+            clauses.append("venue=?")
+            params.append(str(venue))
+        if environment is not None:
+            clauses.append("environment=?")
+            params.append(str(environment))
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY created_at DESC, intent_id DESC LIMIT ?"
         params.append(limit)
         with self._lock:
@@ -275,13 +286,35 @@ class Store:
             self.conn.commit()
             return cur.rowcount == 1
 
-    def execution_intent_counts(self) -> dict[str, int]:
+    def execution_intent_counts(
+        self,
+        *,
+        venue: str | None = None,
+        environment: str | None = None,
+    ) -> dict[str, int]:
+        query = (
+            "SELECT status,COUNT(*) FROM execution_intents"
+        )
+        clauses: list[str] = []
+        params: list[str] = []
+        if venue is not None:
+            clauses.append("venue=?")
+            params.append(str(venue))
+        if environment is not None:
+            clauses.append("environment=?")
+            params.append(str(environment))
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " GROUP BY status"
         with self._lock:
             rows = self.conn.execute(
-                "SELECT status,COUNT(*) FROM execution_intents "
-                "GROUP BY status"
+                query,
+                tuple(params),
             ).fetchall()
-        return {str(status): int(count) for status, count in rows}
+        return {
+            str(status): int(count)
+            for status, count in rows
+        }
 
     def close(self) -> None:
         with self._lock:
