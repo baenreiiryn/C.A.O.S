@@ -244,6 +244,35 @@ class DurableExecutionJournal:
             )
         return self.get(intent_id)
 
+    def reject_prepared(
+        self,
+        intent_id: str,
+        *,
+        reason: str = "human_rejected",
+    ) -> dict:
+        changed = self.store.transition_execution_intent(
+            intent_id,
+            from_statuses=("prepared",),
+            to_status="rejected",
+            reconciliation_status="not_submitted",
+            last_error=reason,
+        )
+        if not changed:
+            current = self.get(intent_id)
+            if current["status"] == "rejected":
+                return current
+            raise ExecutionReliabilityError(
+                "execution_intent_not_rejectable"
+            )
+        self.store.event(
+            "execution_intent_rejected",
+            {
+                "intent_id": intent_id,
+                "reason": reason,
+            },
+        )
+        return self.get(intent_id)
+
     def mark_uncertain(
         self,
         intent_id: str,
