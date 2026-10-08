@@ -46,6 +46,9 @@ class TradeCompanyCell:
         "caos_kill_switch": (
             "The shared C.A.O.S emergency kill switch is active."
         ),
+        "execution_reconciliation_required": (
+            "One or more external execution intents require broker reconciliation."
+        ),
     }
 
     def __init__(
@@ -73,6 +76,7 @@ class TradeCompanyCell:
                 "domain.trade.summary",
                 "domain.trade.research",
                 "domain.trade.rollout",
+                "domain.trade.execution_reliability",
             ),
             commands=self.SAFE_COMMANDS,
             ui={
@@ -97,6 +101,14 @@ class TradeCompanyCell:
             return "emergency"
         if audit.get("status") == "critical":
             return "critical"
+        if (
+            status.get("execution_reliability", {}).get(
+                "recovery_required",
+                0,
+            )
+            > 0
+        ):
+            return "attention"
         if audit.get("alerts"):
             return "attention"
         return "healthy"
