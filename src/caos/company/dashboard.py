@@ -546,6 +546,7 @@ def serve_company(
     host: str = "127.0.0.1",
     port: int = 5191,
     open_browser: bool = True,
+    settings_service=None,
 ) -> ThreadingHTTPServer:
     mapper = CityPresentationMapper()
     cell = TradeCompanyCell(control)
@@ -630,6 +631,24 @@ def serve_company(
             if path == "/api/company/events":
                 self._json(200, control.get_recent_events(50))
                 return
+            if path == "/api/settings":
+                if settings_service is None:
+                    self._json(
+                        200,
+                        {
+                            "enabled": False,
+                            "reason": "runtime_settings_unavailable",
+                        },
+                    )
+                else:
+                    self._json(
+                        200,
+                        {
+                            "enabled": True,
+                            **settings_service.get_settings(),
+                        },
+                    )
+                return
             if path in {"/", "/index.html"}:
                 body = HTML.encode()
                 self.send_response(200)
@@ -668,6 +687,166 @@ def serve_company(
                 if path == "/api/company/emergency-stop":
                     self._json(200, control.emergency_stop())
                     return
+                if path.startswith("/api/settings/"):
+                    if settings_service is None:
+                        raise RuntimeError(
+                            "runtime_settings_unavailable"
+                        )
+                    payload = self._read_json()
+                    if path == "/api/settings/llm/discover":
+                        self._json(
+                            200,
+                            settings_service.discover_models(
+                                provider=str(
+                                    payload.get(
+                                        "provider",
+                                        "static",
+                                    )
+                                ),
+                                base_url=str(
+                                    payload.get(
+                                        "base_url",
+                                        "",
+                                    )
+                                ),
+                                api_key=payload.get(
+                                    "api_key"
+                                ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/llm/test":
+                        self._json(
+                            200,
+                            settings_service.test_llm(
+                                provider=str(
+                                    payload.get(
+                                        "provider",
+                                        "static",
+                                    )
+                                ),
+                                model=str(
+                                    payload.get(
+                                        "model",
+                                        "",
+                                    )
+                                ),
+                                base_url=str(
+                                    payload.get(
+                                        "base_url",
+                                        "",
+                                    )
+                                ),
+                                api_key=payload.get(
+                                    "api_key"
+                                ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/llm/save":
+                        self._json(
+                            200,
+                            settings_service.save_llm(
+                                provider=str(
+                                    payload.get(
+                                        "provider",
+                                        "static",
+                                    )
+                                ),
+                                model=str(
+                                    payload.get(
+                                        "model",
+                                        "",
+                                    )
+                                ),
+                                base_url=str(
+                                    payload.get(
+                                        "base_url",
+                                        "",
+                                    )
+                                ),
+                                api_key=payload.get(
+                                    "api_key"
+                                ),
+                                clear_api_key=bool(
+                                    payload.get(
+                                        "clear_api_key",
+                                        False,
+                                    )
+                                ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/brokers/save":
+                        self._json(
+                            200,
+                            settings_service.save_broker_profile(
+                                profile_id=payload.get(
+                                    "profile_id"
+                                ),
+                                label=str(
+                                    payload.get(
+                                        "label",
+                                        "",
+                                    )
+                                ),
+                                provider=str(
+                                    payload.get(
+                                        "provider",
+                                        "",
+                                    )
+                                ),
+                                environment=str(
+                                    payload.get(
+                                        "environment",
+                                        "",
+                                    )
+                                ),
+                                api_key=payload.get(
+                                    "api_key"
+                                ),
+                                api_secret=payload.get(
+                                    "api_secret"
+                                ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/brokers/test":
+                        self._json(
+                            200,
+                            settings_service.test_broker(
+                                str(
+                                    payload["profile_id"]
+                                ),
+                                api_key=payload.get(
+                                    "api_key"
+                                ),
+                                api_secret=payload.get(
+                                    "api_secret"
+                                ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/brokers/active":
+                        self._json(
+                            200,
+                            settings_service.set_active_broker(
+                                payload.get(
+                                    "profile_id"
+                                )
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/brokers/delete":
+                        self._json(
+                            200,
+                            settings_service.delete_broker_profile(
+                                str(
+                                    payload["profile_id"]
+                                )
+                            ),
+                        )
+                        return
                 parts = [
                     unquote(part)
                     for part in path.split("/")
