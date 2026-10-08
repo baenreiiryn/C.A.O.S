@@ -73,6 +73,24 @@ class WindowsLauncherConfigTests(unittest.TestCase):
                     data_dir=root,
                 )
 
+    def test_legacy_launcher_config_gains_broker_defaults(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            legacy = default_launcher_config(data_dir=root)
+            legacy.pop("broker_profiles", None)
+            legacy.pop("active_broker_profile", None)
+            validated = validate_launcher_config(
+                legacy,
+                data_dir=root,
+            )
+            self.assertEqual(
+                validated["broker_profiles"],
+                [],
+            )
+            self.assertIsNone(
+                validated["active_broker_profile"]
+            )
+
     def test_relative_state_db_is_placed_under_app_data(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
