@@ -527,5 +527,204 @@ class CompanyExpansionGoalTests(unittest.TestCase):
         self.assertAlmostEqual(company.treasury.balance("B"), 10.0)
 
 
+
+class CompanyGoalV2AcceptanceTests(unittest.TestCase):
+    def test_restore_fails_on_corrupt_production_reservation(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "company.db")
+            _, company = make_company(store=store)
+            company.register_strategy(
+                StrategySpec(
+                    "mom",
+                    "momentum",
+                    3,
+                    21,
+                    threshold=0.5,
+                )
+            )
+            publish(
+                company,
+                "btc",
+                "BTCUSDT",
+                strategies=("mom",),
+            )
+            company.bootstrap(assign_best=True)
+            company.checkpoint()
+
+            payload = store.get_json(
+                "trade_company_checkpoint_v1"
+            )
+            payload["opportunities"]["btc"][
+                "reserved_by"
+            ] = "CORRUPT"
+            store.set_json(
+                "trade_company_checkpoint_v1",
+                payload,
+            )
+
+            _, restored = make_company(store=store)
+            with self.assertRaises(Exception):
+                restored.restore_checkpoint()
+            store.close()
+
+    def test_production_symbol_exclusivity_survives_daemon_cycles(self):
+        _, company = make_company(capital=20)
+        company.register_strategy(
+            StrategySpec(
+                "mom",
+                "momentum",
+                3,
+                21,
+                threshold=0.5,
+            )
+        )
+        a = company.bootstrap()
+        b = company.capital.create_funded_trader()
+        daemon = CompanyDaemon(
+            company,
+            [
+                ScanTarget(
+                    "BTCUSDT",
+                    "long",
+                    ("mom",),
+                )
+            ],
+            candle_limit=160,
+            opportunity_ttl_ms=10_000,
+        )
+
+        daemon.run_once(now=1_000)
+        daemon.run_once(now=2_000)
+
+        self.assertEqual(
+            company.registry.get(a.id).market,
+            "BTCUSDT",
+        )
+        self.assertEqual(
+            company.registry.get(b.id).status.value,
+            "waiting_assignment",
+        )
+        self.assertEqual(
+            list(company.market.assignments),
+            ["A"],
+        )
+
+    def test_per_trader_paper_positions_are_isolated(self):
+        _, company = make_company(capital=20)
+        company.register_strategy(
+            StrategySpec(
+                "mom",
+                "momentum",
+                3,
+                21,
+                threshold=0.5,
+            )
+        )
+        publish(
+            company,
+            "btc",
+            "BTCUSDT",
+            100,
+            strategies=("mom",),
+        )
+        publish(
+            company,
+            "eth",
+            "ETHUSDT",
+            90,
+            strategies=("mom",),
+        )
+        a = company.bootstrap()
+        b = company.capital.create_funded_trader()
+        company.market.assign(
+            a.id,
+            "btc",
+            strategy_id="mom",
+        )
+        company.market.assign(
+            b.id,
+            "eth",
+            strategy_id="mom",
+        )
+        company.engine.load_bars("BTCUSDT", bars_up())
+        company.engine.load_bars(
+            "ETHUSDT",
+            bars_up(start=50, step=0.2),
+        )
+
+        company.paper.cycle_trader("A")
+        company.paper.cycle_trader("B")
+
+        self.assertIsNot(
+            company.paper.accounts["A"],
+            company.paper.accounts["B"],
+        )
+        self.assertIn(
+            "BTCUSDT",
+            company.paper.accounts["A"].positions,
+        )
+        self.assertNotIn(
+            "ETHUSDT",
+            company.paper.accounts["A"].positions,
+        )
+        self.assertIn(
+            "ETHUSDT",
+            company.paper.accounts["B"].positions,
+        )
+        self.assertNotIn(
+            "BTCUSDT",
+            company.paper.accounts["B"].positions,
+        )
+
+    def test_paper_treasury_reconciliation_is_idempotent(self):
+        _, company = make_company()
+        company.register_strategy(
+            StrategySpec(
+                "mom",
+                "momentum",
+                3,
+                21,
+                threshold=0.5,
+            )
+        )
+        publish(
+            company,
+            "btc",
+            "BTCUSDT",
+            strategies=("mom",),
+        )
+        company.bootstrap(assign_best=True)
+        company.engine.load_bars("BTCUSDT", bars_up())
+
+        company.paper.cycle_trader("A")
+        reconciliations_after_open = sum(
+            entry.kind == "reconciliation"
+            for entry in company.treasury.entries
+        )
+        company.paper.reconcile_trader("A")
+        company.paper.reconcile_trader("A")
+        self.assertEqual(
+            sum(
+                entry.kind == "reconciliation"
+                for entry in company.treasury.entries
+            ),
+            reconciliations_after_open,
+        )
+
+        company.paper.force_flatten("A")
+        reconciliations_after_close = sum(
+            entry.kind == "reconciliation"
+            for entry in company.treasury.entries
+        )
+        company.paper.reconcile_trader("A")
+        self.assertEqual(
+            sum(
+                entry.kind == "reconciliation"
+                for entry in company.treasury.entries
+            ),
+            reconciliations_after_close,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
