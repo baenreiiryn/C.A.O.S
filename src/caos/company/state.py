@@ -24,6 +24,7 @@ class CompanyCheckpoint:
             "risk": company.risk.snapshot(),
             "strategies": company.strategies.snapshot(),
             "training": company.training.snapshot(),
+            "research": company.research.snapshot(),
             "paper": company.paper.snapshot(),
         }
         store.set_json(cls.KEY, payload)
@@ -59,6 +60,7 @@ class CompanyCheckpoint:
         company.market.restore(payload.get("assignments", {}))
         company.strategies.restore(payload.get("strategies", {}))
         company.training.restore(payload.get("training", {}))
+        company.research.restore(payload.get("research", {}))
         company.paper.restore(payload.get("paper", {}))
 
         effective = int(
