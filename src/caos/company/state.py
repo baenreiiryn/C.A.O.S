@@ -162,6 +162,51 @@ class CompanyCheckpoint:
                     "research_evaluation_candidate_missing"
                 )
 
+        research_decision_ids = {
+            decision.id
+            for decision in company.research.decisions
+        }
+        for release in company.rollout.releases.values():
+            try:
+                company.strategies.get(release.strategy_id)
+            except Exception as exc:
+                raise CompanyCheckpointError(
+                    "rollout_strategy_missing"
+                ) from exc
+            if (
+                release.research_decision_id
+                not in research_decision_ids
+            ):
+                raise CompanyCheckpointError(
+                    "rollout_research_decision_missing"
+                )
+            if release.canary is not None:
+                if (
+                    release.canary.cash < -1e-8
+                    or release.canary.quantity < -1e-12
+                    or release.canary.equity < -1e-8
+                ):
+                    raise CompanyCheckpointError(
+                        "rollout_canary_account_invalid"
+                    )
+
+        for symbol, strategy_id in (
+            company.rollout.production_catalog.items()
+        ):
+            matched = [
+                release
+                for release in company.rollout.releases.values()
+                if (
+                    release.symbol == symbol
+                    and release.strategy_id == strategy_id
+                    and release.stage == "active"
+                )
+            ]
+            if len(matched) != 1:
+                raise CompanyCheckpointError(
+                    "rollout_active_catalog_mismatch"
+                )
+
         mismatches = company.paper.audit_reconciliation()
         if mismatches:
             raise CompanyCheckpointError(
