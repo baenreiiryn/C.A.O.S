@@ -259,6 +259,70 @@ class StrategyRolloutDaemonTests(unittest.TestCase):
         company.engine.fetch_market = fake_fetch
         return store, company, strategy_id, release
 
+    def test_inactive_research_strategy_cannot_be_assigned_manually(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, company = make_company(
+                d,
+                bootstrap=True,
+            )
+            strategy_id, _ = install_promoted_research_strategy(
+                company
+            )
+            release = company.rollout.sync_research(
+                company.research
+            )[0]
+            self.assertEqual(release.stage, "shadow")
+            bars = bars_up(30)
+            company.engine.load_bars("BTCUSDT", bars)
+
+            def fake_fetch(symbol, interval="60", limit=500):
+                del interval, limit
+                return {"symbol": symbol, "bars": len(bars)}
+
+            company.engine.fetch_market = fake_fetch
+            daemon = CompanyDaemon(
+                company,
+                [
+                    ScanTarget(
+                        "BTCUSDT",
+                        "long",
+                        (strategy_id,),
+                    )
+                ],
+            )
+            cycle = daemon.run_once(now=1_000)
+            self.assertEqual(cycle.assignments, [])
+            self.assertIsNone(
+                company.registry.get("A").strategy_id
+            )
+            store.close()
+
+    def test_company_pause_freezes_rollout_progression(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, company = make_company(d)
+            install_promoted_research_strategy(company)
+            release = company.rollout.sync_research(
+                company.research
+            )[0]
+            bars = bars_up(30)
+            company.engine.load_bars("BTCUSDT", bars)
+
+            def fake_fetch(symbol, interval="60", limit=500):
+                del interval, limit
+                return {"symbol": symbol, "bars": len(bars)}
+
+            company.engine.fetch_market = fake_fetch
+            company.pause_operations()
+            daemon = CompanyDaemon(
+                company,
+                [ScanTarget("BTCUSDT", "long", ("momentum",))],
+            )
+            cycle = daemon.run_once(now=1_000)
+            self.assertTrue(cycle.paused)
+            self.assertEqual(cycle.rollout_events, [])
+            self.assertEqual(release.shadow_observations, 0)
+            self.assertEqual(release.stage, "shadow")
+            store.close()
     def test_active_release_is_prioritized_for_new_opportunity(self):
         with tempfile.TemporaryDirectory() as d:
             store, company, strategy_id, release = (
