@@ -70,6 +70,31 @@ class ExecutionFabricDomainTests(unittest.TestCase):
         self.assertEqual(a.decision_id, b.decision_id)
         self.assertEqual(a.symbol, "BTCUSDT")
 
+    def test_plan_id_is_deterministic(self):
+        decision = decision_from_signal(
+            symbol="BTCUSDT",
+            strategy_id="mom",
+            signal="long",
+            requested_weight=0.2,
+            as_of=42,
+        )
+        target = resolve_target_position(
+            decision,
+            equity=10.0,
+            max_notional=2.0,
+        )
+        a = plan_execution(
+            target,
+            current_notional=0.0,
+            reference_price=100.0,
+        )
+        b = plan_execution(
+            target,
+            current_notional=0.0,
+            reference_price=100.0,
+        )
+        self.assertEqual(a.plan_id, b.plan_id)
+
     def test_target_respects_requested_weight_and_hard_ceiling(self):
         decision = decision_from_signal(
             symbol="BTCUSDT",
@@ -348,6 +373,61 @@ class CompanyExecutionFabricTests(unittest.TestCase):
             self.assertTrue(
                 company.paper.positions_flat("A")
             )
+            store.close()
+
+
+    def test_execution_plans_survive_checkpoint_restore(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, company = self.make_company(d)
+            cycle = company.paper.cycle_trader("A")
+            plan_id = cycle.plan["plan_id"]
+            company.checkpoint()
+
+            restored = TradeCompany(
+                company.engine,
+                company.policy,
+                store=store,
+            )
+            self.assertTrue(restored.restore_checkpoint())
+            self.assertEqual(
+                restored.paper.last_plans["A"]["plan_id"],
+                plan_id,
+            )
+            store.close()
+
+    def test_old_checkpoint_without_last_plans_restores(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, company = self.make_company(d)
+            company.paper.cycle_trader("A")
+            company.checkpoint()
+            payload = store.get_json(
+                "trade_company_checkpoint_v1"
+            )
+            payload["paper"].pop("last_plans", None)
+            store.set_json(
+                "trade_company_checkpoint_v1",
+                payload,
+            )
+
+            restored = TradeCompany(
+                company.engine,
+                company.policy,
+                store=store,
+            )
+            self.assertTrue(restored.restore_checkpoint())
+            self.assertEqual(restored.paper.last_plans, {})
+            store.close()
+
+    def test_halted_trader_can_be_force_flattened(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, company = self.make_company(d)
+            opened = company.paper.cycle_trader("A")
+            self.assertEqual(opened.action, "open_long")
+            company.registry.halt("A")
+            flattened = company.paper.force_flatten("A")
+            self.assertEqual(flattened.action, "forced_flatten")
+            self.assertTrue(flattened.plan["risk_reducing"])
+            self.assertTrue(company.paper.positions_flat("A"))
             store.close()
 
 
