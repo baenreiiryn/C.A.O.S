@@ -144,6 +144,38 @@ The fantasy city becomes the primary human-facing operator interface.
 
 ## 4. System-to-world mapping
 
+
+### 4.0 Company Policy
+
+**Real component:** CompanyPolicy
+
+**Fantasy equivalent:** The Royal Charter / Laws of the City
+
+Location:
+
+displayed symbolically in the Citadel and referenced by the Guild, Treasury and Tower of Wards.
+
+Visual:
+
+- illuminated royal charter;
+- sealed laws;
+- immutable stone/rune tablets for safety boundaries.
+
+Represents:
+
+- initial Company capital;
+- initial Trader bucket;
+- stop floor;
+- default Trader exposure ceiling;
+- configured operational Trader cap;
+- Company maximum drawdown;
+- production/training behavior;
+- allowed execution modes.
+
+The Charter is not an autonomous character. It is the law under which all city institutions operate.
+
+No agent animation or themed interaction may imply that a subsystem can casually rewrite the Royal Charter.
+
 ### 4.1 Trade Company
 
 **Real component:** TradeCompany
@@ -1065,6 +1097,29 @@ Broker credentials must never appear as fantasy items that can be casually manip
 
 ---
 
+
+### 4.26 C.A.O.S Adapter
+
+**Real component:** CAOSAdapter
+
+**Fantasy equivalent:** Ley-Line Conduit between the City and the Arcane Nexus
+
+This is infrastructure rather than a visible agent.
+
+It represents the controlled boundary through which the Trade Company asks C.A.O.S for:
+
+- market data;
+- regime;
+- signals;
+- forecasts;
+- costs;
+- health;
+- emergency kill propagation.
+
+Visual implementation may show subtle glowing ley lines connecting Company districts to the Arcane Nexus.
+
+The conduit must never visually imply that Company subsystems can bypass the approved C.A.O.S interface.
+
 ## 5. First screen: Trade Company City
 
 The first screen must answer four questions without opening any technical panel:
@@ -1583,7 +1638,7 @@ This design goal is complete when:
 
 - the fantasy-city concept is formally defined;
 - the boundary between theme and backend logic is explicit;
-- every current major Trade Company component has a medieval/high-magic visual equivalent;
+- every current major Trade Company component, including CompanyPolicy and the C.A.O.S adapter boundary, has a medieval/high-magic visual equivalent;
 - C.A.O.S and its specialists have a visual role;
 - the first Trade Company City screen has a defined spatial structure;
 - health/attention/critical/emergency states have a visual language;
