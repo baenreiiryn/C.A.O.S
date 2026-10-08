@@ -275,6 +275,7 @@ class StrategyRolloutManager:
                 release.canary = CanaryAccount.create(
                     self.policy.canary_starting_capital
                 )
+                release.canary.last_ts = release.shadow_last_ts
                 self._transition(
                     release,
                     "paper_canary",
