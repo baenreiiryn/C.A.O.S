@@ -91,6 +91,42 @@ class WindowsLauncherConfigTests(unittest.TestCase):
                 validated["active_broker_profile"]
             )
 
+    def test_launcher_config_strips_broker_secrets(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            config = default_launcher_config(
+                data_dir=root
+            )
+            config["broker_profiles"] = [
+                {
+                    "id": "bybit-testnet",
+                    "label": "Bybit TESTNET",
+                    "provider": "bybit",
+                    "environment": "testnet",
+                    "api_key": "must-not-persist",
+                    "api_secret": "must-not-persist",
+                }
+            ]
+            validated = validate_launcher_config(
+                config,
+                data_dir=root,
+            )
+            self.assertEqual(
+                validated["broker_profiles"],
+                [
+                    {
+                        "id": "bybit-testnet",
+                        "label": "Bybit TESTNET",
+                        "provider": "bybit",
+                        "environment": "testnet",
+                    }
+                ],
+            )
+            self.assertNotIn(
+                "must-not-persist",
+                str(validated),
+            )
+
     def test_relative_state_db_is_placed_under_app_data(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
