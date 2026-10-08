@@ -82,7 +82,7 @@ The Founding Charter is only the first-run onboarding. After installation, confi
 
 Broker API keys and secrets are stored in **Windows Credential Manager**, not in `launcher.json` or `caos.db`. The packaged `caos.exe` automatically loads credentials from the active Binance Spot Testnet profile, so PowerShell environment-variable setup is not required when that profile is configured in the installed application.
 
-**Whispering Tankard / News Sources** is also persistent after onboarding. Fresh installations start with enabled feeds from CoinDesk, Cointelegraph, Decrypt, CryptoSlate, Nasdaq Markets, Investing.com Market News, U.S. SEC press releases, Federal Reserve press releases and Bank of Japan updates. Settings can enable/disable/remove sources, restore defaults, test a feed, preview headlines, or paste a normal HTTPS news-site URL and let C.A.O.S discover its RSS/Atom feed.
+**Whispering Tankard / News Sources** is also persistent after onboarding. Fresh installations start with enabled feeds from CoinDesk, Cointelegraph, Decrypt, CryptoSlate, Nasdaq Markets, Investing.com Market News, U.S. SEC press releases, Federal Reserve press releases, Bank of Japan updates and Japan Financial Services Agency updates. Settings can enable/disable/remove sources, restore defaults, test a feed, preview headlines, or paste a normal HTTPS news-site URL and let C.A.O.S discover its RSS/Atom feed.
 
 Changing the active broker is blocked while unresolved external execution intents exist.
 
@@ -184,7 +184,7 @@ Default sources cover:
 
 - crypto: CoinDesk, Cointelegraph, Decrypt, CryptoSlate;
 - stocks/markets: Nasdaq Markets, Investing.com Market News;
-- official regulation/macro: U.S. SEC, Federal Reserve, Bank of Japan.
+- official regulation/macro: U.S. SEC, Federal Reserve, Bank of Japan, Japan Financial Services Agency.
 
 Users can add a direct RSS/Atom URL or paste a normal HTTPS news-site URL; C.A.O.S attempts feed discovery through HTML alternate-feed metadata and common feed paths.
 
