@@ -319,6 +319,7 @@ def parser() -> argparse.ArgumentParser:
     company_sub.add_parser("opportunities")
     company_sub.add_parser("audit")
     company_sub.add_parser("execution-plans")
+    company_sub.add_parser("reliability")
     company_sub.add_parser("research")
     company_sub.add_parser("rollout")
     company_sub.add_parser("rollout-sync")
@@ -583,6 +584,9 @@ def main() -> None:
             return
         if args.company_cmd == "execution-plans":
             _print_json(control.get_execution_plans())
+            return
+        if args.company_cmd == "reliability":
+            _print_json(control.get_execution_reliability())
             return
         if args.company_cmd == "research":
             _print_json(control.get_research())
