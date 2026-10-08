@@ -107,7 +107,7 @@ def register_builtin_strategies(
         )
     registered = []
     for strategy_id in sorted(required):
-        company.register_strategy(
+        company.strategies.register(
             BUILTIN_STRATEGIES[strategy_id],
             strategy_id=strategy_id,
         )
