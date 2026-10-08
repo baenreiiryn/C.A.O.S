@@ -1,6 +1,6 @@
 # Windows Installer
 
-C.A.O.S v0.7.1 ships a self-contained Windows installer for the standalone Trade Company.
+C.A.O.S v0.7.2 ships a self-contained Windows installer for the standalone Trade Company.
 
 ## What gets installed
 
@@ -118,26 +118,31 @@ LLM API keys are stored in Windows Credential Manager.
 
 Broker profiles can be added or edited after onboarding. Broker metadata is stored in `launcher.json`, while API keys/secrets are stored in Windows Credential Manager.
 
-Bybit TESTNET is the currently implemented activatable broker adapter. Binance, OKX and Kraken profiles can be prepared in the schema, but cannot be made active until those adapters are implemented.
+Binance Japan / Spot is the supported broker. `spot-testnet` is the human-gated test-order environment; `production-readonly` authenticates a real Binance Japan account while keeping production order submission disabled.
 
 The active broker cannot be switched while unresolved external execution intents exist.
 
-The packaged `caos.exe` loads the active Bybit TESTNET profile from Windows Credential Manager automatically, so installed users do not need to configure credentials through PowerShell environment variables.
+The packaged `caos.exe` loads the active Binance Spot Testnet profile from Windows Credential Manager automatically, so installed users do not need to configure credentials through PowerShell environment variables.
 
-## Bybit TESTNET
+## Binance Japan / Spot
 
-The installer and first-run wizard do not store broker credentials.
+The installer and first-run wizard do not store broker credentials directly. Configure a broker later in **Settings → Broker Embassy**; secrets are stored in Windows Credential Manager.
 
-When using the TESTNET administration tools, credentials remain environment variables:
+Supported environments:
 
-```powershell
-$env:BYBIT_TESTNET_API_KEY="..."
-$env:BYBIT_TESTNET_API_SECRET="..."
+```text
+spot-testnet          human-gated Binance Spot Testnet orders
+production-readonly  real Binance Japan account metadata, no production orders
 ```
 
-Money-moving TESTNET submission keeps the existing explicit human gate.
+For CLI/development use without a saved Broker Embassy profile:
 
-LIVE execution remains unavailable.
+```powershell
+$env:BINANCE_TESTNET_API_KEY="..."
+$env:BINANCE_TESTNET_API_SECRET="..."
+```
+
+Money-moving Spot Testnet submission keeps the explicit `ARM TESTNET` human gate. Production order submission and LIVE remain unavailable.
 
 ## Building locally
 
