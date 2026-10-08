@@ -10,6 +10,11 @@ import webbrowser
 from pathlib import Path
 from types import SimpleNamespace
 
+from .app_settings import (
+    MemoryCredentialVault,
+    RuntimeSettingsService,
+    WindowsCredentialVault,
+)
 from .cli import build_caos
 from .company.control import CompanyControlPort
 from .company.dashboard import serve_company
@@ -60,6 +65,8 @@ def default_launcher_config(
         "provider": "static",
         "model": "qwen3:8b",
         "base_url": "",
+        "broker_profiles": [],
+        "active_broker_profile": None,
         "company_capital": 10.0,
         "trader_bucket": 10.0,
         "stop_floor": 3.0,
@@ -185,11 +192,27 @@ def validate_launcher_config(
     if not state_db.is_absolute():
         state_db = (data_dir or app_data_dir()) / state_db
 
+    raw_profiles = merged.get("broker_profiles", [])
+    broker_profiles = (
+        [dict(row) for row in raw_profiles if isinstance(row, dict)]
+        if isinstance(raw_profiles, list)
+        else []
+    )
+    active_broker_profile = merged.get(
+        "active_broker_profile"
+    )
+    if active_broker_profile is not None:
+        active_broker_profile = str(
+            active_broker_profile
+        ).strip() or None
+
     validated = {
         "version": WINDOWS_APP_VERSION,
         "provider": provider,
         "model": str(merged["model"]).strip() or "qwen3:8b",
         "base_url": str(merged.get("base_url", "")).strip(),
+        "broker_profiles": broker_profiles,
+        "active_broker_profile": active_broker_profile,
         "company_capital": _float_between(
             merged["company_capital"],
             name="company_capital",
@@ -365,6 +388,25 @@ class CompanyRuntimeHost:
             self.initialized,
         ) = initialize_or_restore(self.config)
         self.control = CompanyControlPort(self.company)
+
+        def persist_runtime_config(proposal: dict) -> dict:
+            saved = save_launcher_config(proposal)
+            self.config.clear()
+            self.config.update(saved)
+            return saved
+
+        vault = (
+            WindowsCredentialVault()
+            if os.name == "nt"
+            else MemoryCredentialVault()
+        )
+        self.settings = RuntimeSettingsService(
+            self.caos,
+            self.company,
+            self.config,
+            persist_runtime_config,
+            vault,
+        )
         self.daemon = build_daemon(
             self.company,
             self.targets,
@@ -402,6 +444,7 @@ class CompanyRuntimeHost:
             host="127.0.0.1",
             port=port,
             open_browser=False,
+            settings_service=self.settings,
         )
         self.daemon_thread = threading.Thread(
             target=self.daemon.serve,
@@ -645,9 +688,9 @@ def _wizard(config: dict) -> dict | None:
     ttk.Label(
         outer,
         text=(
-            "Bybit TESTNET credentials are intentionally not stored "
-            "by this wizard. Configure them later as environment "
-            "variables when using the human-gated TESTNET tools."
+            "LLM and broker settings remain editable after setup "
+            "from the Arcane Trading City. Broker secrets are stored "
+            "in Windows Credential Manager, not in launcher.json."
         ),
         style="CAOS.TLabel",
         wraplength=640,
