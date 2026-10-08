@@ -40,7 +40,7 @@ class CAOSAdapter:
         *,
         interval: str = "60",
         limit: int = 500,
-        category: str = "linear",
+        category: str = "spot",
     ) -> dict:
         return self.caos.tool_fetch_market(
             symbol,
