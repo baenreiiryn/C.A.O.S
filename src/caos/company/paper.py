@@ -673,6 +673,19 @@ class CompanyPaperBook:
                 (current_price / avg_price) - 1.0
             ) * 100.0
 
+        pending_order = self.pending_order_snapshot(trader_id)
+        if pending_order is not None and bars:
+            created_bar_ts = int(
+                pending_order.get("created_bar_ts", 0)
+            )
+            pending_order["age_bars"] = sum(
+                1
+                for bar in bars
+                if int(bar.ts) > created_bar_ts
+            )
+        elif pending_order is not None:
+            pending_order["age_bars"] = 0
+
         if trader.status == TraderStatus.WAITING_ASSIGNMENT:
             phase = "waiting_assignment"
         elif trader.status == TraderStatus.PAUSED:
@@ -681,6 +694,13 @@ class CompanyPaperBook:
             phase = "halted"
         elif trader.status == TraderStatus.RETIRED:
             phase = "retired"
+        elif pending_order is not None:
+            phase = str(
+                pending_order.get(
+                    "phase",
+                    "pending_entry",
+                )
+            )
         elif quantity > 1e-12:
             phase = "in_position"
         elif trader.market:
@@ -714,8 +734,14 @@ class CompanyPaperBook:
             )
         ][-100:]
 
+        order_events = [
+            dict(row)
+            for row in self.order_events.get(trader_id, [])
+            if not symbol or row.get("symbol") == symbol
+        ][-30:]
+
         return {
-            "version": "paper-trader-chart/v1",
+            "version": "paper-trader-chart/v2",
             "trader_id": trader_id,
             "symbol": symbol,
             "phase": phase,
@@ -744,6 +770,8 @@ class CompanyPaperBook:
                 "unrealized_pnl_pct": unrealized_pnl_pct,
             },
             "markers": marker_rows,
+            "pending_order": pending_order,
+            "order_events": order_events,
             "last_plan": self.last_plans.get(trader_id),
         }
 
