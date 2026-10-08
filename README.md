@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.7 standalone Trade Company with research, controlled rollout and durable TESTNET reliability**. Research, public market/order-book data, multi-family strategy mining, correlation-aware portfolio construction, optional Hugging Face specialists, local-LLM Goal orchestration, crash recovery, autonomous paper cycles and a human-gated Bybit TESTNET path are implemented. Production LIVE remains deliberately unavailable.
+> Current milestone: **v0.7.1 standalone Trade Company with persistent in-app LLM and broker settings**. Research, public market/order-book data, multi-family strategy mining, correlation-aware portfolio construction, optional Hugging Face specialists, local-LLM Goal orchestration, crash recovery, autonomous paper cycles and a human-gated Bybit TESTNET path are implemented. Production LIVE remains deliberately unavailable.
 
 ## Why it is built this way
 
@@ -65,6 +65,33 @@ This means uninstalling/reinstalling the application does not automatically dele
 Bybit TESTNET API credentials are intentionally **not stored by the installer or first-run wizard**. The existing human-gated TESTNET tools continue to read credentials from environment variables. LIVE execution remains unavailable.
 
 The current installer is unsigned, so Windows SmartScreen may show a warning until code signing is added.
+
+### Persistent settings after onboarding
+
+The Founding Charter is only the first-run onboarding. After installation, configuration remains available from the **⚙ Settings** button in the Arcane Trading City.
+
+**Arcane Nexus / LLM settings** supports:
+
+- `static`, `ollama`, and `openai-compatible` providers;
+- model and base-URL changes without resetting the Company;
+- model discovery for Ollama (`/api/tags`) and OpenAI-compatible servers (`/models`);
+- connection testing;
+- optional OpenAI-compatible API key stored in Windows Credential Manager.
+
+**Broker Embassy** supports persistent broker profiles. Bybit TESTNET is the currently implemented active execution adapter; Binance, OKX and Kraken profiles are schema-ready but cannot be activated until their broker adapters exist.
+
+Broker API keys and secrets are stored in **Windows Credential Manager**, not in `launcher.json` or `caos.db`. The packaged `caos.exe` automatically loads credentials from the active Bybit TESTNET profile, so PowerShell environment-variable setup is no longer required for the installed application.
+
+Changing the active broker is blocked while unresolved external execution intents exist.
+
+Installing v0.7.1 over v0.7.0 preserves:
+
+```text
+%LOCALAPPDATA%\CAOS\caos.db
+%LOCALAPPDATA%\CAOS\launcher.json
+```
+
+so existing Treasury, Traders, research, rollout and reliability state remain intact.
 
 ## Development install
 
