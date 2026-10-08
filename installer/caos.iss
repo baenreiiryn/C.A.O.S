@@ -1,5 +1,5 @@
 #define MyAppName "C.A.O.S Trade Company"
-#define MyAppVersion "0.7.0"
+#define MyAppVersion "0.7.1"
 #define MyAppPublisher "C.A.O.S"
 #define MyAppExeName "CAOS-Trade-Company.exe"
 
