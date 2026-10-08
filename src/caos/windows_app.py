@@ -19,6 +19,7 @@ from .app_settings import (
 from .cli import build_caos
 from .news import default_news_sources, normalize_news_sources
 from .ollama_runtime import ManagedOllamaRuntime
+from .runtime_execution import RuntimeExecutionService
 from .company.control import CompanyControlPort
 from .company.dashboard import serve_company
 from .company.domain import TraderMode
@@ -471,6 +472,14 @@ class CompanyRuntimeHost:
             application_install_dir(),
             app_data_dir(),
         )
+        self.execution = RuntimeExecutionService(
+            self.company,
+            self.config,
+            self.vault,
+        )
+        self.company.set_resume_guard(
+            self.execution.resume_guard_reason
+        )
         self.settings = RuntimeSettingsService(
             self.caos,
             self.company,
@@ -492,6 +501,7 @@ class CompanyRuntimeHost:
                     3_600_000,
                 )
             ),
+            execution_service=self.execution,
         )
         self.stop_event = threading.Event()
         self.server = None
@@ -517,6 +527,7 @@ class CompanyRuntimeHost:
             port=port,
             open_browser=False,
             settings_service=self.settings,
+            execution_service=self.execution,
         )
         self.daemon_thread = threading.Thread(
             target=self.daemon.serve,

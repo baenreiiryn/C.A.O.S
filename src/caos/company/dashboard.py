@@ -55,6 +55,12 @@ font-family:system-ui,sans-serif;font-size:11px}
 .rune.ok{color:var(--green);border-color:rgba(107,226,161,.42)}
 .rune.warn{color:var(--amber);border-color:rgba(255,200,102,.45)}
 .rune.bad{color:var(--red);border-color:rgba(255,120,120,.5)}
+.rune.mode{cursor:pointer}.rune.mode:hover{background:rgba(233,189,99,.12)}
+.execution-warning{border:1px solid rgba(255,120,120,.42);background:rgba(255,90,90,.07);border-radius:10px;padding:10px;margin:8px 0;color:#ffd0d0;font:11px system-ui,sans-serif;line-height:1.45}
+.execution-proposal{border:1px solid rgba(233,189,99,.24);background:rgba(8,12,18,.52);border-radius:10px;padding:10px;margin:7px 0;font:11px system-ui,sans-serif}
+.execution-proposal.awaiting{border-color:rgba(255,200,102,.55);box-shadow:0 0 14px rgba(255,200,102,.08)}
+.execution-proposal .proposal-title{font-weight:800;color:#f5dda7;margin-bottom:5px}
+.execution-proposal .proposal-meta{color:var(--muted);line-height:1.45}
 .settings-btn{border:1px solid var(--line);background:rgba(45,34,64,.82);color:var(--gold2);border-radius:999px;padding:6px 11px;cursor:pointer;font:11px system-ui,sans-serif}
 .settings-btn:hover{background:#3a2d50}
 .op-btn{border:1px solid var(--line);border-radius:999px;padding:6px 11px;cursor:pointer;font:700 11px system-ui,sans-serif;background:#192431}
@@ -242,7 +248,7 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
   <div class="realm">High-Magic Operations View</div>
   <div class="statusbar">
     <span id="healthRune" class="rune">CITY —</span>
-    <span id="modeRune" class="rune">PAPER</span>
+    <span id="modeRune" class="rune mode" title="Click to choose PAPER / TESTNET / REAL">PAPER</span>
     <span id="operationRune" class="rune warn">STOPPED</span>
     <span id="alertRune" class="rune">0 alerts</span>
     <button id="startOpsBtn" class="op-btn start" type="button">▶ Start</button>
@@ -302,11 +308,12 @@ let currentCity=null;
 let activeLocation=null;
 let activeTraderId=null;
 let settingsCache=null;
+let currentExecution=null;
 let editingBrokerId=null;
 let selectedLocalModelPath='';
 const byId=function(id){return document.getElementById(id)};
 const hudEquity=byId('hudEquity'),hudReserve=byId('hudReserve'),hudTraders=byId('hudTraders'),hudRisk=byId('hudRisk');
-const healthRune=byId('healthRune'),operationRune=byId('operationRune'),alertRune=byId('alertRune'),cityWorld=byId('cityWorld');
+const healthRune=byId('healthRune'),modeRune=byId('modeRune'),operationRune=byId('operationRune'),alertRune=byId('alertRune'),cityWorld=byId('cityWorld');
 const cityMoodTitle=byId('cityMoodTitle'),cityMoodText=byId('cityMoodText'),alertText=byId('alertText'),guildAdventurers=byId('guildAdventurers');
 const drawer=byId('drawer'),drawerBackdrop=byId('drawerBackdrop'),drawerTitle=byId('drawerTitle'),drawerTech=byId('drawerTech'),drawerBody=byId('drawerBody'),drawerClose=byId('drawerClose'),settingsBtn=byId('settingsBtn');
 const startOpsBtn=byId('startOpsBtn'),stopOpsBtn=byId('stopOpsBtn'),emergencyOpsBtn=byId('emergencyOpsBtn');
@@ -383,17 +390,17 @@ function renderSettings(){
    return '<div class="broker-card '+(active?'active':'')+'"><div class="list-title">'+esc(p.label||p.id)+(active?' · ACTIVE':'')+'</div><div class="list-sub">'+esc(p.provider)+' · '+esc(p.environment)+' · key '+(p.api_key_configured?'configured':'missing')+' · secret '+(p.api_secret_configured?'configured':'missing')+(support.activatable?'':' · adapter pending')+'</div><div class="control-row"><button class="btn" onclick="editBrokerProfile(\''+esc(p.id)+'\')">Edit</button><button class="btn" onclick="testBrokerProfile(\''+esc(p.id)+'\')">Test</button>'+(support.activatable&&!active?'<button class="btn" onclick="activateBrokerProfile(\''+esc(p.id)+'\')">Set Active</button>':'')+(!active?'<button class="btn danger" onclick="deleteBrokerProfile(\''+esc(p.id)+'\')">Delete</button>':'')+'</div></div>';
  }).join(''):'<div class="empty">No broker profiles configured.</div>';
  html+=section('⚓ Broker Embassy',
-   '<div class="settings-note">Broker credentials are stored in Windows Credential Manager, never in launcher.json or the Company database. Binance Japan / Spot is the supported broker. Use spot-testnet for human-gated test orders or production-readonly to authenticate a real Binance Japan account without enabling LIVE orders.</div>'+
+   '<div class="settings-note">Broker credentials are stored in Windows Credential Manager, never in launcher.json or the Company database. Binance Japan / Spot is the supported broker. Use spot-testnet for autonomous test execution, production-readonly for observation only, or production-manual for REAL proposals that still require your confirmation on every order.</div>'+
    cards+
    '<h3 id="brokerFormTitle">'+(editingBrokerId?'Edit broker profile':'Add broker profile')+'</h3>'+
    '<div class="settings-grid">'+
    settingsField('Label','brokerLabel','')+
    settingsSelect('Broker','brokerProvider','binance',Object.keys(supported).map(function(k){return {value:k,label:(supported[k]&&supported[k].label)||k}}))+
-   settingsSelect('Environment','brokerEnvironment','spot-testnet',[{value:'spot-testnet',label:'Spot Testnet (human-gated orders)'},{value:'production-readonly',label:'Binance Japan Production (read-only)'}])+
+   settingsSelect('Environment','brokerEnvironment','spot-testnet',[{value:'spot-testnet',label:'Spot Testnet (autonomous after mode selection)'},{value:'production-readonly',label:'Binance Japan Production (read-only)'},{value:'production-manual',label:'Binance Japan Production (manual confirmation per order)'}])+
    settingsField('API key','brokerApiKey','','password')+
    settingsField('API secret','brokerApiSecret','','password')+
    '</div>'+
-   '<div class="settings-note">When editing, blank credential fields keep the existing secret. Valid Binance environments are spot-testnet and production-readonly. Switching the active broker is blocked while unresolved external execution intents exist.</div>'+
+   '<div class="settings-note">When editing, blank credential fields keep the existing secret. Switching the active broker is blocked while unresolved external execution intents exist. REAL mode is runtime-only and returns to PAPER whenever Trade Company restarts.</div>'+
    '<div class="control-row"><button class="btn" onclick="saveBrokerProfile()">Save Profile</button><button class="btn" onclick="newBrokerProfile()">New Profile</button></div>'+
    '<div id="brokerStatus" class="settings-status"></div>'
  );
@@ -588,6 +595,75 @@ function applyPlaceStates(){
  });
 }
 
+function executionModeLabel(mode){
+ const labels={paper:'PAPER',testnet:'TESTNET','real-manual':'REAL · MANUAL'};
+ return labels[mode]||String(mode||'PAPER').toUpperCase();
+}
+function proposalCard(row){
+ const meta=row.meta||{},payload=row.payload||{},plan=meta.plan||{};
+ const awaiting=row.status==='prepared'&&row.environment==='production-manual';
+ const side=String(payload.side||plan.side||'').toUpperCase();
+ const symbol=payload.symbol||plan.symbol||row.symbol||'—';
+ const qty=payload.qty||'—';
+ const ref=plan.reference_price===undefined?'—':price(plan.reference_price);
+ const notional=plan.order_notional===undefined?'—':money(plan.order_notional);
+ const source=meta.source||'agent_proposal';
+ let controls='';
+ if(awaiting){
+  controls='<div class="control-row"><button class="btn" onclick="confirmExecutionProposal(\''+esc(row.intent_id)+'\')">Confirm Order</button><button class="btn danger" onclick="rejectExecutionProposal(\''+esc(row.intent_id)+'\')">Reject</button></div>';
+ }
+ return '<div class="execution-proposal '+(awaiting?'awaiting':'')+'"><div class="proposal-title">'+esc(row.status.toUpperCase())+' · '+esc(side)+' '+esc(symbol)+'</div><div class="proposal-meta">Trader '+esc(meta.trader_id||'—')+' · qty '+esc(qty)+' · planned notional '+esc(notional)+' · reference '+esc(ref)+'<br>Environment '+esc(row.environment)+' · '+esc(source)+'<br>Intent '+esc(row.intent_id)+'</div>'+controls+'</div>';
+}
+async function openExecution(){
+ activeLocation=null;activeTraderId=null;
+ try{
+  const pair=await Promise.all([api('/api/execution/status'),api('/api/execution/proposals')]);
+  currentExecution=pair[0];
+  const proposals=pair[1]||[];
+  const mode=currentExecution.mode||'paper';
+  const broker=currentExecution.active_broker_profile||{};
+  drawerTitle.textContent='Execution Gate';
+  drawerTech.textContent='Human-only runtime mode · '+executionModeLabel(mode);
+  let modeButtons='<div class="control-row"><button class="btn" onclick="setExecutionMode(\'paper\')">PAPER</button><button class="btn" onclick="setExecutionMode(\'testnet\')">BINANCE TESTNET</button><button class="btn danger" onclick="setExecutionMode(\'real-manual\')">BINANCE REAL</button></div>';
+  let body='<div class="story">Only this local UI can change the execution mode. The LLM and Company Cell do not receive a mode-switch or order-confirmation command.</div>';
+  body+=section('Execution Mode','<div class="metric-grid">'+metric('Current mode',executionModeLabel(mode))+metric('Resets on restart',currentExecution.resets_to_paper_on_restart?'PAPER':'—')+metric('Pending confirmations',currentExecution.pending_confirmations||0)+metric('Unresolved intents',currentExecution.unresolved||0)+'</div>'+modeButtons+'<div class="list-sub">PAPER/TESTNET changes require STOPPED + flat. REAL may be re-armed from STOPPING only when every open position is a previously confirmed REAL position.</div>');
+  if(currentExecution.resume_blocked_reason)body+='<div class="execution-warning"><b>START BLOCKED</b><br>'+esc(currentExecution.resume_blocked_reason)+'<br>Re-arm REAL · MANUAL to manage the persisted production exposure.</div>';
+  body+=section('Active Broker','<div class="metric-grid">'+metric('Profile',broker.label||'none')+metric('Environment',broker.environment||'—')+'</div>');
+  if(mode==='real-manual')body+='<div class="execution-warning"><b>REAL MONEY MODE</b><br>Agents may create proposals, but no production order is submitted until you click Confirm Order for that exact intent. Restarting Trade Company returns the runtime to PAPER.</div>';
+  const realRows=proposals.filter(function(x){return x.environment==='production-manual'}).slice(0,30);
+  body+=section('REAL Order Approval Queue',realRows.length?realRows.map(proposalCard).join(''):'<div class="empty">No REAL order proposals are waiting or recorded.</div>');
+  const testRows=proposals.filter(function(x){return x.environment==='spot-testnet'}).slice(0,12);
+  body+=section('Recent TESTNET Intents',testRows.length?testRows.map(proposalCard).join(''):'<div class="empty">No TESTNET execution intents yet.</div>');
+  drawerBody.innerHTML=body;
+  drawer.classList.add('open');drawerBackdrop.classList.add('open');drawer.setAttribute('aria-hidden','false');
+ }catch(e){alert(e.message)}
+}
+async function setExecutionMode(mode){
+ let confirmation='';
+ if(mode==='real-manual'){
+  confirmation=prompt('REAL MONEY MODE\n\nTrade Company will generate real Binance order proposals, but every order still requires your individual confirmation.\n\nType ENABLE REAL to arm this runtime session:')||'';
+  if(confirmation!=='ENABLE REAL')return;
+ }
+ try{
+  await api('/api/execution/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:mode,confirmation:confirmation})});
+  await tick();await openExecution();
+ }catch(e){alert(e.message)}
+}
+async function confirmExecutionProposal(intentId){
+ if(!confirm('Submit this exact REAL Binance order?\n\nIntent: '+intentId+'\n\nThis confirmation applies only to this one order.'))return;
+ try{
+  await api('/api/execution/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({intent_id:intentId,confirmation:'CONFIRM '+intentId})});
+  await tick();await openExecution();
+ }catch(e){alert(e.message)}
+}
+async function rejectExecutionProposal(intentId){
+ if(!confirm('Reject this REAL order proposal?\n\n'+intentId))return;
+ try{
+  await api('/api/execution/reject',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({intent_id:intentId})});
+  await tick();await openExecution();
+ }catch(e){alert(e.message)}
+}
+
 function renderVisibleTraders(){
  if(!currentCity)return;
  const traders=(currentCity.traders||[]).slice(0,8);
@@ -606,13 +682,16 @@ function updateHud(){
  hudRisk.textContent=currentStatus.risk&&currentStatus.risk.kill_switch?'WARD LOCK':pct(currentStatus.risk&&currentStatus.risk.drawdown_pct);
  healthRune.textContent='CITY '+String(c.health||'unknown').toUpperCase();
  healthRune.className='rune '+(c.mood==='healthy'?'ok':(c.mood==='attention'||c.mood==='paused')?'warn':'bad');
+ const execMode=(currentExecution&&currentExecution.mode)||'paper';
+ modeRune.textContent=executionModeLabel(execMode);
+ modeRune.className='rune mode '+(execMode==='paper'?'ok':(execMode==='testnet'?'warn':'bad'));
  alertRune.textContent=String(c.alerts)+' alert'+(c.alerts===1?'':'s');
  alertRune.className='rune '+(c.alerts?'warn':'ok');
  cityWorld.classList.toggle('emergency',!!c.emergency);
  const opState=String(currentStatus.operational_state||c.operational_state||(currentStatus.operations_paused?'stopped':'running'));
  operationRune.textContent=opState.replaceAll('_',' ').toUpperCase();
  operationRune.className='rune '+(opState==='running'?'ok':(opState==='stopping'||opState==='stopped'?'warn':'bad'));
- startOpsBtn.disabled=(opState==='running'||opState==='emergency_stopped');
+ startOpsBtn.disabled=(opState==='running'||opState==='emergency_stopped'||!!(currentExecution&&currentExecution.resume_blocked_reason));
  stopOpsBtn.disabled=(opState==='stopping'||opState==='stopped'||opState==='emergency_stopped');
  emergencyOpsBtn.disabled=(opState==='emergency_stopped');
  const messages={
@@ -909,8 +988,8 @@ async function setTraderExposure(id){
 
 async function tick(){
  try{
-  const pair=await Promise.all([api('/api/company/status'),api('/api/company/city')]);
-  currentStatus=pair[0];currentCity=pair[1];updateHud();
+  const pair=await Promise.all([api('/api/company/status'),api('/api/company/city'),api('/api/execution/status')]);
+  currentStatus=pair[0];currentCity=pair[1];currentExecution=pair[2];updateHud();
   if(activeTraderId)await refreshTraderChart(activeTraderId);
   else if(activeLocation)openLocation(activeLocation);
  }catch(e){
@@ -921,6 +1000,7 @@ async function tick(){
 
 document.querySelectorAll('.place').forEach(function(el){el.addEventListener('click',function(){openLocation(el.dataset.location)})});
 settingsBtn.addEventListener('click',openSettings);
+modeRune.addEventListener('click',openExecution);
 startOpsBtn.addEventListener('click',startOperations);
 stopOpsBtn.addEventListener('click',stopOperations);
 emergencyOpsBtn.addEventListener('click',emergencyStopOperations);
@@ -939,6 +1019,7 @@ def serve_company(
     port: int = 5191,
     open_browser: bool = True,
     settings_service=None,
+    execution_service=None,
 ) -> ThreadingHTTPServer:
     mapper = CityPresentationMapper()
     cell = TradeCompanyCell(control)
@@ -1048,6 +1129,33 @@ def serve_company(
             if path == "/api/company/events":
                 self._json(200, control.get_recent_events(50))
                 return
+            if path == "/api/execution/status":
+                if execution_service is None:
+                    self._json(
+                        200,
+                        {
+                            "enabled": False,
+                            "mode": "paper",
+                        },
+                    )
+                else:
+                    self._json(
+                        200,
+                        {
+                            "enabled": True,
+                            **execution_service.status(),
+                        },
+                    )
+                return
+            if path == "/api/execution/proposals":
+                if execution_service is None:
+                    self._json(200, [])
+                else:
+                    self._json(
+                        200,
+                        execution_service.list_proposals(),
+                    )
+                return
             if path == "/api/settings":
                 if settings_service is None:
                     self._json(
@@ -1096,7 +1204,14 @@ def serve_company(
                     self._json(200, control.start_operations())
                     return
                 if path == "/api/company/stop":
-                    self._json(200, control.stop_operations())
+                    rejected = (
+                        execution_service.cancel_new_risk_proposals()
+                        if execution_service is not None
+                        else []
+                    )
+                    result = control.stop_operations()
+                    result["rejected_external_entries"] = rejected
+                    self._json(200, result)
                     return
                 if path == "/api/company/limit":
                     payload = self._read_json()
@@ -1108,7 +1223,59 @@ def serve_company(
                     )
                     return
                 if path == "/api/company/emergency-stop":
-                    self._json(200, control.emergency_stop())
+                    self._json(
+                        200,
+                        (
+                            execution_service.emergency_stop()
+                            if execution_service is not None
+                            else control.emergency_stop()
+                        ),
+                    )
+                    return
+                if path == "/api/execution/mode":
+                    if execution_service is None:
+                        raise RuntimeError(
+                            "runtime_execution_unavailable"
+                        )
+                    payload = self._read_json()
+                    self._json(
+                        200,
+                        execution_service.set_mode(
+                            str(payload.get("mode", "paper")),
+                            confirmation=str(
+                                payload.get("confirmation", "")
+                            ),
+                        ),
+                    )
+                    return
+                if path == "/api/execution/confirm":
+                    if execution_service is None:
+                        raise RuntimeError(
+                            "runtime_execution_unavailable"
+                        )
+                    payload = self._read_json()
+                    self._json(
+                        200,
+                        execution_service.confirm_real(
+                            str(payload["intent_id"]),
+                            confirmation=str(
+                                payload.get("confirmation", "")
+                            ),
+                        ),
+                    )
+                    return
+                if path == "/api/execution/reject":
+                    if execution_service is None:
+                        raise RuntimeError(
+                            "runtime_execution_unavailable"
+                        )
+                    payload = self._read_json()
+                    self._json(
+                        200,
+                        execution_service.reject_real(
+                            str(payload["intent_id"])
+                        ),
+                    )
                     return
                 if path.startswith("/api/settings/"):
                     if settings_service is None:

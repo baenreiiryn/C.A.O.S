@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.8.3 standalone Trade Company with managed Ollama, manual operation controls, visual PAPER open orders, Binance Japan / Spot connectivity and continuous news intelligence**. The Windows app always opens in **STOPPED** state. The operator explicitly presses **Start** before new risk can be opened; **Stop** enters a graceful **STOPPING** state that blocks new entries while existing PAPER positions may complete their risk-reducing path; **Emergency Stop** cancels pending PAPER orders and immediately attempts to flatten every PAPER position that can be closed. Each Trader drawer renders live market candles, MA7/MA25/MA99, pending PAPER limit orders, PAPER buy/sell markers and current position state. Production broker order submission remains unavailable to autonomous agents.
+> Current milestone: **v0.8.4 standalone Trade Company with managed Ollama, human-only execution-mode selection, per-order REAL approval, manual operation controls and visual Trader charts**. The Windows app always opens **STOPPED** and execution mode always resets to **PAPER** on restart. The local UI can switch between autonomous PAPER, autonomous Binance Spot TESTNET, and **REAL · MANUAL**. In REAL mode agents may prepare durable Binance production order proposals, but every production order requires a separate human confirmation tied to that exact execution intent before submission. The LLM and Company Cell receive neither the mode-switch command nor the confirmation command. **Stop** blocks new entries while existing confirmed positions can continue toward risk-reducing exits; **Emergency Stop** prepares human-confirmed REAL close proposals rather than autonomously moving production money.
 
 ## Why it is built this way
 
@@ -26,7 +26,7 @@ Ollama / local OpenAI-compatible LLM
      localhost dashboard
 ```
 
-The LLM chooses what to inspect or run. Python computes the numbers and enforces rules. Broker credentials are never part of the LLM context, live mode cannot be armed by the LLM, and a kill-switch can always make the system safer.
+The LLM chooses what to inspect or run. Python computes the numbers and enforces rules. Broker credentials are never part of the LLM context, execution mode cannot be changed by the LLM, production order confirmations are not exposed through the Company Cell, and a kill-switch can always make the system safer.
 
 ## Requirements
 
@@ -65,7 +65,7 @@ Runtime state is stored outside the program directory:
 
 This means uninstalling/reinstalling the application does not automatically delete the Company state. The packaged `caos.exe` also defaults to this same database.
 
-Broker credentials are intentionally **not stored by the installer or first-run wizard**. Binance profiles created later in the Broker Embassy store secrets in Windows Credential Manager. LIVE execution remains unavailable.
+Broker credentials are intentionally **not stored by the installer or first-run wizard**. Binance profiles created later in the Broker Embassy store secrets in Windows Credential Manager. Production execution is available only through the local **REAL · MANUAL** gate and still requires a separate human confirmation for every submitted order.
 
 The current installer is unsigned, so Windows SmartScreen may show a warning until code signing is added.
 
@@ -84,7 +84,7 @@ The Founding Charter is only the first-run onboarding. After installation, confi
 - connection testing;
 - optional OpenAI-compatible API key stored in Windows Credential Manager.
 
-**Broker Embassy** supports Binance Japan / Spot profiles. `spot-testnet` provides the human-gated test-order adapter; `production-readonly` authenticates a real Binance Japan account for safe account metadata/reconciliation work while production order submission remains disabled.
+**Broker Embassy** supports Binance Japan / Spot profiles. `spot-testnet` can be used for autonomous test execution after you explicitly select TESTNET mode. `production-readonly` authenticates a real account without allowing order submission. `production-manual` enables the REAL proposal workflow: agents can prepare production orders, but each intent must be individually confirmed in the local Execution Gate before it is submitted.
 
 Broker API keys and secrets are stored in **Windows Credential Manager**, not in `launcher.json` or `caos.db`. The packaged `caos.exe` automatically loads credentials from the active Binance Spot Testnet profile, so PowerShell environment-variable setup is not required when that profile is configured in the installed application.
 

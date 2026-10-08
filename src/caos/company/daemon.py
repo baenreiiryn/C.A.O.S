@@ -73,6 +73,7 @@ class CompanyDaemon:
         interval: str = "60",
         candle_limit: int = 500,
         opportunity_ttl_ms: int = 3_600_000,
+        execution_service=None,
     ):
         if candle_limit <= 0:
             raise ValueError("candle_limit must be positive")
@@ -83,6 +84,7 @@ class CompanyDaemon:
         self.interval = interval
         self.candle_limit = int(candle_limit)
         self.opportunity_ttl_ms = int(opportunity_ttl_ms)
+        self.execution_service = execution_service
 
     def _symbols_to_refresh(self) -> list[str]:
         symbols = {target.symbol.upper() for target in self.targets}
@@ -261,7 +263,12 @@ class CompanyDaemon:
                     self.company.news_intelligence
                     .context_for(trader.market)
                 )
-                result = self.company.paper.cycle_trader(
+                cycle_runner = (
+                    self.execution_service
+                    if self.execution_service is not None
+                    else self.company.paper
+                )
+                result = cycle_runner.cycle_trader(
                     trader.id,
                     allow_new_risk=(
                         allow_new_risk
@@ -343,6 +350,13 @@ class CompanyDaemon:
             if self.company.paper.has_pending_order(trader.id):
                 continue
             if (
+                self.execution_service is not None
+                and self.execution_service.has_outstanding(
+                    trader.id
+                )
+            ):
+                continue
+            if (
                 decision.released_capital > 1e-9
                 and trader.id in self.company.paper.accounts
                 and not self.company.paper.positions_flat(trader.id)
@@ -421,6 +435,16 @@ class CompanyDaemon:
     def run_once(self, *, now: int) -> CompanyDaemonCycle:
         refreshed: dict[str, int] = {}
         errors: dict[str, str] = {}
+
+        if self.execution_service is not None:
+            for row in (
+                self.execution_service.reconcile_outstanding()
+            ):
+                if row.get("error"):
+                    errors[
+                        "execution_reconcile:"
+                        + str(row.get("intent_id", "unknown"))
+                    ] = str(row["error"])
 
         expired = self.company.opportunities.expire_due(now)
 

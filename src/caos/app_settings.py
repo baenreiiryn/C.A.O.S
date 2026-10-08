@@ -29,12 +29,14 @@ SUPPORTED_BROKERS = {
         "environments": (
             "spot-testnet",
             "production-readonly",
+            "production-manual",
         ),
         "activatable": True,
         "execution_environment": "spot-testnet",
         "notes": (
-            "Spot TESTNET supports human-gated test orders. "
-            "Production profiles are read-only in C.A.O.S."
+            "Spot TESTNET can run autonomously after the operator selects "
+            "TESTNET mode. Production-manual creates real order proposals "
+            "but requires an explicit human confirmation for every order."
         ),
     },
 }
@@ -863,14 +865,22 @@ class RuntimeSettingsService:
             "balances_nonzero": len(
                 info.get("balances_nonzero", [])
             ),
-            "production_execution_enabled": False,
+            "production_execution_enabled": (
+                environment == "production-manual"
+            ),
+            "production_execution_requires_confirmation": (
+                environment == "production-manual"
+            ),
             "message": (
                 "Binance credentials authenticated. "
                 + (
-                    "Spot TESTNET order adapter is available."
+                    "Spot TESTNET adapter is available."
                     if environment == "spot-testnet"
-                    else "Production account is connected read-only; "
-                    "LIVE order submission remains disabled."
+                    else (
+                        "Production account is connected for manual per-order confirmation."
+                        if environment == "production-manual"
+                        else "Production account is connected read-only."
+                    )
                 )
             ),
         }

@@ -201,6 +201,7 @@ def build_daemon(
     interval: str = "60",
     candle_limit: int = 500,
     opportunity_ttl_ms: int = 3_600_000,
+    execution_service=None,
 ) -> CompanyDaemon:
     return CompanyDaemon(
         company,
@@ -208,6 +209,7 @@ def build_daemon(
         interval=interval,
         candle_limit=int(candle_limit),
         opportunity_ttl_ms=int(opportunity_ttl_ms),
+        execution_service=execution_service,
     )
 
 
