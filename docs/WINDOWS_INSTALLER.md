@@ -74,11 +74,13 @@ BTCUSDT:long:momentum,ETHUSDT:long:trend
 After the charter is accepted:
 
 1. the SQLite state database is created;
-2. the Trade Company is initialized;
-3. the autonomous PAPER daemon starts in a background thread;
+2. the Trade Company is initialized in **STOPPED** state;
+3. the background daemon starts only for market/news observation and risk-reducing drain logic; it cannot open new risk until the operator presses **Start**;
 4. the themed city HTTP server starts on localhost;
-5. the Arcane Trading City opens in the default browser;
-6. a small Windows control window remains available to reopen or stop the Company.
+5. the Arcane Trading City opens in the default browser with **Start**, **Stop**, and **Emergency** controls;
+6. **Stop** blocks new entries and leaves existing PAPER positions in a **STOPPING** drain state until they close through their normal risk-reducing path;
+7. **Emergency** cancels pending PAPER orders and immediately attempts to flatten every closable PAPER position;
+8. a small Windows control window remains available to reopen or stop the Company process.
 
 The default city address is:
 
