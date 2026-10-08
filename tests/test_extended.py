@@ -13,22 +13,17 @@ from caos.runner import PaperRunner
 from caos.store import Store
 
 
-class FakeBybit(BinancePublicClient):
+class FakeBinance(BinancePublicClient):
     def _get_json(self, path, params):
-        return {
-            "retCode": 0,
-            "result": {
-                "list": [
-                    ["2000", "11", "12", "10", "11.5", "20", "0"],
-                    ["1000", "10", "11", "9", "10.5", "10", "0"],
-                ]
-            },
-        }
+        return [
+            ["1000", "10", "11", "9", "10.5", "10", "2000", "0", 1, "0", "0", "0"],
+            ["2000", "11", "12", "10", "11.5", "20", "3000", "0", 1, "0", "0", "0"],
+        ]
 
 
 class ExtendedTests(unittest.TestCase):
-    def test_bybit_parser_sorts_bars(self):
-        bars = FakeBybit().klines("BTCUSDT", limit=2)
+    def test_binance_parser_builds_bars(self):
+        bars = FakeBinance().klines("BTCUSDT", limit=2)
         self.assertEqual([b.ts for b in bars], [1000, 2000])
         self.assertEqual(bars[-1].close, 11.5)
 
@@ -74,7 +69,7 @@ class OrchestratorExtendedTests(unittest.TestCase):
     def test_orchestrator_public_data_to_portfolio_flow(self):
         c = CAOS(
             StaticLLM('{"tool":"status","args":{}}'),
-            market_client=FakeBybit(),
+            market_client=FakeBinance(),
         )
         c.set_mandate(Mandate(1000, 50))
         fetched = c.tool_fetch_market("BTCUSDT", limit=2)
@@ -163,7 +158,7 @@ class AgentAndGoalTests(unittest.TestCase):
 
         c = CAOS(
             StaticLLM('{"tool":"status","args":{}}'),
-            market_client=FakeBybit(),
+            market_client=FakeBinance(),
         )
         c.set_mandate(mandate)
         c.candidate_bank = {
@@ -227,8 +222,8 @@ class GoalV2CLITests(unittest.TestCase):
                 "--confirm",
                 "ARM TESTNET",
                 "BTCUSDT",
-                "Buy",
-                "Limit",
+                "BUY",
+                "LIMIT",
                 "0.001",
                 "--price",
                 "50000",
