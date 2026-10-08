@@ -1,167 +1,249 @@
 import hashlib
 import hmac
-import json
+import urllib.parse
 import unittest
 
 from caos.compliance import ComplianceEngine, ComplianceViolation
 from caos.testnet import (
-    BybitTestnetClient,
+    BinanceSpotClient,
     HumanTestnetExecutor,
     TestnetError,
 )
 
 
-class TestnetTests(unittest.TestCase):
-    def test_production_host_is_impossible(self):
+class BinanceSpotTestnetTests(unittest.TestCase):
+    def test_unknown_or_cross_environment_host_is_forbidden(self):
         with self.assertRaises(TestnetError):
-            BybitTestnetClient(
+            BinanceSpotClient(
                 "key",
                 "secret",
-                base_url="https://api.bybit.com",
+                environment="spot-testnet",
+                base_url="https://api.binance.com",
+            )
+        with self.assertRaises(TestnetError):
+            BinanceSpotClient(
+                "key",
+                "secret",
+                environment="production-readonly",
+                base_url="https://testnet.binance.vision",
             )
 
-    def test_signature_matches_documented_formula(self):
-        timestamp = 1658385589135
-        key = "abc"
-        secret = "xyz"
-        body = '{"category":"linear"}'
-        client = BybitTestnetClient(
-            key,
-            secret,
-            time_ms=lambda: timestamp,
-            transport=lambda u, d, h: {},
+    def test_signature_matches_binance_hmac_formula(self):
+        client = BinanceSpotClient(
+            "abc",
+            "xyz",
+            time_ms=lambda: 123456,
+            transport=lambda *args: {},
+        )
+        query = (
+            "recvWindow=5000&symbol=BTCUSDT&"
+            "timestamp=123456"
         )
         expected = hmac.new(
-            secret.encode(),
-            f"{timestamp}{key}5000{body}".encode(),
+            b"xyz",
+            query.encode(),
             hashlib.sha256,
         ).hexdigest()
         self.assertEqual(
-            client.signature(timestamp, body),
+            client.signature(query),
             expected,
         )
 
-    def test_order_headers_and_body(self):
+    def test_order_headers_and_form_body(self):
         captured = {}
 
-        def transport(url, data, headers):
+        def transport(method, url, data, headers):
+            captured["method"] = method
             captured["url"] = url
-            captured["body"] = data.decode()
-            captured["headers"] = headers
+            captured["body"] = dict(
+                urllib.parse.parse_qsl(
+                    data.decode()
+                )
+            )
+            captured["headers"] = dict(headers)
             return {
-                "retCode": 0,
-                "retMsg": "OK",
-                "result": {
-                    "orderId": "id-1",
-                    "orderLinkId": "caos-1",
-                },
+                "symbol": "BTCUSDT",
+                "orderId": 42,
+                "clientOrderId": "caos-plan",
+                "transactTime": 123456,
+                "price": "50000",
+                "origQty": "0.001",
+                "executedQty": "0",
+                "cummulativeQuoteQty": "0",
+                "status": "NEW",
+                "type": "LIMIT",
+                "side": "BUY",
             }
 
-        client = BybitTestnetClient(
+        client = BinanceSpotClient(
             "key",
             "secret",
             time_ms=lambda: 123456,
             transport=transport,
         )
         ack = client.place_order(
-            category="linear",
             symbol="btcusdt",
-            side="Buy",
-            order_type="Limit",
+            side="BUY",
+            order_type="LIMIT",
             qty="0.001",
             price="50000",
-            order_link_id="caos-1",
+            order_link_id="caos-plan",
         )
         self.assertEqual(
             captured["url"],
-            "https://api-testnet.bybit.com/v5/order/create",
+            "https://testnet.binance.vision/api/v3/order",
         )
-        body = json.loads(captured["body"])
-        self.assertEqual(body["symbol"], "BTCUSDT")
-        self.assertEqual(body["orderType"], "Limit")
-        self.assertEqual(ack.order_id, "id-1")
-        self.assertIn("X-BAPI-SIGN", captured["headers"])
         self.assertEqual(
-            captured["headers"]["X-BAPI-TIMESTAMP"],
-            "123456",
+            captured["method"],
+            "POST",
+        )
+        self.assertEqual(
+            captured["body"]["symbol"],
+            "BTCUSDT",
+        )
+        self.assertEqual(
+            captured["body"]["type"],
+            "LIMIT",
+        )
+        self.assertEqual(
+            captured["body"]["newClientOrderId"],
+            "caos-plan",
+        )
+        self.assertEqual(ack.order_id, "42")
+        self.assertEqual(
+            captured["headers"]["X-MBX-APIKEY"],
+            "key",
+        )
+        self.assertIn(
+            "signature",
+            captured["body"],
         )
 
-    def test_api_key_info_authentication(self):
+    def test_account_info_authentication(self):
         captured = {}
 
-        def query(url, headers):
+        def transport(method, url, data, headers):
+            del data
+            captured["method"] = method
             captured["url"] = url
             captured["headers"] = dict(headers)
             return {
-                "retCode": 0,
-                "retMsg": "OK",
-                "result": {
-                    "readOnly": 0,
-                    "note": "caos-test",
-                    "kycLevel": "LEVEL_1",
-                    "kycRegion": "JP",
-                    "permissions": {
-                        "ContractTrade": [
-                            "Order",
-                            "Position",
-                        ]
+                "canTrade": True,
+                "canWithdraw": False,
+                "canDeposit": True,
+                "accountType": "SPOT",
+                "permissions": ["SPOT"],
+                "balances": [
+                    {
+                        "asset": "JPY",
+                        "free": "1000",
+                        "locked": "0",
                     },
-                },
+                    {
+                        "asset": "BTC",
+                        "free": "0",
+                        "locked": "0",
+                    },
+                ],
             }
 
-        client = BybitTestnetClient(
+        client = BinanceSpotClient(
             "key",
             "secret",
+            environment="production-readonly",
             time_ms=lambda: 123456,
-            transport=lambda u, d, h: {},
-            query_transport=query,
+            transport=transport,
         )
-        info = client.get_api_key_info()
+        info = client.get_account_info()
+        self.assertTrue(info["can_trade"])
         self.assertEqual(
+            info["account_type"],
+            "SPOT",
+        )
+        self.assertEqual(
+            info["balances_nonzero"][0]["asset"],
+            "JPY",
+        )
+        self.assertIn(
+            "/api/v3/account?",
             captured["url"],
-            "https://api-testnet.bybit.com/v5/user/query-api",
         )
-        self.assertIn(
-            "X-BAPI-SIGN",
-            captured["headers"],
-        )
-        self.assertFalse(info["read_only"])
-        self.assertIn(
-            "Order",
-            info["permissions"]["ContractTrade"],
+        self.assertEqual(
+            captured["headers"]["X-MBX-APIKEY"],
+            "key",
         )
 
-    def test_human_gate_required(self):
-        compliance = ComplianceEngine()
-        client = BybitTestnetClient(
+    def test_production_profile_cannot_submit_orders(self):
+        client = BinanceSpotClient(
             "key",
             "secret",
-            transport=lambda u, d, h: {
-                "retCode": 0,
-                "result": {"orderId": "1", "orderLinkId": ""},
-            },
+            environment="production-readonly",
+            transport=lambda *args: {},
         )
-        executor = HumanTestnetExecutor(compliance, client)
-        with self.assertRaises(ComplianceViolation):
-            executor.place_order(
-                category="linear",
-                symbol="BTCUSDT",
-                side="Buy",
-                order_type="Market",
+        with self.assertRaises(TestnetError):
+            client.place_order(
+                symbol="BTCJPY",
+                side="BUY",
+                order_type="MARKET",
                 qty="0.001",
             )
+
+    def test_human_gate_required_for_testnet_order(self):
+        compliance = ComplianceEngine()
+        calls = {"count": 0}
+
+        def transport(method, url, data, headers):
+            del method, url, headers
+            calls["count"] += 1
+            body = dict(
+                urllib.parse.parse_qsl(
+                    data.decode()
+                )
+            )
+            return {
+                "symbol": "BTCUSDT",
+                "orderId": 1,
+                "clientOrderId": body.get(
+                    "newClientOrderId",
+                    "",
+                ),
+                "origQty": body["quantity"],
+                "executedQty": "0",
+                "cummulativeQuoteQty": "0",
+                "status": "NEW",
+                "type": body["type"],
+                "side": body["side"],
+            }
+
+        client = BinanceSpotClient(
+            "key",
+            "secret",
+            transport=transport,
+        )
+        executor = HumanTestnetExecutor(
+            compliance,
+            client,
+        )
+        with self.assertRaises(ComplianceViolation):
+            executor.place_order(
+                symbol="BTCUSDT",
+                side="BUY",
+                order_type="MARKET",
+                qty="0.001",
+            )
+        self.assertEqual(calls["count"], 0)
 
         compliance.human_arm_testnet(
             confirmation="ARM TESTNET"
         )
         ack = executor.place_order(
-            category="linear",
             symbol="BTCUSDT",
-            side="Buy",
-            order_type="Market",
+            side="BUY",
+            order_type="MARKET",
             qty="0.001",
         )
         self.assertEqual(ack.order_id, "1")
+        self.assertEqual(calls["count"], 1)
 
 
 if __name__ == "__main__":
