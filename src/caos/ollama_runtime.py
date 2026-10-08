@@ -255,6 +255,9 @@ class ManagedOllamaRuntime:
         name = _model_name(
             model_name or ("caos-" + source.stem)
         )
+        was_running = bool(
+            self.status().get("running", False)
+        )
         self.start()
 
         work = Path(self.data_dir) / "ollama-import"
@@ -291,13 +294,20 @@ class ManagedOllamaRuntime:
                 or result.stdout.strip()
                 or str(result.returncode)
             )
+            if not was_running:
+                self.stop()
             raise ManagedOllamaError(
                 "model_import_failed:" + detail[-1200:]
             )
 
+        runtime = (
+            self.status()
+            if was_running
+            else self.stop()
+        )
         return {
             "model": name,
             "source_file": str(source.resolve()),
             "base_url": self.base_url,
-            "runtime": self.status(),
+            "runtime": runtime,
         }
