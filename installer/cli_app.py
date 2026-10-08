@@ -32,8 +32,8 @@ if os.name == "nt":
             )
             if (
                 active
-                and active.get("provider") == "bybit"
-                and active.get("environment") == "testnet"
+                and active.get("provider") == "binance"
+                and active.get("environment") == "spot-testnet"
             ):
                 vault = WindowsCredentialVault()
                 key = vault.get(
@@ -42,11 +42,11 @@ if os.name == "nt":
                 secret = vault.get(
                     f"broker:{active_id}:api_secret"
                 )
-                if key and "BYBIT_TESTNET_API_KEY" not in os.environ:
+                if key and "BINANCE_TESTNET_API_KEY" not in os.environ:
                     os.environ["BYBIT_TESTNET_API_KEY"] = key
                 if (
                     secret
-                    and "BYBIT_TESTNET_API_SECRET"
+                    and "BINANCE_TESTNET_API_SECRET"
                     not in os.environ
                 ):
                     os.environ[
