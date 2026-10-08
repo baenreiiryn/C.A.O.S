@@ -94,6 +94,7 @@ class BinanceSpotClient:
     ENVIRONMENTS = {
         "spot-testnet": TESTNET_BASE_URL,
         "production-readonly": PRODUCTION_BASE_URL,
+        "production-manual": PRODUCTION_BASE_URL,
     }
 
     def __init__(
@@ -110,6 +111,7 @@ class BinanceSpotClient:
             dict,
         ]
         | None = None,
+        allow_manual_production_orders: bool = False,
     ):
         environment = str(environment).strip().lower()
         if environment not in self.ENVIRONMENTS:
@@ -132,7 +134,17 @@ class BinanceSpotClient:
         self._api_secret = str(api_secret)
         self.environment = environment
         self.recv_window = int(recv_window)
+        if (
+            allow_manual_production_orders
+            and environment != "production-manual"
+        ):
+            raise TestnetError(
+                "manual_production_orders_require_manual_environment"
+            )
         self.base_url = expected
+        self.allow_manual_production_orders = bool(
+            allow_manual_production_orders
+        )
         self._time_ms = (
             time_ms
             or (lambda: int(time.time() * 1000))
@@ -143,7 +155,13 @@ class BinanceSpotClient:
 
     @property
     def trading_enabled(self) -> bool:
-        return self.environment == "spot-testnet"
+        return (
+            self.environment == "spot-testnet"
+            or (
+                self.environment == "production-manual"
+                and self.allow_manual_production_orders
+            )
+        )
 
     @staticmethod
     def _urllib_transport(
@@ -415,6 +433,7 @@ class BinanceSpotClient:
         price: str | None = None,
         time_in_force: str = "GTC",
         order_link_id: str | None = None,
+        new_order_resp_type: str | None = None,
     ) -> TestnetOrderAck:
         if not self.trading_enabled:
             raise TestnetError(
@@ -450,6 +469,10 @@ class BinanceSpotClient:
         if order_type == "LIMIT":
             payload["timeInForce"] = time_in_force
             payload["price"] = str(price)
+        if new_order_resp_type:
+            payload["newOrderRespType"] = str(
+                new_order_resp_type
+            ).upper()
 
         result = self._request(
             "POST",
@@ -650,3 +673,98 @@ class ReliableHumanTestnetExecutor:
                 self.journal.recovery_candidates()
             )
         ]
+
+
+class ManualProductionExecutor:
+    """Per-order human-confirmed Binance Spot production executor.
+
+    The daemon and LLM are intentionally not given this object. Each submit
+    requires the exact confirmation string for one persisted intent.
+    """
+
+    def __init__(
+        self,
+        compliance: ComplianceEngine,
+        client: BinanceSpotClient,
+        journal: DurableExecutionJournal,
+    ):
+        if client.environment != "production-manual":
+            raise TestnetError(
+                "manual_executor_requires_production_manual"
+            )
+        if not client.allow_manual_production_orders:
+            raise TestnetError(
+                "manual_production_order_flag_required"
+            )
+        if (
+            journal.venue != "binance"
+            or journal.environment != "production-manual"
+        ):
+            raise TestnetError(
+                "journal_scope_must_match_production_manual"
+            )
+        self.compliance = compliance
+        self.client = client
+        self.journal = journal
+
+    def submit_intent(
+        self,
+        intent_id: str,
+        *,
+        confirmation: str,
+    ) -> dict:
+        self.compliance.confirm_live_order(
+            intent_id,
+            confirmation=confirmation,
+        )
+        current = self.journal.get(intent_id)
+        if current["status"] in {
+            "acknowledged",
+            "reconciled",
+        }:
+            return current
+        if current["status"] != "prepared":
+            raise TestnetError(
+                "manual_intent_not_awaiting_confirmation"
+            )
+        try:
+            claimed = self.journal.claim_for_submit(
+                intent_id
+            )
+        except ExecutionReliabilityError as exc:
+            raise TestnetError(str(exc)) from exc
+        payload = dict(claimed["payload"])
+        payload["new_order_resp_type"] = "FULL"
+        try:
+            ack = self.client.place_order(**payload)
+        except Exception as exc:
+            self.journal.mark_uncertain(
+                intent_id,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise
+        expected_link_id = str(
+            claimed["payload"]["order_link_id"]
+        )
+        if (
+            not ack.order_id
+            or not ack.order_link_id
+            or ack.order_link_id != expected_link_id
+        ):
+            error = (
+                "broker_ack_identity_invalid:"
+                f"order_id={ack.order_id}:"
+                f"order_link_id={ack.order_link_id}:"
+                f"expected={expected_link_id}"
+            )
+            self.journal.mark_uncertain(
+                intent_id,
+                error=error,
+            )
+            raise TestnetError(error)
+        return self.journal.mark_acknowledged(
+            intent_id,
+            broker_order_id=ack.order_id,
+            broker_order_link_id=ack.order_link_id,
+            raw=ack.raw,
+        )
