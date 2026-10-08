@@ -676,6 +676,19 @@ class PaperTraderChartTests(unittest.TestCase):
             result = company.paper.cycle_trader("A")
             self.assertEqual(result.action, "open_long")
 
+            company.paper.visual_events["A"].insert(
+                0,
+                {
+                    "kind": "buy",
+                    "action": "old_fill",
+                    "ts": bars[0].ts - 60_000,
+                    "symbol": "BTCUSDT",
+                    "price": bars[0].close,
+                    "notional": 1.0,
+                    "fee": 0.0,
+                    "strategy": "momentum",
+                },
+            )
             chart = company.paper.chart_snapshot(
                 "A",
                 limit=120,
