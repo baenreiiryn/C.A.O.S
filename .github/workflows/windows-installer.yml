@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feature/windows-installer
+      - feature/persistent-settings
     paths:
       - "src/caos/**"
       - "installer/**"
