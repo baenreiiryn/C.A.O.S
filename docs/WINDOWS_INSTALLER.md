@@ -1,6 +1,6 @@
 # Windows Installer
 
-C.A.O.S v0.8.1 ships a self-contained Windows installer for the standalone Trade Company with a managed Ollama runtime and the visual PAPER Trader chart V1.
+C.A.O.S v0.8.2 ships a self-contained Windows installer for the standalone Trade Company with a managed Ollama runtime and visual PAPER Trader chart V2, including simulated pending limit orders inside each Trader drawer.
 
 ## What gets installed
 
