@@ -182,6 +182,20 @@ class StandaloneConfigTests(unittest.TestCase):
             recovery_args.cmd,
             "testnet-recover",
         )
+        abandon_args = parser().parse_args(
+            [
+                "--provider",
+                "static",
+                "testnet-abandon-missing",
+                "intent-123",
+                "--confirm",
+                "ABANDON MISSING TESTNET INTENT",
+            ]
+        )
+        self.assertEqual(
+            abandon_args.cmd,
+            "testnet-abandon-missing",
+        )
         intents_args = parser().parse_args(
             [
                 "--provider",
@@ -281,6 +295,10 @@ class FantasyCityPresentationTests(unittest.TestCase):
                 company.status(),
                 improvements=company.improvement_proposals(),
                 recent_events=store.recent_events(20),
+            )
+            self.assertEqual(
+                city["city"]["mood"],
+                "attention",
             )
             self.assertEqual(
                 city["locations"]["chronicle"]["state"],
