@@ -585,9 +585,14 @@ function locationDetails(id){
    body+=section('Market instruments','<div class="list">'+Object.entries(caos.execution_cost_bps||{}).map(function(row){return listItem(row[0],String(row[1])+' bps estimated cost')}).join('')+'</div>');
  }
  if(id==='tavern'){
-   const news=(s.caos&&s.caos.news)||{}, sentiment=(s.caos&&s.caos.experts&&s.caos.experts.sentiment)||null;
-   body+=section('Bard\'s Table','<div class="metric-grid">'+metric('News configured',news.configured?'YES':'NO')+metric('Messenger feeds',news.feeds||0)+metric('Sentiment oracle',sentiment||'none')+'</div>');
-   body+='<div class="story">'+(news.configured?'Messengers are configured. News evidence remains advisory and never bypasses deterministic risk gates.':'No news messengers are configured. The Bard will not invent rumors.')+'</div>';
+   const news=(s.caos&&s.caos.news)||{}, sentiment=(s.caos&&s.caos.experts&&s.caos.experts.sentiment)||null, intel=c.news_intelligence||s.news_intelligence||{}, contexts=intel.contexts||{}, latest=intel.latest_items||[], newsErrors=intel.errors||[];
+   const blocked=Object.values(contexts).filter(function(x){return x&&x.block_new_risk}).length;
+   body+=section('Bard\'s Table','<div class="metric-grid">'+metric('News configured',news.configured?'YES':'NO')+metric('Messenger feeds',news.feeds||0)+metric('Sentiment oracle',sentiment||'heuristic fallback')+metric('Markets under ward',blocked)+metric('Feed errors',newsErrors.length)+metric('Last refresh',intel.last_refresh_ms?new Date(intel.last_refresh_ms).toLocaleString():'—')+'</div>');
+   body+='<div class="story">'+(news.configured?'The Bard reads configured messengers and turns their reports into context. News never creates an order. Critical negative news may block only NEW risk; reductions and exits remain allowed. Positive headlines never raise exposure above the technical strategy and risk limits.':'No news messengers are configured. The Bard will not invent rumors.')+'</div>';
+   const contextRows=Object.entries(contexts);
+   body+=section('Market News Wards',contextRows.length?'<div class="list">'+contextRows.map(function(row){const x=row[1]||{};const status=x.block_new_risk?'NEW RISK BLOCKED':(Number(x.score_penalty||0)>0?'CAUTION':'CLEAR');return listItem(row[0]+' · '+status,'severity '+esc(x.severity||'none')+' · sentiment '+Number(x.sentiment||0).toFixed(2)+' · score penalty '+Number(x.score_penalty||0).toFixed(1)+' · '+String((x.headlines||[]).length)+' relevant headline(s)')}).join('')+'</div>':'<div class="empty">No market-specific news context has been calculated yet.</div>');
+   body+=section('Latest Dispatches',latest.length?'<div class="list">'+latest.slice(0,20).map(function(x){const sent=x.sentiment&&x.sentiment.signed_score!==undefined?' · sentiment '+Number(x.sentiment.signed_score).toFixed(2):'';return listItem(x.title||'Untitled dispatch',(x.published||'undated')+' · '+(x.source||'unknown source')+sent)}).join('')+'</div>':'<div class="empty">No dispatches have been collected yet.</div>');
+   if(newsErrors.length)body+=section('Messenger Errors','<div class="list">'+newsErrors.slice(0,20).map(function(e){return listItem('Feed warning',e)}).join('')+'</div>');
  }
  if(id==='arena'){
    const experiments=Object.values(s.training||{}), rollout=c.rollout||{}, rsummary=c.rollout_summary||{}, releases=Object.values(rollout.releases||{});
