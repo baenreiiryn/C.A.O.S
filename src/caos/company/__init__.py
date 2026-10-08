@@ -10,6 +10,14 @@ from .domain import (
 )
 from .treasury import Treasury
 from .registry import TraderRegistry
+from .rollout import (
+    STRATEGY_ROLLOUT_VERSION,
+    CanaryAccount,
+    StrategyRelease,
+    StrategyRolloutError,
+    StrategyRolloutManager,
+    StrategyRolloutPolicy,
+)
 from .research import (
     RESEARCH_FACTORY_VERSION,
     BuiltinGridGenerator,
@@ -80,6 +88,12 @@ __all__ = [
     "ResearchFactory",
     "ResearchFactoryError",
     "ResearchHypothesis",
+    "STRATEGY_ROLLOUT_VERSION",
+    "CanaryAccount",
+    "StrategyRelease",
+    "StrategyRolloutError",
+    "StrategyRolloutManager",
+    "StrategyRolloutPolicy",
     "TradeCompany",
     "TradeCompanyCell",
     "TrainingArena",
