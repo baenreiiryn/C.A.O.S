@@ -4,7 +4,9 @@ from typing import Any
 
 from ..cell_protocol import (
     CELL_PROTOCOL_VERSION,
+    CellAlert,
     CellManifest,
+    CellMetric,
     CellProtocolError,
 )
 from .control import CompanyControlPort
@@ -18,6 +20,33 @@ class TradeCompanyCell:
         "resume",
         "emergency_stop",
     )
+
+    ALERT_MESSAGES = {
+        "operational_trader_cap_violated": (
+            "Trader concurrency exceeded the configured operational cap."
+        ),
+        "trader_stop_floor": (
+            "A Trader equity bucket is below the configured stop floor."
+        ),
+        "funded_trader_unassigned": (
+            "A funded Trader is waiting for a valid market assignment."
+        ),
+        "direction_concentration": (
+            "Production direction concentration is elevated."
+        ),
+        "strategy_family_concentration": (
+            "Production strategy-family concentration is elevated."
+        ),
+        "paper_treasury_reconciliation_mismatch": (
+            "Paper accounting and Treasury accounting do not reconcile."
+        ),
+        "company_kill_switch": (
+            "The Trade Company emergency kill switch is active."
+        ),
+        "caos_kill_switch": (
+            "The shared C.A.O.S emergency kill switch is active."
+        ),
+    }
 
     def __init__(
         self,
@@ -143,35 +172,95 @@ class TradeCompanyCell:
         risk = status.get("risk", {})
         traders = status.get("traders", {})
         opportunities = status.get("opportunities", {})
+        values = {
+            "company_equity": status.get(
+                "marked_company_equity",
+                0.0,
+            ),
+            "treasury_reserve": status.get(
+                "treasury",
+                {},
+            ).get("reserve", 0.0),
+            "trader_slots": traders.get("slot_count", 0),
+            "effective_trader_limit": status.get(
+                "effective_trader_limit",
+                0,
+            ),
+            "gross_exposure": exposure.get(
+                "gross_notional",
+                0.0,
+            ),
+            "company_drawdown_pct": risk.get(
+                "drawdown_pct",
+                0.0,
+            ),
+            "opportunities": len(opportunities),
+            "alerts": len(
+                status.get("audit", {}).get("alerts", [])
+            ),
+        }
+        items = [
+            CellMetric(
+                "company_equity",
+                "Company Equity",
+                values["company_equity"],
+                "USD",
+                "finance",
+            ),
+            CellMetric(
+                "treasury_reserve",
+                "Treasury Reserve",
+                values["treasury_reserve"],
+                "USD",
+                "finance",
+            ),
+            CellMetric(
+                "trader_slots",
+                "Trader Slots",
+                values["trader_slots"],
+                "count",
+                "operations",
+            ),
+            CellMetric(
+                "effective_trader_limit",
+                "Effective Trader Limit",
+                values["effective_trader_limit"],
+                "count",
+                "operations",
+            ),
+            CellMetric(
+                "gross_exposure",
+                "Gross Exposure",
+                values["gross_exposure"],
+                "USD",
+                "risk",
+            ),
+            CellMetric(
+                "company_drawdown_pct",
+                "Company Drawdown",
+                values["company_drawdown_pct"],
+                "percent",
+                "risk",
+            ),
+            CellMetric(
+                "opportunities",
+                "Opportunities",
+                values["opportunities"],
+                "count",
+                "market",
+            ),
+            CellMetric(
+                "alerts",
+                "Active Alerts",
+                values["alerts"],
+                "count",
+                "health",
+            ),
+        ]
         return {
             "cell_id": self.manifest.cell_id,
-            "metrics": {
-                "company_equity": status.get(
-                    "marked_company_equity",
-                    0.0,
-                ),
-                "treasury_reserve": status.get(
-                    "treasury",
-                    {},
-                ).get("reserve", 0.0),
-                "trader_slots": traders.get("slot_count", 0),
-                "effective_trader_limit": status.get(
-                    "effective_trader_limit",
-                    0,
-                ),
-                "gross_exposure": exposure.get(
-                    "gross_notional",
-                    0.0,
-                ),
-                "company_drawdown_pct": risk.get(
-                    "drawdown_pct",
-                    0.0,
-                ),
-                "opportunities": len(opportunities),
-                "alerts": len(
-                    status.get("audit", {}).get("alerts", [])
-                ),
-            },
+            "values": values,
+            "items": [item.to_dict() for item in items],
         }
 
     def get_alerts(self) -> list[dict]:
@@ -181,11 +270,26 @@ class TradeCompanyCell:
         ).get("alerts", [])
         normalized = []
         for index, alert in enumerate(alerts):
-            row = dict(alert)
-            row.setdefault("severity", "attention")
-            row["cell_id"] = self.manifest.cell_id
-            row["alert_index"] = index
-            normalized.append(row)
+            code = str(alert.get("kind", "unknown_alert"))
+            data = dict(alert)
+            severity = str(alert.get("severity", "attention"))
+            alert_id = (
+                f"{self.manifest.cell_id}:{code}:"
+                f"{alert.get('trader_id', 'cell')}:{index}"
+            )
+            normalized.append(
+                CellAlert(
+                    id=alert_id,
+                    severity=severity,
+                    code=code,
+                    title=code.replace("_", " ").title(),
+                    message=self.ALERT_MESSAGES.get(
+                        code,
+                        "The cell reported an operational alert.",
+                    ),
+                    data=data,
+                ).to_dict()
+            )
         return normalized
 
     def get_recent_events(self, limit: int = 30) -> list[dict]:
@@ -203,7 +307,7 @@ class TradeCompanyCell:
     def get_report(self) -> dict:
         status = self.get_status()
         health = self.get_health()
-        metrics = self.get_metrics()["metrics"]
+        metrics = self.get_metrics()["values"]
         alerts = self.get_alerts()
         highlights = [
             (
