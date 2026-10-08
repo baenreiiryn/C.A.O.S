@@ -11,6 +11,7 @@ on:
       - "src/caos/**"
       - "installer/**"
       - "pyproject.toml"
+      - "tests/**"
       - ".github/workflows/windows-installer.yml"
 
 permissions:
