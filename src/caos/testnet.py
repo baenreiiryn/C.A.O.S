@@ -438,6 +438,26 @@ class ReliableHumanTestnetExecutor:
             )
             raise
 
+        expected_link_id = str(
+            claimed["payload"]["order_link_id"]
+        )
+        if (
+            not ack.order_id
+            or not ack.order_link_id
+            or ack.order_link_id != expected_link_id
+        ):
+            error = (
+                "broker_ack_identity_invalid:"
+                f"order_id={ack.order_id}:"
+                f"order_link_id={ack.order_link_id}:"
+                f"expected={expected_link_id}"
+            )
+            self.journal.mark_uncertain(
+                claimed["intent_id"],
+                error=error,
+            )
+            raise TestnetError(error)
+
         return self.journal.mark_acknowledged(
             claimed["intent_id"],
             broker_order_id=ack.order_id,
