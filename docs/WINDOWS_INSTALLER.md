@@ -1,16 +1,19 @@
 # Windows Installer
 
-C.A.O.S v0.7.3 ships a self-contained Windows installer for the standalone Trade Company.
+C.A.O.S v0.8.0 ships a self-contained Windows installer for the standalone Trade Company with a managed Ollama runtime.
 
 ## What gets installed
 
 ```text
 %LOCALAPPDATA%\Programs\CAOS\
 ├─ CAOS-Trade-Company.exe
-└─ caos.exe
+├─ caos.exe
+└─ ollama\
+   ├─ ollama.exe
+   └─ ...portable GPU/runtime libraries
 ```
 
-The application runtime is bundled into the executables. A separate Python installation is not required.
+The application runtime is bundled into the executables and the official portable Ollama runtime is installed beside them. A separate Python or Ollama installation is not required. The portable Ollama package is large, so v0.8.0's installer is substantially larger than v0.7.x.
 
 The installer creates a Start Menu folder named **C.A.O.S** with:
 
@@ -85,7 +88,7 @@ http://127.0.0.1:5191
 
 ## Default news intelligence
 
-Fresh v0.7.3 installations start with the Whispering Tankard news catalog already configured in `launcher.json`.
+Fresh v0.8.0 installations start with the Whispering Tankard news catalog already configured in `launcher.json`.
 
 Enabled defaults include crypto/market/editorial sources plus official SEC, Federal Reserve and Bank of Japan feeds. The Arcane Trading City **Settings → Whispering Tankard** page lets the user:
 
@@ -98,7 +101,7 @@ Enabled defaults include crypto/market/editorial sources plus official SEC, Fede
 
 News source settings contain no secrets.
 
-Upgrading an existing v0.7.2 installation preserves the existing database and launcher config. If `news_sources` is absent, v0.7.3 adds the built-in catalog automatically.
+Upgrading an existing v0.7.2 or v0.7.3 installation preserves the existing database and launcher config. If `news_sources` is absent, v0.8.0 adds the built-in catalog automatically.
 
 News is context/risk evidence only. It cannot create orders, and a custom feed cannot independently trigger the critical hard block on new risk.
 
@@ -130,6 +133,40 @@ You can change:
 - optional OpenAI-compatible API key.
 
 The UI can discover models from Ollama and OpenAI-compatible `/models` endpoints, test connectivity, and switch the live `caos.llm` object without resetting Treasury, Traders, PAPER positions, Research Factory state or rollout state.
+
+#### Managed Ollama
+
+The Windows installer carries the official portable Ollama runtime under:
+
+```text
+%LOCALAPPDATA%\Programs\CAOS\ollama\
+```
+
+Trade Company starts it only on demand and binds it to:
+
+```text
+http://127.0.0.1:11435
+```
+
+This avoids colliding with a separately installed Ollama, whose normal endpoint is `11434`.
+
+Managed model storage:
+
+```text
+%LOCALAPPDATA%\CAOS\ollama-models\
+```
+
+From **Settings → Arcane Nexus · Managed Ollama** the user can:
+
+1. click **Choose GGUF** to open a native Windows file picker;
+2. select a local `.gguf` model file;
+3. optionally change the imported model name;
+4. click **Apply Local Model**;
+5. let Trade Company run `ollama create` against the selected GGUF;
+6. automatically switch the active provider/model to the managed endpoint;
+7. use **Start Ollama** and **Stop Ollama** without a terminal.
+
+Importing a GGUF registers it inside Ollama's managed model store. The original source file is not treated as an API endpoint.
 
 LLM API keys are stored in Windows Credential Manager.
 
@@ -172,7 +209,7 @@ Requirements for producing the installer:
 - PyInstaller;
 - Inno Setup 6.
 
-Equivalent build steps:
+Equivalent build steps require the portable Ollama runtime to be extracted to `ollama-runtime\` first. The GitHub Actions workflow downloads pinned Ollama v0.40.1 and verifies its SHA-256 before packaging.
 
 ```powershell
 python -m pip install .
@@ -203,12 +240,13 @@ runs on `windows-latest` and:
 
 1. installs C.A.O.S;
 2. runs the complete unit-test suite;
-3. builds the windowed Trade Company executable;
-4. builds the console CLI executable;
-5. smoke-tests both packaged executables;
-6. installs Inno Setup;
-7. creates `CAOS-Setup.exe`;
-8. uploads it as the `CAOS-Windows-Installer` workflow artifact.
+3. downloads the pinned official Ollama portable runtime and verifies its SHA-256;
+4. builds the windowed Trade Company executable;
+5. builds the console CLI executable;
+6. smoke-tests both packaged executables;
+7. installs Inno Setup;
+8. creates `CAOS-Setup.exe` with the managed Ollama runtime;
+9. uploads it as the `CAOS-Windows-Installer` workflow artifact.
 
 ## Signing
 
