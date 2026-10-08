@@ -1,6 +1,6 @@
 # Windows Installer
 
-C.A.O.S v0.7.0 ships a self-contained Windows installer for the standalone Trade Company.
+C.A.O.S v0.7.1 ships a self-contained Windows installer for the standalone Trade Company.
 
 ## What gets installed
 
@@ -96,6 +96,33 @@ openai-compatible
 ```
 
 The autonomous deterministic market loop does not require a local LLM on every tick.
+
+## Persistent settings after first launch
+
+The Founding Charter is only the first-run setup. Once the Company exists, configuration remains available from the **⚙ Settings** button in the Arcane Trading City.
+
+### Arcane Nexus — LLM
+
+You can change:
+
+- provider (`static`, `ollama`, `openai-compatible`);
+- model;
+- base URL;
+- optional OpenAI-compatible API key.
+
+The UI can discover models from Ollama and OpenAI-compatible `/models` endpoints, test connectivity, and switch the live `caos.llm` object without resetting Treasury, Traders, PAPER positions, Research Factory state or rollout state.
+
+LLM API keys are stored in Windows Credential Manager.
+
+### Broker Embassy
+
+Broker profiles can be added or edited after onboarding. Broker metadata is stored in `launcher.json`, while API keys/secrets are stored in Windows Credential Manager.
+
+Bybit TESTNET is the currently implemented activatable broker adapter. Binance, OKX and Kraken profiles can be prepared in the schema, but cannot be made active until those adapters are implemented.
+
+The active broker cannot be switched while unresolved external execution intents exist.
+
+The packaged `caos.exe` loads the active Bybit TESTNET profile from Windows Credential Manager automatically, so installed users do not need to configure credentials through PowerShell environment variables.
 
 ## Bybit TESTNET
 
