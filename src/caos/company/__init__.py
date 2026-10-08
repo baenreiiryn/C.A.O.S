@@ -16,6 +16,7 @@ from .paper import CompanyPaperBook, CompanyPaperError
 from .risk import CompanyRiskGovernor, CompanyRiskViolation
 from .adapter import CAOSAdapter
 from .company import TradeCompany
+from .city import CityPresentationMapper, CityLocation
 from .daemon import CompanyDaemon, CompanyDaemonCycle, ScanTarget
 from .control import CompanyControlPort
 from .diversity import StrategyDiversity
@@ -29,6 +30,8 @@ from .training import TrainingArena, TrainingVariant
 __all__ = [
     "CAOSAdapter",
     "CapitalAllocator",
+    "CityPresentationMapper",
+    "CityLocation",
     "CompanyDaemon",
     "CompanyDaemonCycle",
     "ScanTarget",
