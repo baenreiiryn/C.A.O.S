@@ -22,9 +22,9 @@ from caos.quant import (
 )
 from caos.store import Store
 from caos.testnet import (
-    BybitTestnetClient,
+    BinanceSpotClient,
     HumanTestnetExecutor,
-    execution_plan_to_bybit_order,
+    execution_plan_to_binance_order,
 )
 
 
@@ -451,30 +451,77 @@ class TestnetExecutionFabricTests(unittest.TestCase):
             current_notional=0.0,
             reference_price=50_000.0,
         )
-        payload = execution_plan_to_bybit_order(plan)
-        self.assertEqual(payload["side"], "Buy")
+        payload = execution_plan_to_binance_order(plan)
+        self.assertEqual(payload["side"], "BUY")
         self.assertEqual(payload["symbol"], "BTCUSDT")
-        self.assertFalse(payload["reduce_only"])
         self.assertEqual(
             payload["order_link_id"],
             plan.plan_id[:36],
         )
 
+    def test_binance_spot_rejects_non_reducing_sell_plan(self):
+        decision = decision_from_signal(
+            symbol="BTCUSDT",
+            strategy_id="mom",
+            signal="flat",
+            requested_weight=0.0,
+            as_of=1,
+        )
+        target = resolve_target_position(
+            decision,
+            equity=100.0,
+            max_notional=20.0,
+        )
+        # A synthetic inconsistent current exposure can create a reducing
+        # SELL, which is valid.
+        reducing = plan_execution(
+            target,
+            current_notional=20.0,
+            reference_price=50_000.0,
+        )
+        payload = execution_plan_to_binance_order(
+            reducing
+        )
+        self.assertEqual(payload["side"], "SELL")
+
+        from dataclasses import replace
+        unsafe = replace(
+            reducing,
+            risk_reducing=False,
+        )
+        from caos.testnet import TestnetError
+        with self.assertRaises(TestnetError):
+            execution_plan_to_binance_order(unsafe)
+
     def test_human_gated_executor_can_execute_same_plan(self):
         captured = {}
 
-        def transport(url, data, headers):
-            import json
-            captured["body"] = json.loads(data.decode())
+        def transport(method, url, data, headers):
+            import urllib.parse
+            del headers
+            captured["method"] = method
+            captured["url"] = url
+            captured["body"] = dict(
+                urllib.parse.parse_qsl(
+                    data.decode()
+                )
+            )
             return {
-                "retCode": 0,
-                "result": {
-                    "orderId": "plan-order",
-                    "orderLinkId": captured["body"].get(
-                        "orderLinkId",
-                        "",
-                    ),
-                },
+                "orderId": "plan-order",
+                "clientOrderId": captured["body"].get(
+                    "newClientOrderId",
+                    "",
+                ),
+                "symbol": "BTCUSDT",
+                "side": "BUY",
+                "type": "MARKET",
+                "origQty": captured["body"].get(
+                    "quantity",
+                    "",
+                ),
+                "executedQty": "0",
+                "cummulativeQuoteQty": "0",
+                "status": "NEW",
             }
 
         decision = decision_from_signal(
@@ -497,7 +544,7 @@ class TestnetExecutionFabricTests(unittest.TestCase):
 
         from caos.compliance import ComplianceEngine, ComplianceViolation
         compliance = ComplianceEngine()
-        client = BybitTestnetClient(
+        client = BinanceSpotClient(
             "key",
             "secret",
             transport=transport,
@@ -513,7 +560,7 @@ class TestnetExecutionFabricTests(unittest.TestCase):
         ack = executor.execute_plan(plan)
         self.assertEqual(ack.order_id, "plan-order")
         self.assertEqual(
-            captured["body"]["orderLinkId"],
+            captured["body"]["newClientOrderId"],
             plan.plan_id[:36],
         )
 

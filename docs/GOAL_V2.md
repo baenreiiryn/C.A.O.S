@@ -20,7 +20,7 @@ The Goal is complete when all of the following exist and the full CI suite is gr
 - LLM cannot place raw paper, testnet, or live orders;
 - QUANT mines at least trend, mean-reversion, breakout and momentum families;
 - portfolio construction rejects excessive strategy correlation;
-- Bybit public order-book depth is used to estimate realistic execution cost;
+- Binance Spot public order-book depth is used to estimate realistic execution cost;
 - paper accounting tracks quantity, fees and realized P&L correctly;
 - kill-switch can force risk-reducing exits while preventing new exposure;
 - deterministic paper limit and stop primitives exist;
@@ -28,7 +28,7 @@ The Goal is complete when all of the following exist and the full CI suite is gr
 - paper daemon isolates per-symbol data failures instead of trading stale data;
 - SUPERVISOR compares expected backtest behavior with realized paper behavior;
 - NEWS consumes only human-configured RSS/Atom feeds;
-- Bybit TESTNET client is hard-locked to `api-testnet.bybit.com`;
+- Binance Spot TESTNET client is hard-locked to `testnet.binance.vision`;
 - TESTNET requires a separate explicit human gate and is never exposed as an LLM tool;
 - production LIVE remains human-gated and is intentionally not implemented by this milestone;
 - all automated tests and CLI smoke tests pass in GitHub Actions.

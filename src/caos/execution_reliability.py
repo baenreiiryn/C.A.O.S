@@ -76,7 +76,6 @@ def compare_intent_to_broker_order(
         "side": str(payload.get("side", "")),
         "order_type": str(payload.get("order_type", "")),
         "qty": payload.get("qty"),
-        "reduce_only": bool(payload.get("reduce_only", False)),
     }
     actual = {
         "order_link_id": str(
@@ -90,9 +89,6 @@ def compare_intent_to_broker_order(
             broker_order.get("order_type", "")
         ),
         "qty": broker_order.get("qty"),
-        "reduce_only": bool(
-            broker_order.get("reduce_only", False)
-        ),
     }
 
     for key in (
@@ -100,7 +96,6 @@ def compare_intent_to_broker_order(
         "symbol",
         "side",
         "order_type",
-        "reduce_only",
     ):
         if expected[key] != actual[key]:
             issues.append(f"{key}_mismatch")
@@ -121,8 +116,8 @@ class DurableExecutionJournal:
         self,
         store: Store,
         *,
-        venue: str = "bybit",
-        environment: str = "testnet",
+        venue: str = "binance",
+        environment: str = "spot-testnet",
     ):
         if store is None:
             raise ExecutionReliabilityError(
@@ -179,6 +174,8 @@ class DurableExecutionJournal:
         return self.store.list_execution_intents(
             limit=limit,
             statuses=statuses,
+            venue=self.venue,
+            environment=self.environment,
         )
 
     def claim_for_submit(self, intent_id: str) -> dict:
@@ -436,7 +433,10 @@ class DurableExecutionJournal:
         )
 
     def summary(self) -> dict:
-        counts = self.store.execution_intent_counts()
+        counts = self.store.execution_intent_counts(
+            venue=self.venue,
+            environment=self.environment,
+        )
         return {
             "version": EXECUTION_RELIABILITY_VERSION,
             "venue": self.venue,

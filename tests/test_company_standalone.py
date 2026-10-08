@@ -27,7 +27,7 @@ from caos.execution_fabric import (
     plan_execution,
     resolve_target_position,
 )
-from caos.testnet import execution_plan_to_bybit_order
+from caos.testnet import execution_plan_to_binance_order
 from caos.llm import StaticLLM
 from caos.orchestrator import CAOS
 from caos.store import Store
@@ -54,7 +54,7 @@ def add_uncertain_execution_intent(company):
     journal = company.execution_reliability
     row = journal.prepare(
         plan,
-        execution_plan_to_bybit_order(plan),
+        execution_plan_to_binance_order(plan),
     )
     journal.claim_for_submit(row["intent_id"])
     journal.mark_uncertain(

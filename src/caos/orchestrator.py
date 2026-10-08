@@ -12,7 +12,7 @@ from .experts.ensemble import ExpertEnsemble
 from .experts.evaluation import walk_forward_evaluate
 from .execution import estimate_execution_cost
 from .llm import LocalLLM
-from .marketdata import BybitPublicClient
+from .marketdata import BinancePublicClient
 from .portfolio import build_portfolio
 from .quant import market_regime, mine_strategies
 from .risk import RiskEngine
@@ -47,14 +47,14 @@ class CAOS:
     def __init__(
         self,
         llm: LocalLLM,
-        market_client: BybitPublicClient | None = None,
+        market_client: BinancePublicClient | None = None,
         forecast_experts: dict[str, Any] | None = None,
         sentiment_expert: Any | None = None,
         news_analyzer: Any | None = None,
         store: Any | None = None,
     ):
         self.llm = llm
-        self.market_client = market_client or BybitPublicClient()
+        self.market_client = market_client or BinancePublicClient()
         self.forecast_experts = forecast_experts or {}
         self.sentiment_expert = sentiment_expert
         self.news_analyzer = news_analyzer
@@ -84,7 +84,7 @@ class CAOS:
     def _register_tools(self) -> None:
         self._register(
             "fetch_market",
-            "Download public Bybit candles for a symbol; no API key is used.",
+            "Download public Binance Spot candles for a symbol; no API key is used.",
             self.tool_fetch_market,
         )
         self._register(
@@ -99,7 +99,7 @@ class CAOS:
         )
         self._register(
             "estimate_cost",
-            "Measure spread and depth-based execution cost from the public Bybit orderbook.",
+            "Measure spread and depth-based execution cost from the public Binance Spot orderbook.",
             self.tool_estimate_cost,
         )
         self._register(
@@ -190,7 +190,7 @@ class CAOS:
         symbol: str,
         interval: str = "60",
         limit: int = 500,
-        category: str = "linear",
+        category: str = "spot",
     ) -> dict:
         bars = self.market_client.klines(symbol, interval, int(limit), category)
         self.load_bars(symbol, bars)

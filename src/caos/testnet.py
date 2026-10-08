@@ -4,9 +4,11 @@ import hashlib
 import hmac
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
 from .compliance import ComplianceEngine
@@ -29,128 +31,157 @@ class TestnetOrderAck:
     raw: dict[str, Any]
 
 
-def execution_plan_to_bybit_order(
+def execution_plan_to_binance_order(
     plan: ExecutionPlan,
     *,
-    category: str = "linear",
-    order_type: str = "Market",
+    order_type: str = "MARKET",
     quantity_decimals: int = 8,
 ) -> dict[str, Any]:
-    """Translate a venue-agnostic plan into a Bybit TESTNET order payload."""
+    """Translate a venue-agnostic plan into a Binance Spot TESTNET order.
+
+    Spot does not support opening a naked short. SELL is therefore accepted
+    only for an ExecutionPlan that is explicitly risk-reducing.
+    """
     if not plan.executable or plan.side is None:
         raise TestnetError("execution_plan_not_executable")
-    if category not in {"linear", "inverse", "spot"}:
-        raise ValueError("unsupported category")
-    if order_type not in {"Market", "Limit"}:
-        raise ValueError("order_type must be Market or Limit")
+    order_type = str(order_type).upper()
+    if order_type not in {"MARKET", "LIMIT"}:
+        raise ValueError("order_type must be MARKET or LIMIT")
     if quantity_decimals < 0 or quantity_decimals > 16:
         raise ValueError("invalid_quantity_decimals")
+    if plan.side == "sell" and not plan.risk_reducing:
+        raise TestnetError("binance_spot_shorting_not_supported")
 
     qty = plan.order_notional / plan.reference_price
     if qty <= 0:
         raise TestnetError("execution_plan_quantity_invalid")
-    qty_text = f"{qty:.{quantity_decimals}f}".rstrip("0").rstrip(".")
+    qty_text = (
+        f"{qty:.{quantity_decimals}f}"
+        .rstrip("0")
+        .rstrip(".")
+    )
     if not qty_text:
-        raise TestnetError("execution_plan_quantity_rounds_to_zero")
+        raise TestnetError(
+            "execution_plan_quantity_rounds_to_zero"
+        )
 
     payload: dict[str, Any] = {
-        "category": category,
-        "symbol": plan.symbol,
-        "side": "Buy" if plan.side == "buy" else "Sell",
+        "symbol": plan.symbol.upper(),
+        "side": "BUY" if plan.side == "buy" else "SELL",
         "order_type": order_type,
         "qty": qty_text,
-        "reduce_only": bool(plan.risk_reducing),
         "order_link_id": plan.plan_id[:36],
     }
-    if order_type == "Limit":
+    if order_type == "LIMIT":
         payload["price"] = str(plan.reference_price)
     return payload
 
 
-class BybitTestnetClient:
-    """Minimal authenticated Bybit V5 client hard-locked to TESTNET."""
+class BinanceSpotClient:
+    """Minimal Binance Spot client for Japan-compatible integration.
 
-    TESTNET_BASE_URL = "https://api-testnet.bybit.com"
+    - spot-testnet: signed orders are allowed, still human-gated by C.A.O.S.
+    - production-readonly: account/order metadata can be queried but order
+      submission is blocked in code.
+
+    Production REST uses the standard Binance Spot API documented for
+    Binance Japan API users. Money-moving production execution remains
+    unavailable.
+    """
+
+    TESTNET_BASE_URL = "https://testnet.binance.vision"
+    PRODUCTION_BASE_URL = "https://api.binance.com"
+    ENVIRONMENTS = {
+        "spot-testnet": TESTNET_BASE_URL,
+        "production-readonly": PRODUCTION_BASE_URL,
+    }
 
     def __init__(
         self,
         api_key: str,
         api_secret: str,
         *,
+        environment: str = "spot-testnet",
         recv_window: int = 5000,
-        base_url: str = TESTNET_BASE_URL,
+        base_url: str | None = None,
         time_ms: Callable[[], int] | None = None,
-        transport: Callable[[str, bytes, dict[str, str]], dict] | None = None,
-        query_transport: Callable[[str, dict[str, str]], dict] | None = None,
+        transport: Callable[
+            [str, str, bytes | None, dict[str, str]],
+            dict,
+        ]
+        | None = None,
     ):
-        if base_url.rstrip("/") != self.TESTNET_BASE_URL:
-            raise TestnetError("production_or_unknown_bybit_host_forbidden")
+        environment = str(environment).strip().lower()
+        if environment not in self.ENVIRONMENTS:
+            raise TestnetError(
+                "unsupported_binance_environment"
+            )
+        expected = self.ENVIRONMENTS[environment]
+        requested = (base_url or expected).rstrip("/")
+        if requested != expected:
+            raise TestnetError(
+                "unknown_binance_host_forbidden"
+            )
         if not api_key or not api_secret:
-            raise TestnetError("testnet_credentials_required")
+            raise TestnetError("binance_credentials_required")
         if recv_window <= 0:
-            raise ValueError("recv_window must be positive")
-        self.api_key = api_key
-        self._api_secret = api_secret
+            raise ValueError(
+                "recv_window must be positive"
+            )
+        self.api_key = str(api_key)
+        self._api_secret = str(api_secret)
+        self.environment = environment
         self.recv_window = int(recv_window)
-        self.base_url = self.TESTNET_BASE_URL
-        self._time_ms = time_ms or (lambda: int(time.time() * 1000))
-        self._transport = transport or self._urllib_transport
-        self._query_transport = (
-            query_transport or self._urllib_query_transport
+        self.base_url = expected
+        self._time_ms = (
+            time_ms
+            or (lambda: int(time.time() * 1000))
+        )
+        self._transport = (
+            transport or self._urllib_transport
         )
 
-    @staticmethod
-    def _canonical_json(payload: dict[str, Any]) -> str:
-        return json.dumps(
-            payload,
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
-
-    def signature(
-        self,
-        timestamp: int,
-        body_string: str,
-    ) -> str:
-        message = (
-            f"{timestamp}{self.api_key}{self.recv_window}{body_string}"
-        )
-        return hmac.new(
-            self._api_secret.encode("utf-8"),
-            message.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
+    @property
+    def trading_enabled(self) -> bool:
+        return self.environment == "spot-testnet"
 
     @staticmethod
     def _urllib_transport(
+        method: str,
         url: str,
-        data: bytes,
+        data: bytes | None,
         headers: dict[str, str],
     ) -> dict:
         req = urllib.request.Request(
             url,
             data=data,
             headers=headers,
-            method="POST",
+            method=method,
         )
-        with urllib.request.urlopen(req, timeout=15.0) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(
+                req,
+                timeout=15.0,
+            ) as resp:
+                return json.loads(
+                    resp.read().decode("utf-8")
+                )
+        except urllib.error.HTTPError as exc:
+            try:
+                payload = json.loads(
+                    exc.read().decode("utf-8")
+                )
+            except Exception:
+                raise TestnetError(
+                    f"binance_http_error:{exc.code}"
+                ) from exc
+            raise TestnetError(
+                "binance_api_error:"
+                f"{payload.get('code')}:{payload.get('msg')}"
+            ) from exc
 
     @staticmethod
-    def _urllib_query_transport(
-        url: str,
-        headers: dict[str, str],
-    ) -> dict:
-        req = urllib.request.Request(
-            url,
-            headers=headers,
-            method="GET",
-        )
-        with urllib.request.urlopen(req, timeout=15.0) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-
-    @staticmethod
-    def _canonical_query(
+    def _query_string(
         params: dict[str, Any],
     ) -> str:
         items = [
@@ -160,191 +191,285 @@ class BybitTestnetClient:
         ]
         return urllib.parse.urlencode(items)
 
-    def _get(
+    def signature(self, query_string: str) -> str:
+        return hmac.new(
+            self._api_secret.encode("utf-8"),
+            query_string.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def _signed_params(
         self,
-        path: str,
         params: dict[str, Any],
-    ) -> dict:
-        timestamp = self._time_ms()
-        query = self._canonical_query(params)
-        headers = {
-            "Content-Type": "application/json",
-            "X-BAPI-API-KEY": self.api_key,
-            "X-BAPI-TIMESTAMP": str(timestamp),
-            "X-BAPI-RECV-WINDOW": str(self.recv_window),
-            "X-BAPI-SIGN": self.signature(timestamp, query),
+    ) -> dict[str, Any]:
+        signed = {
+            **params,
+            "recvWindow": self.recv_window,
+            "timestamp": self._time_ms(),
         }
+        query = self._query_string(signed)
+        signed["signature"] = self.signature(query)
+        return signed
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        signed: bool = True,
+    ):
+        values = dict(params or {})
+        if signed:
+            values = self._signed_params(values)
+        query = self._query_string(values)
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "caos/0.7.2",
+        }
+        if signed:
+            headers["X-MBX-APIKEY"] = self.api_key
+
+        method = method.upper()
         url = self.base_url + path
-        if query:
-            url += "?" + query
-        result = self._query_transport(
+        data = None
+        if method == "GET":
+            if query:
+                url += "?" + query
+        else:
+            headers[
+                "Content-Type"
+            ] = "application/x-www-form-urlencoded"
+            data = query.encode("utf-8")
+
+        result = self._transport(
+            method,
             url,
+            data,
             headers,
         )
-        if int(result.get("retCode", -1)) != 0:
+        if (
+            isinstance(result, dict)
+            and isinstance(result.get("code"), int)
+            and int(result["code"]) < 0
+        ):
             raise TestnetError(
-                f"bybit_testnet_error:{result.get('retCode')}:{result.get('retMsg')}"
+                "binance_api_error:"
+                f"{result.get('code')}:{result.get('msg')}"
             )
         return result
 
-    def _post(self, path: str, payload: dict[str, Any]) -> dict:
-        timestamp = self._time_ms()
-        body = self._canonical_json(payload)
-        headers = {
-            "Content-Type": "application/json",
-            "X-BAPI-API-KEY": self.api_key,
-            "X-BAPI-TIMESTAMP": str(timestamp),
-            "X-BAPI-RECV-WINDOW": str(self.recv_window),
-            "X-BAPI-SIGN": self.signature(timestamp, body),
-        }
-        result = self._transport(
-            self.base_url + path,
-            body.encode("utf-8"),
-            headers,
+    def get_account_info(self) -> dict:
+        row = self._request(
+            "GET",
+            "/api/v3/account",
+            {},
+            signed=True,
         )
-        if int(result.get("retCode", -1)) != 0:
-            raise TestnetError(
-                f"bybit_testnet_error:{result.get('retCode')}:{result.get('retMsg')}"
-            )
-        return result
+        balances = []
+        for item in row.get("balances", []) or []:
+            try:
+                free = Decimal(str(item.get("free", "0")))
+                locked = Decimal(
+                    str(item.get("locked", "0"))
+                )
+            except InvalidOperation:
+                continue
+            if free != 0 or locked != 0:
+                balances.append(
+                    {
+                        "asset": str(
+                            item.get("asset", "")
+                        ),
+                        "free": str(free),
+                        "locked": str(locked),
+                    }
+                )
+        return {
+            "environment": self.environment,
+            "can_trade": bool(
+                row.get("canTrade", False)
+            ),
+            "can_withdraw": bool(
+                row.get("canWithdraw", False)
+            ),
+            "can_deposit": bool(
+                row.get("canDeposit", False)
+            ),
+            "account_type": str(
+                row.get("accountType", "")
+            ),
+            "permissions": list(
+                row.get("permissions", []) or []
+            ),
+            "balances_nonzero": balances,
+            "uid": str(row.get("uid", "")),
+        }
+
+    def get_exchange_info(
+        self,
+        symbol: str | None = None,
+    ) -> dict:
+        params = (
+            {"symbol": symbol.upper()}
+            if symbol
+            else {}
+        )
+        result = self._request(
+            "GET",
+            "/api/v3/exchangeInfo",
+            params,
+            signed=False,
+        )
+        return dict(result)
 
     @staticmethod
-    def _normalize_order(row: dict[str, Any]) -> dict:
-        reduce_only = row.get("reduceOnly", False)
-        if isinstance(reduce_only, str):
-            reduce_only = reduce_only.lower() == "true"
+    def _normalize_order(
+        row: dict[str, Any],
+    ) -> dict:
+        executed = Decimal(
+            str(row.get("executedQty", "0") or "0")
+        )
+        quote = Decimal(
+            str(
+                row.get(
+                    "cummulativeQuoteQty",
+                    "0",
+                )
+                or "0"
+            )
+        )
+        avg_price = (
+            str(quote / executed)
+            if executed > 0
+            else str(row.get("price", ""))
+        )
         return {
-            "order_id": str(row.get("orderId", "")),
-            "order_link_id": str(
-                row.get("orderLinkId", "")
+            "order_id": str(
+                row.get("orderId", "")
             ),
-            "symbol": str(row.get("symbol", "")).upper(),
-            "side": str(row.get("side", "")),
-            "order_type": str(row.get("orderType", "")),
-            "qty": str(row.get("qty", "")),
-            "reduce_only": bool(reduce_only),
+            "order_link_id": str(
+                row.get("clientOrderId", "")
+            ),
+            "symbol": str(
+                row.get("symbol", "")
+            ).upper(),
+            "side": str(row.get("side", "")).upper(),
+            "order_type": str(
+                row.get("type", "")
+            ).upper(),
+            "qty": str(row.get("origQty", "")),
             "order_status": str(
-                row.get("orderStatus", "")
+                row.get("status", "")
             ),
             "cum_exec_qty": str(
-                row.get("cumExecQty", "")
+                row.get("executedQty", "")
             ),
-            "avg_price": str(
-                row.get("avgPrice", "")
-            ),
+            "avg_price": avg_price,
             "raw": dict(row),
-        }
-
-    def get_api_key_info(self) -> dict:
-        """Authenticate the configured TESTNET API key and return safe metadata."""
-        result = self._get(
-            "/v5/user/query-api",
-            {},
-        )
-        row = result.get("result", {}) or {}
-        return {
-            "read_only": bool(
-                int(row.get("readOnly", 0))
-            ),
-            "permissions": dict(
-                row.get("permissions", {}) or {}
-            ),
-            "note": str(row.get("note", "")),
-            "kyc_level": str(
-                row.get("kycLevel", "")
-            ),
-            "kyc_region": str(
-                row.get("kycRegion", "")
-            ),
         }
 
     def find_order(
         self,
         *,
-        category: str,
         symbol: str,
         order_link_id: str,
     ) -> dict | None:
-        if category not in {"linear", "inverse", "spot"}:
-            raise ValueError("unsupported category")
         if not symbol or not order_link_id:
             raise ValueError(
                 "symbol_and_order_link_id_required"
             )
-        params = {
-            "category": category,
-            "symbol": symbol.upper(),
-            "orderLinkId": order_link_id,
-        }
-        for path in (
-            "/v5/order/realtime",
-            "/v5/order/history",
-        ):
-            result = self._get(path, params)
-            rows = (
-                result.get("result", {}).get("list", [])
-                or []
+        try:
+            row = self._request(
+                "GET",
+                "/api/v3/order",
+                {
+                    "symbol": symbol.upper(),
+                    "origClientOrderId": (
+                        order_link_id
+                    ),
+                },
+                signed=True,
             )
-            for row in rows:
-                if str(row.get("orderLinkId", "")) == order_link_id:
-                    return self._normalize_order(row)
-        return None
+        except TestnetError as exc:
+            # Binance -2013 means the order is not known.
+            if "binance_api_error:-2013:" in str(exc):
+                return None
+            raise
+        if not isinstance(row, dict):
+            return None
+        if (
+            str(row.get("clientOrderId", ""))
+            != str(order_link_id)
+        ):
+            return None
+        return self._normalize_order(row)
 
     def place_order(
         self,
         *,
-        category: str,
         symbol: str,
         side: str,
         order_type: str,
         qty: str,
         price: str | None = None,
         time_in_force: str = "GTC",
-        reduce_only: bool = False,
         order_link_id: str | None = None,
-        trigger_price: str | None = None,
-        trigger_direction: int | None = None,
     ) -> TestnetOrderAck:
-        if category not in {"linear", "inverse", "spot"}:
-            raise ValueError("unsupported category")
-        if side not in {"Buy", "Sell"}:
-            raise ValueError("side must be Buy or Sell")
-        if order_type not in {"Market", "Limit"}:
-            raise ValueError("order_type must be Market or Limit")
+        if not self.trading_enabled:
+            raise TestnetError(
+                "binance_production_trading_forbidden"
+            )
+        side = str(side).upper()
+        order_type = str(order_type).upper()
+        if side not in {"BUY", "SELL"}:
+            raise ValueError(
+                "side must be BUY or SELL"
+            )
+        if order_type not in {"MARKET", "LIMIT"}:
+            raise ValueError(
+                "order_type must be MARKET or LIMIT"
+            )
         if not symbol or not qty:
-            raise ValueError("symbol and qty are required")
-        if order_type == "Limit" and price is None:
+            raise ValueError(
+                "symbol and qty are required"
+            )
+        if order_type == "LIMIT" and price is None:
             raise ValueError("limit price required")
 
         payload: dict[str, Any] = {
-            "category": category,
             "symbol": symbol.upper(),
             "side": side,
-            "orderType": order_type,
-            "qty": str(qty),
-            "timeInForce": time_in_force,
-            "reduceOnly": bool(reduce_only),
+            "type": order_type,
+            "quantity": str(qty),
         }
-        if price is not None:
-            payload["price"] = str(price)
         if order_link_id:
-            payload["orderLinkId"] = order_link_id
-        if trigger_price is not None:
-            payload["triggerPrice"] = str(trigger_price)
-        if trigger_direction is not None:
-            payload["triggerDirection"] = int(trigger_direction)
+            payload["newClientOrderId"] = str(
+                order_link_id
+            )[:36]
+        if order_type == "LIMIT":
+            payload["timeInForce"] = time_in_force
+            payload["price"] = str(price)
 
-        result = self._post("/v5/order/create", payload)
-        data = result.get("result", {})
+        result = self._request(
+            "POST",
+            "/api/v3/order",
+            payload,
+            signed=True,
+        )
         return TestnetOrderAck(
-            order_id=str(data.get("orderId", "")),
-            order_link_id=str(data.get("orderLinkId", "")),
-            raw=result,
+            order_id=str(
+                result.get("orderId", "")
+            ),
+            order_link_id=str(
+                result.get("clientOrderId", "")
+            ),
+            raw=dict(result),
         )
 
 
 class HumanTestnetExecutor:
-    """Human-gated testnet order surface.
+    """Human-gated Binance Spot TESTNET surface.
 
     This class is intentionally not registered as an LLM tool.
     """
@@ -352,12 +477,15 @@ class HumanTestnetExecutor:
     def __init__(
         self,
         compliance: ComplianceEngine,
-        client: BybitTestnetClient,
+        client: BinanceSpotClient,
     ):
         self.compliance = compliance
         self.client = client
 
-    def place_order(self, **kwargs) -> TestnetOrderAck:
+    def place_order(
+        self,
+        **kwargs,
+    ) -> TestnetOrderAck:
         self.compliance.allow_mode(Mode.TESTNET)
         return self.client.place_order(**kwargs)
 
@@ -365,34 +493,43 @@ class HumanTestnetExecutor:
         self,
         plan: ExecutionPlan,
         *,
-        category: str = "linear",
-        order_type: str = "Market",
+        order_type: str = "MARKET",
         quantity_decimals: int = 8,
     ) -> TestnetOrderAck:
         self.compliance.allow_mode(Mode.TESTNET)
-        payload = execution_plan_to_bybit_order(
+        payload = execution_plan_to_binance_order(
             plan,
-            category=category,
             order_type=order_type,
             quantity_decimals=quantity_decimals,
         )
         return self.client.place_order(**payload)
 
 
-
 class ReliableHumanTestnetExecutor:
-    """Durable, human-gated ExecutionPlan submission for TESTNET.
+    """Durable, human-gated Binance Spot TESTNET execution.
 
-    Prepared intents contain no credentials. Ambiguous submissions are never
-    automatically resent; they must be reconciled by orderLinkId first.
+    Ambiguous submissions are never automatically resent. Recovery queries
+    the order by the deterministic ExecutionPlan client order ID.
     """
 
     def __init__(
         self,
         compliance: ComplianceEngine,
-        client: BybitTestnetClient,
+        client: BinanceSpotClient,
         journal: DurableExecutionJournal,
     ):
+        if client.environment != "spot-testnet":
+            raise TestnetError(
+                "reliable_executor_requires_spot_testnet"
+            )
+        if (
+            journal.venue != "binance"
+            or journal.environment
+            != "spot-testnet"
+        ):
+            raise TestnetError(
+                "journal_scope_must_match_binance_spot_testnet"
+            )
         self.compliance = compliance
         self.client = client
         self.journal = journal
@@ -401,13 +538,11 @@ class ReliableHumanTestnetExecutor:
         self,
         plan: ExecutionPlan,
         *,
-        category: str = "linear",
-        order_type: str = "Market",
+        order_type: str = "MARKET",
         quantity_decimals: int = 8,
     ) -> dict:
-        payload = execution_plan_to_bybit_order(
+        payload = execution_plan_to_binance_order(
             plan,
-            category=category,
             order_type=order_type,
             quantity_decimals=quantity_decimals,
         )
@@ -420,14 +555,12 @@ class ReliableHumanTestnetExecutor:
         self,
         plan: ExecutionPlan,
         *,
-        category: str = "linear",
-        order_type: str = "Market",
+        order_type: str = "MARKET",
         quantity_decimals: int = 8,
     ) -> dict:
         self.compliance.allow_mode(Mode.TESTNET)
         row = self.prepare_plan(
             plan,
-            category=category,
             order_type=order_type,
             quantity_decimals=quantity_decimals,
         )
@@ -437,8 +570,10 @@ class ReliableHumanTestnetExecutor:
         }:
             return row
         try:
-            claimed = self.journal.claim_for_submit(
-                row["intent_id"]
+            claimed = (
+                self.journal.claim_for_submit(
+                    row["intent_id"]
+                )
             )
         except ExecutionReliabilityError as exc:
             raise TestnetError(str(exc)) from exc
@@ -467,7 +602,8 @@ class ReliableHumanTestnetExecutor:
         if (
             not ack.order_id
             or not ack.order_link_id
-            or ack.order_link_id != expected_link_id
+            or ack.order_link_id
+            != expected_link_id
         ):
             error = (
                 "broker_ack_identity_invalid:"
@@ -495,7 +631,6 @@ class ReliableHumanTestnetExecutor:
         row = self.journal.get(intent_id)
         payload = row["payload"]
         broker_order = self.client.find_order(
-            category=str(payload["category"]),
             symbol=str(payload["symbol"]),
             order_link_id=str(
                 payload["order_link_id"]
@@ -507,11 +642,11 @@ class ReliableHumanTestnetExecutor:
         ).to_dict()
 
     def recover(self) -> list[dict]:
-        results = []
-        for row in self.journal.recovery_candidates():
-            results.append(
-                self.reconcile_intent(
-                    row["intent_id"]
-                )
+        return [
+            self.reconcile_intent(
+                row["intent_id"]
             )
-        return results
+            for row in (
+                self.journal.recovery_candidates()
+            )
+        ]

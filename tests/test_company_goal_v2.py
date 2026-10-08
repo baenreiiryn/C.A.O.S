@@ -14,7 +14,7 @@ from caos.company.capital import CapitalAllocationError
 from caos.company.paper import CompanyPaperError
 from caos.domain import Mandate, MarketBar, StrategySpec
 from caos.llm import StaticLLM
-from caos.marketdata import BybitPublicClient
+from caos.marketdata import BinancePublicClient
 from caos.orchestrator import CAOS
 from caos.store import Store
 
@@ -38,7 +38,7 @@ def bars_up(n=160, start=100.0, step=0.5):
     return out
 
 
-class FakeMarket(BybitPublicClient):
+class FakeMarket(BinancePublicClient):
     def __init__(self, bad=None):
         super().__init__()
         self.bad = set(bad or [])
@@ -48,7 +48,7 @@ class FakeMarket(BybitPublicClient):
             "SOLUSDT": bars_up(start=20, step=0.1),
         }
 
-    def klines(self, symbol, interval="60", limit=500, category="linear"):
+    def klines(self, symbol, interval="60", limit=500, category="spot"):
         symbol = symbol.upper()
         if symbol in self.bad:
             raise RuntimeError("market_down")
