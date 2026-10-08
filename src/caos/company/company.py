@@ -35,6 +35,7 @@ class TradeCompany:
         self.policy = policy or CompanyPolicy()
         self.store = store if store is not None else engine.store
         self.effective_trader_limit = self.policy.operational_trader_cap
+        self.operations_paused = False
 
         self.treasury = Treasury(self.policy.initial_company_capital)
         self.registry = TraderRegistry()
@@ -414,6 +415,40 @@ class TradeCompany:
             ),
         }
 
+    def pause_operations(self) -> dict:
+        self.operations_paused = True
+        self._save()
+        if self.store is not None:
+            self.store.event(
+                "trade_company_operations_paused",
+                {"operations_paused": True},
+            )
+        return {
+            "operations_paused": True,
+            "risk_kill_switch": self.risk.state.kill_switch,
+        }
+
+    def resume_operations(self) -> dict:
+        if self.risk.state.kill_switch:
+            raise TradeCompanyError(
+                "company_kill_switch_active_cannot_resume"
+            )
+        if self.engine.health().get("kill_switch"):
+            raise TradeCompanyError(
+                "caos_kill_switch_active_cannot_resume"
+            )
+        self.operations_paused = False
+        self._save()
+        if self.store is not None:
+            self.store.event(
+                "trade_company_operations_resumed",
+                {"operations_paused": False},
+            )
+        return {
+            "operations_paused": False,
+            "risk_kill_switch": False,
+        }
+
     def pause_trader(self, trader_id: str) -> dict:
         result = self.registry.pause(trader_id).to_dict()
         self._save()
@@ -453,6 +488,7 @@ class TradeCompany:
         audit = self.supervisor.audit()
         return {
             "policy": self.policy.to_dict(),
+            "operations_paused": self.operations_paused,
             "effective_trader_limit": self.effective_trader_limit,
             "treasury": self.treasury.snapshot(),
             "treasury_spawn_capacity": int(
