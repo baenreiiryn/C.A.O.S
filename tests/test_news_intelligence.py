@@ -109,6 +109,27 @@ class FakeResponse:
         return False
 
 
+class PartialFeedClient(RSSNewsClient):
+    def __init__(self):
+        super().__init__(
+            [
+                "https://good.example/rss.xml",
+                "https://bad.example/rss.xml",
+            ]
+        )
+
+    def _get(self, url):
+        if "bad.example" in url:
+            raise TimeoutError("slow feed")
+        return (
+            b"<rss><channel><item>"
+            b"<title>Good market item</title>"
+            b"<link>https://good.example/a</link>"
+            b"<pubDate>Fri, 09 Oct 2026 10:00:00 GMT</pubDate>"
+            b"</item></channel></rss>"
+        )
+
+
 class DiscoveringClient(RSSNewsClient):
     def __init__(self):
         super().__init__([])
@@ -189,6 +210,20 @@ class NewsCatalogTests(unittest.TestCase):
             ]
         )
         self.assertEqual(len(rows), 1)
+
+    def test_partial_feed_failure_keeps_other_sources(self):
+        client = PartialFeedClient()
+        items = client.latest(limit=10)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(
+            items[0].title,
+            "Good market item",
+        )
+        self.assertEqual(len(client.last_errors), 1)
+        self.assertIn(
+            "bad.example",
+            client.last_errors[0],
+        )
 
     def test_discover_feed_from_normal_site_url(self):
         result = DiscoveringClient().discover_feed(
