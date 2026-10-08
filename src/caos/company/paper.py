@@ -213,7 +213,12 @@ class CompanyPaperBook:
             return mid_price * (1.0 + modeled_non_fee_bps / 10_000.0)
         return mid_price * (1.0 - modeled_non_fee_bps / 10_000.0)
 
-    def cycle_trader(self, trader_id: str) -> TraderPaperCycle:
+    def cycle_trader(
+        self,
+        trader_id: str,
+        *,
+        allow_new_risk: bool = True,
+    ) -> TraderPaperCycle:
         trader = self.registry.get(trader_id)
         if trader.status != TraderStatus.ACTIVE:
             raise CompanyPaperError("trader_not_active")
@@ -240,7 +245,11 @@ class CompanyPaperBook:
         if self.company_risk.state.kill_switch:
             signal = "flat"
 
-        if signal == "long" and open_qty <= 1e-12:
+        if (
+            allow_new_risk
+            and signal == "long"
+            and open_qty <= 1e-12
+        ):
             target = min(
                 self.company_risk.requested_trade_notional(trader_id),
                 self.company_risk.max_trade_notional(trader_id),
