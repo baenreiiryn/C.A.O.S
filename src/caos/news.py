@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import ipaddress
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from email.utils import parsedate_to_datetime
@@ -424,16 +425,35 @@ class RSSNewsClient:
 
         items: list[NewsItem] = []
         errors: list[str] = []
-        for url in self.feed_urls:
-            try:
-                items.extend(
-                    self._parse(url, self._get(url))
-                )
-            except Exception as exc:
-                errors.append(
-                    f"{url}: {type(exc).__name__}: {exc}"
-                )
-        self.last_errors = errors
+
+        def fetch_one(url: str):
+            return url, self._parse(
+                url,
+                self._get(url),
+            )
+
+        workers = min(
+            8,
+            max(1, len(self.feed_urls)),
+        )
+        with ThreadPoolExecutor(
+            max_workers=workers,
+            thread_name_prefix="caos-news",
+        ) as pool:
+            futures = {
+                pool.submit(fetch_one, url): url
+                for url in self.feed_urls
+            }
+            for future in as_completed(futures):
+                url = futures[future]
+                try:
+                    _, rows = future.result()
+                    items.extend(rows)
+                except Exception as exc:
+                    errors.append(
+                        f"{url}: {type(exc).__name__}: {exc}"
+                    )
+        self.last_errors = sorted(errors)
 
         if query:
             q = query.lower()
