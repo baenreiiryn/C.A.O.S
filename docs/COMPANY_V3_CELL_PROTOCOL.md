@@ -1,6 +1,6 @@
 # Company V3 — Cell Protocol
 
-Status: **IN DEVELOPMENT on `feature/trade-company`**
+Status: **COMPLETE on `feature/trade-company`**
 
 ## Goal
 
@@ -455,3 +455,24 @@ Company V3 does not:
 - allow generic supervisors to mutate domain internals.
 
 Those can be built above the stable Cell Protocol later.
+
+
+## Validation result
+
+Final validated implementation:
+
+```text
+Ran 95 tests
+OK
+
+CI: SUCCESS
+CLI smoke: SUCCESS
+Cell manifest smoke: SUCCESS
+Cell report smoke: SUCCESS
+```
+
+The validated branch still remains `feature/trade-company`.
+
+No merge to `main` has occurred.
+
+**COMPANY V3 — CELL PROTOCOL: COMPLETE**
