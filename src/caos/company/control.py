@@ -165,6 +165,12 @@ class CompanyControlPort:
             max(1, min(int(limit), 100))
         )
 
+    def start_operations(self) -> dict:
+        return self.company.start_operations()
+
+    def stop_operations(self) -> dict:
+        return self.company.stop_operations()
+
     def pause_operations(self) -> dict:
         return self.company.pause_operations()
 

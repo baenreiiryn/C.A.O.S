@@ -214,6 +214,16 @@ class WindowsLauncherRuntimeTests(unittest.TestCase):
             self.assertEqual(company.registry.slot_count(), 1)
             self.assertEqual(len(targets), 2)
             self.assertEqual(len(runtime["targets"]), 2)
+            self.assertTrue(company.operations_paused)
+            self.assertEqual(
+                company.operational_state(),
+                "stopped",
+            )
+            company.start_operations()
+            self.assertEqual(
+                company.operational_state(),
+                "running",
+            )
             caos.store.close()
 
             (
@@ -232,6 +242,13 @@ class WindowsLauncherRuntimeTests(unittest.TestCase):
             self.assertEqual(
                 restored_runtime["targets"],
                 runtime["targets"],
+            )
+            self.assertTrue(
+                restored_company.operations_paused
+            )
+            self.assertEqual(
+                restored_company.operational_state(),
+                "stopped",
             )
             restored_caos.store.close()
 

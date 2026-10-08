@@ -133,6 +133,28 @@ class TradeCompany:
             equity += self.paper.marked_equity(trader.id)
         return equity
 
+    def operational_state(self) -> str:
+        if self.risk.state.kill_switch:
+            return "emergency_stopped"
+        if not self.operations_paused:
+            return "running"
+        has_open_position = any(
+            not self.paper.positions_flat(trader_id)
+            for trader_id in self.paper.accounts
+        )
+        has_pending_exit = any(
+            (
+                pending := self.paper.pending_order_snapshot(
+                    trader_id
+                )
+            )
+            and pending.get("side") == "sell"
+            for trader_id in list(self.paper.pending_meta)
+        )
+        if has_open_position or has_pending_exit:
+            return "stopping"
+        return "stopped"
+
     def register_strategy(self, spec, *, strategy_id: str | None = None) -> str:
         key = self.strategies.register(spec, strategy_id=strategy_id)
         self._save()
@@ -474,8 +496,15 @@ class TradeCompany:
             )
         return {
             "operations_paused": True,
+            "operational_state": self.operational_state(),
             "risk_kill_switch": self.risk.state.kill_switch,
         }
+
+    def start_operations(self) -> dict:
+        return self.resume_operations()
+
+    def stop_operations(self) -> dict:
+        return self.pause_operations()
 
     def resume_operations(self) -> dict:
         if self.risk.state.kill_switch:
@@ -495,6 +524,7 @@ class TradeCompany:
             )
         return {
             "operations_paused": False,
+            "operational_state": self.operational_state(),
             "risk_kill_switch": False,
         }
 
@@ -513,11 +543,32 @@ class TradeCompany:
         return result
 
     def emergency_stop(self) -> dict:
+        self.operations_paused = True
+        cancelled_orders: list[str] = []
+        flattened: list[dict] = []
+        flatten_errors: dict[str, str] = {}
+
         for trader_id in list(self.paper.pending_meta):
-            self.paper.cancel_pending_order(
+            if self.paper.cancel_pending_order(
                 trader_id,
                 reason="emergency_stop",
-            )
+            ):
+                cancelled_orders.append(trader_id)
+
+        for trader_id in list(self.paper.accounts):
+            if self.paper.positions_flat(trader_id):
+                continue
+            try:
+                flattened.append(
+                    self.paper.force_flatten(
+                        trader_id
+                    ).to_dict()
+                )
+            except Exception as exc:
+                flatten_errors[trader_id] = (
+                    f"{type(exc).__name__}: {exc}"
+                )
+
         self.risk.kill()
         engine_result = None
         try:
@@ -527,8 +578,25 @@ class TradeCompany:
                 "error": f"{type(exc).__name__}: {exc}",
             }
         self._save()
+        if self.store is not None:
+            self.store.event(
+                "trade_company_emergency_stop",
+                {
+                    "cancelled_pending_orders": cancelled_orders,
+                    "flattened": [
+                        row.get("trader_id")
+                        for row in flattened
+                    ],
+                    "flatten_errors": flatten_errors,
+                },
+            )
         return {
             "company_kill_switch": True,
+            "operations_paused": True,
+            "operational_state": self.operational_state(),
+            "cancelled_pending_orders": cancelled_orders,
+            "flattened": flattened,
+            "flatten_errors": flatten_errors,
             "caos": engine_result,
         }
 
@@ -720,6 +788,7 @@ class TradeCompany:
         return {
             "policy": self.policy.to_dict(),
             "operations_paused": self.operations_paused,
+            "operational_state": self.operational_state(),
             "effective_trader_limit": self.effective_trader_limit,
             "treasury": self.treasury.snapshot(),
             "treasury_spawn_capacity": int(

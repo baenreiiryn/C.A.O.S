@@ -16,6 +16,8 @@ class TradeCompanyCell:
     """Generic Company Cell adapter for the standalone Trade Company."""
 
     SAFE_COMMANDS = (
+        "start",
+        "stop",
         "pause",
         "resume",
         "emergency_stop",
@@ -128,10 +130,13 @@ class TradeCompanyCell:
 
     @staticmethod
     def _operational_state(status: dict) -> str:
+        explicit = status.get("operational_state")
+        if explicit:
+            return str(explicit)
         if status.get("risk", {}).get("kill_switch"):
             return "emergency_stopped"
         if status.get("operations_paused"):
-            return "paused"
+            return "stopped"
         return "running"
 
     def get_status(self) -> dict:
@@ -617,10 +622,10 @@ class TradeCompanyCell:
         del args
         if name not in self.SAFE_COMMANDS:
             raise CellProtocolError("unsupported_cell_command")
-        if name == "pause":
-            result = self.control.pause_operations()
-        elif name == "resume":
-            result = self.control.resume_operations()
+        if name in {"start", "resume"}:
+            result = self.control.start_operations()
+        elif name in {"stop", "pause"}:
+            result = self.control.stop_operations()
         else:
             result = self.control.emergency_stop()
         return {

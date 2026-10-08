@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.8.2 standalone Trade Company with managed Ollama, visual PAPER open orders, Binance Japan / Spot and continuous news intelligence**. Each Trader drawer renders the live market candles used by the Company, MA7/MA25/MA99, pending PAPER limit orders, PAPER buy/sell markers, current position average and waiting/pending/in-position state. A strategy entry or normal strategy exit is now armed as a simulated limit order and becomes a fill only when a later candle touches its trigger; kill-switch exits remain immediate. The Whispering Tankard ships with trusted market/crypto/regulatory RSS sources, accepts custom HTTPS news sites/feeds, and can conservatively block only new risk when directly relevant critical negative news is detected. News never creates an order. Production order submission and LIVE remain deliberately unavailable.
+> Current milestone: **v0.8.3 standalone Trade Company with managed Ollama, manual operation controls, visual PAPER open orders, Binance Japan / Spot connectivity and continuous news intelligence**. The Windows app always opens in **STOPPED** state. The operator explicitly presses **Start** before new risk can be opened; **Stop** enters a graceful **STOPPING** state that blocks new entries while existing PAPER positions may complete their risk-reducing path; **Emergency Stop** cancels pending PAPER orders and immediately attempts to flatten every PAPER position that can be closed. Each Trader drawer renders live market candles, MA7/MA25/MA99, pending PAPER limit orders, PAPER buy/sell markers and current position state. Production broker order submission remains unavailable to autonomous agents.
 
 ## Why it is built this way
 
@@ -37,7 +37,7 @@ The LLM chooses what to inspect or run. Python computes the numbers and enforces
 
 For normal Windows use, Python is not required. The Windows build bundles its own runtime and installs:
 
-- `CAOS-Trade-Company.exe` — graphical launcher, first-run wizard, autonomous PAPER daemon and Arcane Trading City;
+- `CAOS-Trade-Company.exe` — graphical launcher, first-run wizard, manually started PAPER operations loop and Arcane Trading City;
 - `caos.exe` — administrative CLI using the same installed Company state;
 - `ollama\` — the official portable Ollama runtime used only by the Trade Company managed LLM service;
 - Start Menu shortcuts, with optional desktop shortcut and optional sign-in autostart.

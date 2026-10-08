@@ -57,6 +57,11 @@ font-family:system-ui,sans-serif;font-size:11px}
 .rune.bad{color:var(--red);border-color:rgba(255,120,120,.5)}
 .settings-btn{border:1px solid var(--line);background:rgba(45,34,64,.82);color:var(--gold2);border-radius:999px;padding:6px 11px;cursor:pointer;font:11px system-ui,sans-serif}
 .settings-btn:hover{background:#3a2d50}
+.op-btn{border:1px solid var(--line);border-radius:999px;padding:6px 11px;cursor:pointer;font:700 11px system-ui,sans-serif;background:#192431}
+.op-btn.start{color:var(--green);border-color:rgba(107,226,161,.45)}
+.op-btn.stop{color:var(--amber);border-color:rgba(255,200,102,.45)}
+.op-btn.emergency{color:#ffd0d0;border-color:rgba(255,120,120,.55);background:#3a1d25}
+.op-btn:disabled{opacity:.38;cursor:not-allowed}
 .city-shell{position:relative;max-width:1550px;margin:auto;padding:14px 18px 28px}
 .hud{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;position:relative;z-index:8;margin-bottom:10px}
 .hud-item{background:linear-gradient(135deg,rgba(32,24,47,.88),rgba(17,23,36,.88));
@@ -238,7 +243,11 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
   <div class="statusbar">
     <span id="healthRune" class="rune">CITY —</span>
     <span id="modeRune" class="rune">PAPER</span>
+    <span id="operationRune" class="rune warn">STOPPED</span>
     <span id="alertRune" class="rune">0 alerts</span>
+    <button id="startOpsBtn" class="op-btn start" type="button">▶ Start</button>
+    <button id="stopOpsBtn" class="op-btn stop" type="button">■ Stop</button>
+    <button id="emergencyOpsBtn" class="op-btn emergency" type="button">⚠ Emergency</button>
     <button id="settingsBtn" class="settings-btn" type="button">⚙ Settings</button>
   </div>
 </header>
@@ -297,9 +306,10 @@ let editingBrokerId=null;
 let selectedLocalModelPath='';
 const byId=function(id){return document.getElementById(id)};
 const hudEquity=byId('hudEquity'),hudReserve=byId('hudReserve'),hudTraders=byId('hudTraders'),hudRisk=byId('hudRisk');
-const healthRune=byId('healthRune'),alertRune=byId('alertRune'),cityWorld=byId('cityWorld');
+const healthRune=byId('healthRune'),operationRune=byId('operationRune'),alertRune=byId('alertRune'),cityWorld=byId('cityWorld');
 const cityMoodTitle=byId('cityMoodTitle'),cityMoodText=byId('cityMoodText'),alertText=byId('alertText'),guildAdventurers=byId('guildAdventurers');
 const drawer=byId('drawer'),drawerBackdrop=byId('drawerBackdrop'),drawerTitle=byId('drawerTitle'),drawerTech=byId('drawerTech'),drawerBody=byId('drawerBody'),drawerClose=byId('drawerClose'),settingsBtn=byId('settingsBtn');
+const startOpsBtn=byId('startOpsBtn'),stopOpsBtn=byId('stopOpsBtn'),emergencyOpsBtn=byId('emergencyOpsBtn');
 
 const money=function(v){return '$'+Number(v||0).toFixed(4)};
 const pct=function(v){return Number(v||0).toFixed(2)+'%'};
@@ -599,12 +609,19 @@ function updateHud(){
  alertRune.textContent=String(c.alerts)+' alert'+(c.alerts===1?'':'s');
  alertRune.className='rune '+(c.alerts?'warn':'ok');
  cityWorld.classList.toggle('emergency',!!c.emergency);
+ const opState=String(currentStatus.operational_state||c.operational_state||(currentStatus.operations_paused?'stopped':'running'));
+ operationRune.textContent=opState.replaceAll('_',' ').toUpperCase();
+ operationRune.className='rune '+(opState==='running'?'ok':(opState==='stopping'||opState==='stopped'?'warn':'bad'));
+ startOpsBtn.disabled=(opState==='running'||opState==='emergency_stopped');
+ stopOpsBtn.disabled=(opState==='stopping'||opState==='stopped'||opState==='emergency_stopped');
+ emergencyOpsBtn.disabled=(opState==='emergency_stopped');
  const messages={
   healthy:['The Arcane Trading City prospers.','Wards stable. Guilds and institutions are operating normally.'],
   attention:['The city watch requests attention.','One or more institutions have raised an operational warning.'],
   critical:['Critical runes burn over the city.','A serious operational condition requires inspection.'],
-  emergency:['The city gates are sealed.','Emergency Stop is active. New risk is blocked by the wards.'],
-  paused:['The city rests under a quiet bell.','Autonomous actions are paused; observation and health checks remain active.']
+  emergency:['The city gates are sealed.','Emergency Stop is active. Pending orders were cancelled and PAPER positions are being flattened where possible.'],
+  stopping:['The closing bell has sounded.','No new entries are allowed. Existing positions may complete their risk-reducing path before the Company becomes STOPPED.'],
+  paused:['The city is stopped.','Market observation continues, but no new risk may be opened until you press Start.']
  };
  const m=messages[c.mood]||messages.attention;
  cityMoodTitle.textContent=m[0];cityMoodText.textContent=m[1];
@@ -835,6 +852,29 @@ async function openTrader(id){
  await refreshTraderChart(id);
 }
 
+async function startOperations(){
+ try{
+  await api('/api/company/start',{method:'POST'});
+  await tick();
+ }catch(e){alert(e.message)}
+}
+async function stopOperations(){
+ if(!confirm('Stop opening new risk? Existing PAPER positions will be allowed to complete their risk-reducing path first.'))return;
+ try{
+  await api('/api/company/stop',{method:'POST'});
+  await tick();
+ }catch(e){alert(e.message)}
+}
+async function emergencyStopOperations(){
+ if(!confirm('EMERGENCY STOP: cancel pending orders and immediately flatten every PAPER position that can be closed?'))return;
+ try{
+  const r=await api('/api/company/emergency-stop',{method:'POST'});
+  await tick();
+  const failed=Object.keys(r.flatten_errors||{});
+  if(failed.length)alert('Emergency Stop active. Could not flatten: '+failed.join(', '));
+ }catch(e){alert(e.message)}
+}
+
 async function activateRelease(id){
  try{
   await api('/api/company/rollout/'+encodeURIComponent(id)+'/activate',{method:'POST'});
@@ -881,6 +921,9 @@ async function tick(){
 
 document.querySelectorAll('.place').forEach(function(el){el.addEventListener('click',function(){openLocation(el.dataset.location)})});
 settingsBtn.addEventListener('click',openSettings);
+startOpsBtn.addEventListener('click',startOperations);
+stopOpsBtn.addEventListener('click',stopOperations);
+emergencyOpsBtn.addEventListener('click',emergencyStopOperations);
 drawerClose.addEventListener('click',closeDrawer);drawerBackdrop.addEventListener('click',closeDrawer);
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeDrawer()});
 tick();setInterval(tick,2000);
@@ -1048,6 +1091,12 @@ def serve_company(
                             payload.get("args"),
                         ),
                     )
+                    return
+                if path == "/api/company/start":
+                    self._json(200, control.start_operations())
+                    return
+                if path == "/api/company/stop":
+                    self._json(200, control.stop_operations())
                     return
                 if path == "/api/company/limit":
                     payload = self._read_json()

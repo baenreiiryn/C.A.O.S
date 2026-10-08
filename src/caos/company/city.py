@@ -69,8 +69,13 @@ class CityPresentationMapper:
             str(alert.get("severity", "attention")).lower()
             for alert in alerts
         }
+        operational_state = str(
+            status.get("operational_state", "")
+        )
         if status.get("risk", {}).get("kill_switch"):
             mood = "emergency"
+        elif operational_state == "stopping":
+            mood = "stopping"
         elif status.get("operations_paused"):
             mood = "paused"
         elif "critical" in severity or audit.get("status") == "critical":
@@ -326,6 +331,7 @@ class CityPresentationMapper:
                 "operations_paused": bool(
                     status.get("operations_paused")
                 ),
+                "operational_state": operational_state,
                 "company_equity": status.get(
                     "marked_company_equity",
                     0.0,
