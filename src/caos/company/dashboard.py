@@ -322,7 +322,7 @@ function renderSettings(){
    '<div class="settings-grid">'+
    settingsField('Label','brokerLabel','')+
    settingsSelect('Broker','brokerProvider','binance',Object.keys(supported).map(function(k){return {value:k,label:(supported[k]&&supported[k].label)||k}}))+
-   settingsField('Environment','brokerEnvironment','spot-testnet')+
+   settingsSelect('Environment','brokerEnvironment','spot-testnet',[{value:'spot-testnet',label:'Spot Testnet (human-gated orders)'},{value:'production-readonly',label:'Binance Japan Production (read-only)'}])+
    settingsField('API key','brokerApiKey','','password')+
    settingsField('API secret','brokerApiSecret','','password')+
    '</div>'+
