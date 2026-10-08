@@ -71,6 +71,7 @@ class TradeCompanyCell:
                 "report",
                 "themed_ui",
                 "domain.trade.summary",
+                "domain.trade.research",
             ),
             commands=self.SAFE_COMMANDS,
             ui={
@@ -136,6 +137,16 @@ class TradeCompanyCell:
                 ),
                 "alerts": len(
                     status.get("audit", {}).get("alerts", [])
+                ),
+                "research_hypotheses": status.get(
+                    "research_summary",
+                    {},
+                ).get("hypotheses", 0),
+                "research_champions": len(
+                    status.get(
+                        "research_summary",
+                        {},
+                    ).get("champions", {})
                 ),
             },
         }
@@ -360,6 +371,12 @@ class TradeCompanyCell:
         alerts = self.get_alerts()
         recent_events = self.get_recent_events(5)
         highlights = [
+            (
+                f"Research Factory: "
+                f"{metrics['research_hypotheses']} hypothesis(es), "
+                f"{metrics['research_candidates']} candidate(s), "
+                f"{metrics['research_champions']} champion(s)."
+            ),
             (
                 f"Company equity {metrics['company_equity']:.4f}; "
                 f"Treasury reserve {metrics['treasury_reserve']:.4f}."
