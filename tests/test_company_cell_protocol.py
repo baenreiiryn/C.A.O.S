@@ -12,6 +12,7 @@ from caos.cell_protocol import (
     CompanyCell,
 )
 from caos.company import CAOSAdapter, TradeCompany, TradeCompanyCell
+from caos.company.domain import Opportunity
 from caos.company.control import CompanyControlPort
 from caos.company.daemon import CompanyDaemon, ScanTarget
 from caos.company.dashboard import serve_company
@@ -20,10 +21,43 @@ from caos.company.standalone import (
     initialize_company,
     parse_scan_targets,
 )
-from caos.domain import Mandate
+from caos.domain import Mandate, MarketBar
 from caos.llm import StaticLLM
 from caos.orchestrator import CAOS
 from caos.store import Store
+
+
+def rising_bars(n=80):
+    bars = []
+    price = 100.0
+    for i in range(n):
+        close = price + 1.0
+        bars.append(
+            MarketBar(
+                i,
+                price,
+                close + 0.5,
+                price - 0.5,
+                close,
+                1000.0,
+            )
+        )
+        price = close
+    return bars
+
+
+def flat_bars(n=80, price=100.0):
+    return [
+        MarketBar(
+            i,
+            price,
+            price + 0.1,
+            price - 0.1,
+            price,
+            1000.0,
+        )
+        for i in range(n)
+    ]
 
 
 def make_company(tmpdir, *, capital=10.0):
@@ -165,6 +199,55 @@ class CompanyCellProtocolTests(unittest.TestCase):
                 resumed["result"]["operations_paused"]
             )
             self.assertFalse(restored.operations_paused)
+            store.close()
+
+    def test_paused_cell_allows_risk_reducing_exit(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, _, company = make_company(d)
+            company.publish_opportunity(
+                Opportunity(
+                    "btc",
+                    "BTCUSDT",
+                    "long",
+                    100,
+                    strategy_candidates=("momentum",),
+                )
+            )
+            company.assign_best("A")
+            company.engine.load_bars("BTCUSDT", rising_bars())
+            opened = company.paper.cycle_trader("A")
+            self.assertEqual(opened.action, "open_long")
+
+            TradeCompanyCell(
+                CompanyControlPort(company)
+            ).execute_command("pause")
+            company.engine.load_bars(
+                "BTCUSDT",
+                flat_bars(price=180.0),
+            )
+            company.engine.fetch_market = (
+                lambda symbol, interval="60", limit=500: {
+                    "symbol": symbol,
+                    "bars": 80,
+                }
+            )
+            daemon = CompanyDaemon(
+                company,
+                [ScanTarget("BTCUSDT", "long", ("momentum",))],
+            )
+            cycle = daemon.run_once(now=2_000)
+            self.assertTrue(cycle.paused)
+            self.assertTrue(
+                any(
+                    row["action"] == "close_long"
+                    for row in cycle.paper_actions
+                )
+            )
+            self.assertTrue(
+                company.paper.positions_flat("A")
+            )
+            self.assertEqual(cycle.opportunities, [])
+            self.assertEqual(cycle.expansions, [])
             store.close()
 
     def test_resume_cannot_bypass_emergency_kill(self):
