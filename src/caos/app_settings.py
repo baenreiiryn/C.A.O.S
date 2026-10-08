@@ -693,19 +693,23 @@ class RuntimeSettingsService:
             "active_broker_profile"
         )
         if current and current != profile_id:
-            reliability = getattr(
+            store = getattr(
                 self.company,
-                "execution_reliability",
+                "store",
                 None,
             )
-            if (
-                reliability is not None
-                and reliability.summary().get(
-                    "recovery_required",
-                    0,
+            pending = []
+            if store is not None:
+                pending = store.list_execution_intents(
+                    limit=1000,
+                    statuses=(
+                        "submitting",
+                        "uncertain",
+                        "acknowledged",
+                    ),
+                    venue="binance",
                 )
-                > 0
-            ):
+            if pending:
                 raise SettingsError(
                     "broker_switch_blocked_by_unresolved_execution_intents"
                 )
