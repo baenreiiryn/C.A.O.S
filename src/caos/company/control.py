@@ -43,6 +43,12 @@ class CompanyControlPort:
             max(1, min(int(limit), 100))
         )
 
+    def pause_operations(self) -> dict:
+        return self.company.pause_operations()
+
+    def resume_operations(self) -> dict:
+        return self.company.resume_operations()
+
     def pause_trader(self, trader_id: str) -> dict:
         return self.company.pause_trader(trader_id)
 
