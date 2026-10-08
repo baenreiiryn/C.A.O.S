@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.5 specialist-assisted autonomous paper desk**. Research, public market/order-book data, multi-family strategy mining, correlation-aware portfolio construction, optional Hugging Face specialists, local-LLM Goal orchestration, crash recovery, autonomous paper cycles and a human-gated Bybit TESTNET path are implemented. Production LIVE remains deliberately unavailable.
+> Current milestone: **v0.7 standalone Trade Company with research, controlled rollout and durable TESTNET reliability**. Research, public market/order-book data, multi-family strategy mining, correlation-aware portfolio construction, optional Hugging Face specialists, local-LLM Goal orchestration, crash recovery, autonomous paper cycles and a human-gated Bybit TESTNET path are implemented. Production LIVE remains deliberately unavailable.
 
 ## Why it is built this way
 
@@ -33,7 +33,40 @@ The LLM chooses what to inspect or run. Python computes the numbers and enforces
 - Python 3.11+
 - Optional: Ollama, LM Studio, llama.cpp server, vLLM, LocalAI, or another OpenAI-compatible local server
 
-## Install
+## Windows installer
+
+For normal Windows use, Python is not required. The Windows build bundles its own runtime and installs:
+
+- `CAOS-Trade-Company.exe` — graphical launcher, first-run wizard, autonomous PAPER daemon and Arcane Trading City;
+- `caos.exe` — administrative CLI using the same installed Company state;
+- Start Menu shortcuts, with optional desktop shortcut and optional sign-in autostart.
+
+Install flow:
+
+```text
+CAOS-Setup.exe
+    -> install under %LOCALAPPDATA%\Programs\CAOS
+    -> launch C.A.O.S Trade Company
+    -> complete the Founding Charter
+    -> city opens automatically in the browser
+```
+
+On first launch the **Founding Charter** configures Company capital, Trader bucket/stop floor, exposure limits, operational Trader cap, markets, daemon cadence and the optional local AI provider.
+
+Runtime state is stored outside the program directory:
+
+```text
+%LOCALAPPDATA%\CAOS\caos.db
+%LOCALAPPDATA%\CAOS\launcher.json
+```
+
+This means uninstalling/reinstalling the application does not automatically delete the Company state. The packaged `caos.exe` also defaults to this same database.
+
+Bybit TESTNET API credentials are intentionally **not stored by the installer or first-run wizard**. The existing human-gated TESTNET tools continue to read credentials from environment variables. LIVE execution remains unavailable.
+
+The current installer is unsigned, so Windows SmartScreen may show a warning until code signing is added.
+
+## Development install
 
 ```bash
 python -m venv .venv
@@ -120,7 +153,7 @@ C.A.O.S includes a public Bybit kline client that requires no API key, a local S
 
 ## Trade Company standalone
 
-The `feature/trade-company` branch adds a standalone Company layer above C.A.O.S. It owns Treasury, Trader lifecycle, market allocation, Company risk, per-Trader paper accounts, recovery and autonomous daemon operation. Drizzt is not required.
+C.A.O.S includes a standalone Trade Company layer above the core engine. It owns Treasury, Trader lifecycle, market allocation, Company risk, per-Trader paper accounts, recovery and autonomous daemon operation. Drizzt is not required.
 
 Initialize once:
 
@@ -231,7 +264,40 @@ The Arcane Workshop in the themed city displays hypotheses, candidates, champion
 
 See [`docs/COMPANY_V5_RESEARCH_FACTORY.md`](docs/COMPANY_V5_RESEARCH_FACTORY.md).
 
-## Strategy Rollout (Company V6)\n\nResearch champions do not jump directly into production assignments. They pass through a controlled rollout:\n\n```text\nResearch champion\n    -> shadow\n    -> paper_canary\n    -> eligible\n    -> explicit active\n    -> future new assignments\n```\n\nShadow produces decisions only. Paper canary uses an isolated virtual account and consumes no Treasury capital or Trader slot. Canary drawdown can automatically roll a release back.\n\nAn `eligible` release still cannot be assigned until an operator explicitly activates it. Once active, it is prioritized only for new opportunities on its symbol; existing Traders are never hot-swapped.\n\nRollback immediately blocks new risk/assignments for that research strategy. Existing positions are not force-closed; they may only drain/reduce and the assignment is released once flat.\n\nStandalone inspection and controls:\n\n```bash\ncaos --provider static company rollout\ncaos --provider static company rollout-sync\ncaos --provider static company rollout-process --symbol BTCUSDT\ncaos --provider static company rollout-activate <release-id>\ncaos --provider static company rollout-rollback <release-id>\n```\n\nThe Tournament Arena in the themed city displays shadow/canary/eligible/active releases and exposes safe activate/rollback controls.\n\nSee [`docs/COMPANY_V6_STRATEGY_ROLLOUT.md`](docs/COMPANY_V6_STRATEGY_ROLLOUT.md).\n\n## Production Reliability / Broker Reconciliation (Company V7)
+## Strategy Rollout (Company V6)
+
+Research champions do not jump directly into production assignments. They pass through a controlled rollout:
+
+```text
+Research champion
+    -> shadow
+    -> paper_canary
+    -> eligible
+    -> explicit active
+    -> future new assignments
+```
+
+Shadow produces decisions only. Paper canary uses an isolated virtual account and consumes no Treasury capital or Trader slot. Canary drawdown can automatically roll a release back.
+
+An `eligible` release still cannot be assigned until an operator explicitly activates it. Once active, it is prioritized only for new opportunities on its symbol; existing Traders are never hot-swapped.
+
+Rollback immediately blocks new risk/assignments for that research strategy. Existing positions are not force-closed; they may only drain/reduce and the assignment is released once flat.
+
+Standalone inspection and controls:
+
+```bash
+caos --provider static company rollout
+caos --provider static company rollout-sync
+caos --provider static company rollout-process --symbol BTCUSDT
+caos --provider static company rollout-activate <release-id>
+caos --provider static company rollout-rollback <release-id>
+```
+
+The Tournament Arena in the themed city displays shadow/canary/eligible/active releases and exposes safe activate/rollback controls.
+
+See [`docs/COMPANY_V6_STRATEGY_ROLLOUT.md`](docs/COMPANY_V6_STRATEGY_ROLLOUT.md).
+
+## Production Reliability / Broker Reconciliation (Company V7)
 
 ExecutionPlan-based external TESTNET submission now has a durable SQLite intent/outbox layer:
 
