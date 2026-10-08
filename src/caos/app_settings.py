@@ -709,6 +709,21 @@ class RuntimeSettingsService:
                     ),
                     venue="binance",
                 )
+            else:
+                reliability = getattr(
+                    self.company,
+                    "execution_reliability",
+                    None,
+                )
+                if (
+                    reliability is not None
+                    and reliability.summary().get(
+                        "recovery_required",
+                        0,
+                    )
+                    > 0
+                ):
+                    pending = [{"status": "unresolved"}]
             if pending:
                 raise SettingsError(
                     "broker_switch_blocked_by_unresolved_execution_intents"
