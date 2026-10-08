@@ -22,6 +22,12 @@ from caos.company.standalone import (
     parse_scan_targets,
 )
 from caos.domain import Mandate, MarketBar
+from caos.execution_fabric import (
+    decision_from_signal,
+    plan_execution,
+    resolve_target_position,
+)
+from caos.testnet import execution_plan_to_bybit_order
 from caos.llm import StaticLLM
 from caos.orchestrator import CAOS
 from caos.store import Store
@@ -58,6 +64,37 @@ def flat_bars(n=80, price=100.0):
         )
         for i in range(n)
     ]
+
+
+def create_uncertain_intent(company):
+    decision = decision_from_signal(
+        symbol="BTCUSDT",
+        strategy_id="cell-reliability",
+        signal="long",
+        requested_weight=0.1,
+        as_of=1,
+    )
+    target = resolve_target_position(
+        decision,
+        equity=10.0,
+        max_notional=1.0,
+    )
+    plan = plan_execution(
+        target,
+        current_notional=0.0,
+        reference_price=100.0,
+    )
+    journal = company.execution_reliability
+    row = journal.prepare(
+        plan,
+        execution_plan_to_bybit_order(plan),
+    )
+    journal.claim_for_submit(row["intent_id"])
+    journal.mark_uncertain(
+        row["intent_id"],
+        error="simulated_crash_window",
+    )
+    return row["intent_id"]
 
 
 def make_company(tmpdir, *, capital=10.0):
@@ -153,6 +190,43 @@ class CompanyCellProtocolTests(unittest.TestCase):
             self.assertEqual(
                 report["ui"]["path"],
                 "/",
+            )
+            store.close()
+
+    def test_execution_reliability_surfaces_as_cell_attention(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, _, company = make_company(d)
+            create_uncertain_intent(company)
+            cell = TradeCompanyCell(
+                CompanyControlPort(company)
+            )
+
+            health = cell.get_health()
+            metrics = cell.get_metrics()["values"]
+            alerts = cell.get_alerts()
+            report = cell.get_report()
+
+            self.assertEqual(health["state"], "attention")
+            self.assertEqual(
+                metrics["execution_intents"],
+                1,
+            )
+            self.assertEqual(
+                metrics["execution_recovery_required"],
+                1,
+            )
+            self.assertTrue(
+                any(
+                    row["code"]
+                    == "execution_reconciliation_required"
+                    for row in alerts
+                )
+            )
+            self.assertTrue(
+                any(
+                    "Execution reliability:" in row
+                    for row in report["highlights"]
+                )
             )
             store.close()
 
