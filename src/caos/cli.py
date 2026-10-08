@@ -423,6 +423,147 @@ def _print_json(payload) -> None:
 def main() -> None:
     args = parser().parse_args()
     c = build_caos(args)
+
+    if args.cmd == "company":
+        if args.company_cmd == "init":
+            if load_saved_policy(c.store) is not None:
+                raise CompanyStandaloneError(
+                    "company_already_initialized"
+                )
+            policy = build_policy(
+                initial_company_capital=args.company_capital,
+                trader_initial_bucket=args.trader_bucket,
+                trader_stop_floor=args.stop_floor,
+                default_trader_max_exposure_pct=(
+                    args.default_max_exposure
+                ),
+                operational_trader_cap=args.operational_cap,
+                company_max_drawdown_pct=args.company_max_dd,
+            )
+            company, _ = build_standalone_company(
+                c,
+                policy,
+                restore=False,
+            )
+            targets = parse_scan_targets(args.targets)
+            initialized = initialize_company(
+                company,
+                targets,
+                mode=TraderMode(args.mode),
+                max_trade_exposure_pct=args.trader_max_exposure,
+                trade_exposure_pct=args.requested_exposure,
+            )
+            runtime = save_runtime_config(
+                c.store,
+                targets,
+                interval=args.interval,
+                candle_limit=args.candle_limit,
+                opportunity_ttl_ms=args.opportunity_ttl_ms,
+                every_seconds=args.every,
+            )
+            _print_json(
+                {
+                    **initialized,
+                    "runtime": runtime,
+                    "status": company.status(),
+                }
+            )
+            return
+
+        company = _load_company_for_command(c)
+        control = CompanyControlPort(company)
+
+        if args.company_cmd == "status":
+            _print_json(control.get_company_status())
+            return
+        if args.company_cmd == "traders":
+            _print_json(control.list_traders())
+            return
+        if args.company_cmd == "treasury":
+            _print_json(control.get_treasury())
+            return
+        if args.company_cmd == "opportunities":
+            _print_json(control.list_opportunities())
+            return
+        if args.company_cmd == "audit":
+            _print_json(company.audit())
+            return
+        if args.company_cmd in {"once", "run"}:
+            (
+                targets,
+                interval,
+                candle_limit,
+                ttl,
+                every,
+            ) = _company_runtime_settings(args, c.store)
+            daemon = build_daemon(
+                company,
+                targets,
+                interval=interval,
+                candle_limit=candle_limit,
+                opportunity_ttl_ms=ttl,
+            )
+            if args.company_cmd == "once":
+                _print_json(
+                    daemon.run_once(
+                        now=int(time.time() * 1000)
+                    ).to_dict()
+                )
+                return
+            print(
+                "Trade Company daemon: "
+                f"{len(targets)} target(s), "
+                f"every {every:g}s"
+            )
+            try:
+                daemon.serve(every_seconds=every)
+            except KeyboardInterrupt:
+                pass
+            return
+        if args.company_cmd == "dashboard":
+            server = serve_company(
+                control,
+                port=args.port,
+                open_browser=not args.no_browser,
+            )
+            print(
+                "Trade Company dashboard: "
+                f"http://127.0.0.1:{args.port}"
+            )
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                server.server_close()
+            return
+        if args.company_cmd == "set-limit":
+            _print_json(
+                control.set_operational_trader_limit(
+                    args.limit
+                )
+            )
+            return
+        if args.company_cmd == "set-exposure":
+            _print_json(
+                control.configure_trader_exposure(
+                    args.trader_id,
+                    max_trade_exposure_pct=args.max_exposure,
+                    trade_exposure_pct=args.requested_exposure,
+                )
+            )
+            return
+        if args.company_cmd == "pause":
+            _print_json(control.pause_trader(args.trader_id))
+            return
+        if args.company_cmd == "resume":
+            _print_json(control.resume_trader(args.trader_id))
+            return
+        if args.company_cmd == "emergency-stop":
+            _print_json(control.emergency_stop())
+            return
+        raise CompanyStandaloneError("unknown_company_command")
+
     if args.cmd == "models":
         print(
             json.dumps(
