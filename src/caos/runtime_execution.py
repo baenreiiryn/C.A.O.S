@@ -448,11 +448,22 @@ class RuntimeExecutionService:
         row: dict,
     ) -> tuple[float, float] | None:
         raw = row.get("reconciliation_payload") or {}
-        if str(raw.get("status", "")).upper() != "FILLED":
+        status = str(
+            raw.get(
+                "status",
+                raw.get("order_status", ""),
+            )
+        ).upper()
+        if status != "FILLED":
             return None
         try:
             qty = Decimal(
-                str(raw.get("executedQty", "0"))
+                str(
+                    raw.get(
+                        "executedQty",
+                        raw.get("cum_exec_qty", "0"),
+                    )
+                )
             )
             quote = Decimal(
                 str(
@@ -466,13 +477,20 @@ class RuntimeExecutionService:
             return None
         if qty <= 0:
             return None
-        price = (
-            quote / qty
-            if quote > 0
-            else Decimal(
-                str(raw.get("price", "0"))
-            )
-        )
+        if quote > 0:
+            price = quote / qty
+        else:
+            try:
+                price = Decimal(
+                    str(
+                        raw.get(
+                            "avg_price",
+                            raw.get("price", "0"),
+                        )
+                    )
+                )
+            except InvalidOperation:
+                return None
         if price <= 0:
             return None
         return float(price), float(qty)
@@ -504,6 +522,66 @@ class RuntimeExecutionService:
         self._save_proposals(proposals)
         self.company.checkpoint()
         return True
+
+    def reconcile_outstanding(self) -> list[dict]:
+        results: list[dict] = []
+        for row in self.list_proposals(
+            statuses=(
+                "submitting",
+                "acknowledged",
+                "uncertain",
+            )
+        ):
+            intent_id = str(row["intent_id"])
+            environment = str(row["environment"])
+            try:
+                client = self._client(
+                    environment=environment,
+                    manual_production=False,
+                )
+                broker_order = client.find_order(
+                    symbol=str(row["payload"]["symbol"]),
+                    order_link_id=str(
+                        row["payload"]["order_link_id"]
+                    ),
+                )
+                reconciled = self._journal(
+                    environment
+                ).reconcile(
+                    intent_id,
+                    broker_order,
+                ).to_dict()
+                current = self._journal(
+                    environment
+                ).get(intent_id)
+                self._mirror_if_filled(
+                    intent_id,
+                    current,
+                )
+                results.append(
+                    {
+                        "intent_id": intent_id,
+                        "environment": environment,
+                        "status": current["status"],
+                        "reconciliation_status": (
+                            current.get(
+                                "reconciliation_status"
+                            )
+                        ),
+                        "result": reconciled,
+                    }
+                )
+            except Exception as exc:
+                results.append(
+                    {
+                        "intent_id": intent_id,
+                        "environment": environment,
+                        "error": (
+                            f"{type(exc).__name__}: {exc}"
+                        ),
+                    }
+                )
+        return results
 
     def confirm_real(
         self,
