@@ -313,6 +313,60 @@ class ReliableTestnetExecutorTests(unittest.TestCase):
             self.assertIn("qty_mismatch", result["issues"])
             store.close()
 
+    def test_reconciled_intent_is_not_downgraded_by_later_not_found(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "reliability.db")
+            plan = sample_plan()
+            visible = {"value": True}
+
+            def post(url, data, headers):
+                del url, headers
+                body = json.loads(data.decode())
+                return {
+                    "retCode": 0,
+                    "result": {
+                        "orderId": "order-1",
+                        "orderLinkId": body["orderLinkId"],
+                    },
+                }
+
+            def query(url, headers):
+                del url, headers
+                return {
+                    "retCode": 0,
+                    "result": {
+                        "list": (
+                            [broker_row(plan)]
+                            if visible["value"]
+                            else []
+                        )
+                    },
+                }
+
+            executor, journal = self.make_executor(
+                store,
+                post_transport=post,
+                query_transport=query,
+            )
+            row = executor.submit_plan(plan)
+            matched = executor.reconcile_intent(
+                row["intent_id"]
+            )
+            self.assertEqual(matched["status"], "reconciled")
+
+            visible["value"] = False
+            still = executor.reconcile_intent(
+                row["intent_id"]
+            )
+            self.assertEqual(still["status"], "reconciled")
+            self.assertEqual(
+                journal.get(row["intent_id"])[
+                    "reconciliation_status"
+                ],
+                "matched",
+            )
+            store.close()
+
     def test_recovery_reconciles_all_pending_without_resubmit(self):
         with tempfile.TemporaryDirectory() as d:
             store = Store(Path(d) / "reliability.db")
@@ -350,6 +404,57 @@ class ReliableTestnetExecutorTests(unittest.TestCase):
             self.assertEqual(
                 journal.summary()["recovery_required"],
                 0,
+            )
+            store.close()
+
+
+    def test_reliability_transitions_are_audited(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "reliability.db")
+            plan = sample_plan()
+
+            def post(url, data, headers):
+                del url, headers
+                body = json.loads(data.decode())
+                return {
+                    "retCode": 0,
+                    "result": {
+                        "orderId": "order-audit",
+                        "orderLinkId": body["orderLinkId"],
+                    },
+                }
+
+            def query(url, headers):
+                del url, headers
+                return {
+                    "retCode": 0,
+                    "result": {
+                        "list": [broker_row(plan)]
+                    },
+                }
+
+            executor, _ = self.make_executor(
+                store,
+                post_transport=post,
+                query_transport=query,
+            )
+            row = executor.submit_plan(plan)
+            executor.reconcile_intent(row["intent_id"])
+            kinds = {
+                event["kind"]
+                for event in store.recent_events(20)
+            }
+            self.assertIn(
+                "execution_intent_submitting",
+                kinds,
+            )
+            self.assertIn(
+                "execution_intent_acknowledged",
+                kinds,
+            )
+            self.assertIn(
+                "execution_intent_reconciled",
+                kinds,
             )
             store.close()
 
