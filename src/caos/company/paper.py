@@ -788,6 +788,175 @@ class CompanyPaperBook:
             return mid_price * (1.0 + modeled_non_fee_bps / 10_000.0)
         return mid_price * (1.0 - modeled_non_fee_bps / 10_000.0)
 
+    def preview_external_plan(
+        self,
+        trader_id: str,
+        *,
+        allow_new_risk: bool = True,
+    ) -> dict:
+        """Compute the next deterministic plan without executing it."""
+        trader = self.registry.get(trader_id)
+        if trader.status != TraderStatus.ACTIVE:
+            raise CompanyPaperError("trader_not_active")
+        if not trader.market:
+            raise CompanyPaperError("market_not_assigned")
+        if not trader.strategy_id:
+            raise CompanyPaperError("strategy_not_assigned")
+        if trader.direction == "short":
+            raise CompanyPaperError(
+                "short_execution_not_supported_yet"
+            )
+        bars = self.engine.bars(trader.market)
+        if not bars:
+            raise CompanyPaperError("market_data_required")
+        latest_bar = bars[-1]
+        account = self.ensure_account(trader_id)
+        marks = {trader.market: latest_bar.close}
+        marked_equity = account.equity(marks)
+        account.risk.set_equity(marked_equity)
+
+        strategy = self.strategies.get(trader.strategy_id)
+        requested_weight = (
+            trader.requested_trade_exposure_pct() / 100.0
+        )
+        decision = self.engine.current_decision(
+            strategy,
+            trader.market,
+            requested_weight=requested_weight,
+        )
+        if self.company_risk.state.kill_switch:
+            decision = decision_from_signal(
+                symbol=trader.market,
+                strategy_id=trader.strategy_id,
+                signal="flat",
+                requested_weight=0.0,
+                as_of=latest_bar.ts,
+                reason="company_kill_switch",
+            )
+
+        position = account.positions.get(trader.market)
+        open_qty = position.quantity if position else 0.0
+        price = latest_bar.close
+        current_notional = open_qty * price
+        max_notional = min(
+            self.company_risk.max_trade_notional(trader_id),
+            account.risk.max_position_notional,
+        )
+        target = resolve_target_position(
+            decision,
+            equity=marked_equity,
+            max_notional=max_notional,
+        )
+        tolerance = max(
+            1e-8,
+            target.target_notional * 0.01,
+        )
+        plan = plan_execution(
+            target,
+            current_notional=current_notional,
+            reference_price=price,
+            allow_new_risk=allow_new_risk,
+            tolerance=tolerance,
+        )
+        self.last_plans[trader_id] = plan.to_dict()
+        return {
+            "trader_id": trader_id,
+            "signal": decision.signal,
+            "decision": decision.to_dict(),
+            "target": target.to_dict(),
+            "plan": plan.to_dict(),
+            "equity": self.marked_equity(trader_id),
+            "realized_equity": self.realized_equity(
+                trader_id
+            ),
+            "as_of": int(latest_bar.ts),
+        }
+
+    def apply_external_fill(
+        self,
+        trader_id: str,
+        *,
+        plan: dict,
+        price: float,
+        quantity: float,
+        ts: int,
+    ) -> TraderPaperCycle:
+        """Mirror one externally confirmed fill into the internal ledger."""
+        trader = self.registry.get(trader_id)
+        if not trader.market:
+            raise CompanyPaperError("market_not_assigned")
+        side = str(plan.get("side") or "")
+        if side not in {"buy", "sell"}:
+            raise CompanyPaperError("external_fill_side_invalid")
+        price = float(price)
+        quantity = float(quantity)
+        if price <= 0 or quantity <= 0:
+            raise CompanyPaperError(
+                "external_fill_price_quantity_invalid"
+            )
+        notional = price * quantity
+        account = self.ensure_account(trader_id)
+        if side == "buy":
+            self.company_risk.validate(
+                trader_id,
+                symbol=trader.market,
+                notional=float(
+                    plan.get(
+                        "effective_target_notional",
+                        notional,
+                    )
+                ),
+            )
+        else:
+            self.company_risk.validate(
+                trader_id,
+                symbol=trader.market,
+                notional=notional,
+                risk_reducing=True,
+            )
+        fill = account.execute(
+            OrderRequest(
+                trader.market,
+                side,
+                notional,
+                price,
+                trader.strategy_id or "external_execution",
+            )
+        )
+        action = (
+            "open_long"
+            if side == "buy"
+            and float(plan.get("current_notional", 0.0))
+            <= 1e-8
+            else (
+                "increase_long"
+                if side == "buy"
+                else (
+                    "close_long"
+                    if str(plan.get("action")) == "close"
+                    else "reduce_long"
+                )
+            )
+        )
+        self._record_visual_fill(
+            trader_id,
+            action=action,
+            ts=int(ts),
+            fill=fill,
+        )
+        self.reconcile_trader(trader_id)
+        return TraderPaperCycle(
+            trader_id,
+            action,
+            None,
+            self._fill_dict(fill),
+            self.marked_equity(trader_id),
+            self.realized_equity(trader_id),
+            None,
+            None,
+            dict(plan),
+        )
+
     def cycle_trader(
         self,
         trader_id: str,
