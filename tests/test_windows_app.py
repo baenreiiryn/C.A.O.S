@@ -115,6 +115,35 @@ class WindowsLauncherConfigTests(unittest.TestCase):
                 validated["active_broker_profile"]
             )
 
+    def test_loading_legacy_file_persists_news_migration(self):
+        import json
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            legacy = default_launcher_config(
+                data_dir=root
+            )
+            legacy.pop("news_sources", None)
+            path = root / "launcher.json"
+            path.write_text(
+                json.dumps(legacy),
+                encoding="utf-8",
+            )
+            loaded = load_launcher_config(
+                data_dir=root
+            )
+            self.assertGreater(
+                len(loaded["news_sources"]),
+                0,
+            )
+            persisted = json.loads(
+                path.read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                persisted["news_sources"],
+                loaded["news_sources"],
+            )
+
     def test_launcher_config_strips_broker_secrets(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
