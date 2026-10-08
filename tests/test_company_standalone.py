@@ -354,6 +354,140 @@ class CompanyDashboardTests(unittest.TestCase):
                 thread.join(timeout=2)
                 store.close()
 
+    def test_dashboard_strategy_rollout_controls_are_safe(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "company.db")
+            caos = make_runtime(store)
+            policy = build_policy(
+                initial_company_capital=10,
+                trader_initial_bucket=10,
+                trader_stop_floor=3,
+                default_trader_max_exposure_pct=20,
+                operational_trader_cap=6,
+                company_max_drawdown_pct=30,
+            )
+            company = TradeCompany(
+                CAOSAdapter(caos),
+                policy,
+                store=store,
+            )
+            initialize_company(
+                company,
+                parse_scan_targets("BTCUSDT:long:momentum"),
+            )
+            strategy_id = "research:http-rollout"
+            company.register_strategy(
+                StrategySpec(
+                    "http_rollout",
+                    "momentum",
+                    2,
+                    3,
+                    threshold=0.1,
+                ),
+                strategy_id=strategy_id,
+            )
+            company.research.decisions.append(
+                PromotionDecision(
+                    id="http-promotion",
+                    symbol="BTCUSDT",
+                    candidate_id="http-candidate",
+                    candidate_strategy_id=strategy_id,
+                    prior_champion_strategy_id=None,
+                    status="promoted",
+                    reason="http_test",
+                )
+            )
+            company.research.champions["BTCUSDT"] = strategy_id
+            release = company.rollout.sync_research(
+                company.research
+            )[0]
+            release.stage = "eligible"
+            company.checkpoint()
+
+            server = serve_company(
+                CompanyControlPort(company),
+                host="127.0.0.1",
+                port=0,
+                open_browser=False,
+            )
+            thread = threading.Thread(
+                target=server.serve_forever,
+                daemon=True,
+            )
+            thread.start()
+            host, port = server.server_address
+            base = "http://%s:%s" % (host, port)
+            try:
+                with urllib.request.urlopen(
+                    base + "/api/company/rollout",
+                    timeout=2,
+                ) as response:
+                    rollout = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertEqual(
+                    rollout["releases"][release.id]["stage"],
+                    "eligible",
+                )
+
+                activate = urllib.request.Request(
+                    (
+                        base
+                        + "/api/company/rollout/"
+                        + release.id
+                        + "/activate"
+                    ),
+                    data=b"",
+                    method="POST",
+                )
+                with urllib.request.urlopen(
+                    activate,
+                    timeout=2,
+                ) as response:
+                    active = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertEqual(active["stage"], "active")
+
+                rollback = urllib.request.Request(
+                    (
+                        base
+                        + "/api/company/rollout/"
+                        + release.id
+                        + "/rollback"
+                    ),
+                    data=json.dumps(
+                        {"reason": "http_test_rollback"}
+                    ).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(
+                    rollback,
+                    timeout=2,
+                ) as response:
+                    rolled = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertEqual(
+                    rolled["release"]["stage"],
+                    "rolled_back",
+                )
+
+                with urllib.request.urlopen(
+                    base + "/",
+                    timeout=2,
+                ) as response:
+                    html = response.read().decode("utf-8")
+                self.assertIn("Rollout Gate", html)
+                self.assertIn("activateRelease", html)
+                self.assertIn("rollbackRelease", html)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+                store.close()
+
 
 if __name__ == "__main__":
     unittest.main()
