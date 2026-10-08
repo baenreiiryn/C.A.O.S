@@ -16,6 +16,7 @@ from .app_settings import (
     WindowsCredentialVault,
 )
 from .cli import build_caos
+from .news import default_news_sources, normalize_news_sources
 from .company.control import CompanyControlPort
 from .company.dashboard import serve_company
 from .company.domain import TraderMode
@@ -67,6 +68,7 @@ def default_launcher_config(
         "base_url": "",
         "broker_profiles": [],
         "active_broker_profile": None,
+        "news_sources": default_news_sources(),
         "company_capital": 10.0,
         "trader_bucket": 10.0,
         "stop_floor": 3.0,
@@ -192,6 +194,17 @@ def validate_launcher_config(
     if not state_db.is_absolute():
         state_db = (data_dir or app_data_dir()) / state_db
 
+    raw_news_sources = merged.get(
+        "news_sources",
+        default_news_sources(),
+    )
+    try:
+        news_sources = normalize_news_sources(
+            raw_news_sources
+        )
+    except ValueError as exc:
+        raise WindowsAppError(str(exc)) from exc
+
     raw_profiles = merged.get("broker_profiles", [])
     broker_profiles = []
     if isinstance(raw_profiles, list):
@@ -233,6 +246,7 @@ def validate_launcher_config(
         "base_url": str(merged.get("base_url", "")).strip(),
         "broker_profiles": broker_profiles,
         "active_broker_profile": active_broker_profile,
+        "news_sources": news_sources,
         "company_capital": _float_between(
             merged["company_capital"],
             name="company_capital",
@@ -317,7 +331,14 @@ def _caos_args(config: dict) -> SimpleNamespace:
         model=config["model"],
         base_url=config["base_url"] or None,
         experts="",
-        news_feeds="",
+        news_feeds=",".join(
+            row["url"]
+            for row in config.get(
+                "news_sources",
+                [],
+            )
+            if row.get("enabled", True)
+        ),
         state_db=config["state_db"],
         restore=True,
         capital=config["company_capital"],
