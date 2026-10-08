@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from .compliance import ComplianceEngine
 from .domain import Mode
+from .execution_fabric import ExecutionPlan
 
 
 class TestnetError(RuntimeError):
@@ -21,6 +22,44 @@ class TestnetOrderAck:
     order_id: str
     order_link_id: str
     raw: dict[str, Any]
+
+
+def execution_plan_to_bybit_order(
+    plan: ExecutionPlan,
+    *,
+    category: str = "linear",
+    order_type: str = "Market",
+    quantity_decimals: int = 8,
+) -> dict[str, Any]:
+    """Translate a venue-agnostic plan into a Bybit TESTNET order payload."""
+    if not plan.executable or plan.side is None:
+        raise TestnetError("execution_plan_not_executable")
+    if category not in {"linear", "inverse", "spot"}:
+        raise ValueError("unsupported category")
+    if order_type not in {"Market", "Limit"}:
+        raise ValueError("order_type must be Market or Limit")
+    if quantity_decimals < 0 or quantity_decimals > 16:
+        raise ValueError("invalid_quantity_decimals")
+
+    qty = plan.order_notional / plan.reference_price
+    if qty <= 0:
+        raise TestnetError("execution_plan_quantity_invalid")
+    qty_text = f"{qty:.{quantity_decimals}f}".rstrip("0").rstrip(".")
+    if not qty_text:
+        raise TestnetError("execution_plan_quantity_rounds_to_zero")
+
+    payload: dict[str, Any] = {
+        "category": category,
+        "symbol": plan.symbol,
+        "side": "Buy" if plan.side == "buy" else "Sell",
+        "order_type": order_type,
+        "qty": qty_text,
+        "reduce_only": bool(plan.risk_reducing),
+        "order_link_id": plan.plan_id[:36],
+    }
+    if order_type == "Limit":
+        payload["price"] = str(plan.reference_price)
+    return payload
 
 
 class BybitTestnetClient:
@@ -179,3 +218,20 @@ class HumanTestnetExecutor:
     def place_order(self, **kwargs) -> TestnetOrderAck:
         self.compliance.allow_mode(Mode.TESTNET)
         return self.client.place_order(**kwargs)
+
+    def execute_plan(
+        self,
+        plan: ExecutionPlan,
+        *,
+        category: str = "linear",
+        order_type: str = "Market",
+        quantity_decimals: int = 8,
+    ) -> TestnetOrderAck:
+        self.compliance.allow_mode(Mode.TESTNET)
+        payload = execution_plan_to_bybit_order(
+            plan,
+            category=category,
+            order_type=order_type,
+            quantity_decimals=quantity_decimals,
+        )
+        return self.client.place_order(**payload)
