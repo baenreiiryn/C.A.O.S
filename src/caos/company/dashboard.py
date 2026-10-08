@@ -106,6 +106,9 @@ filter:drop-shadow(0 2px 2px #000);animation:bob 3.2s ease-in-out infinite}
 padding:5px 7px;line-height:1.15;box-shadow:0 5px 13px rgba(0,0,0,.25)}
 .place-title{font-weight:700;color:#ffe4a7;font-size:12px}
 .place-character{color:#d2c6a9;font-size:10px;font-family:system-ui,sans-serif;margin-top:2px}
+.place-activity{color:#9eced0;font-size:9px;font-family:system-ui,sans-serif;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place.quiet .place-icon{opacity:.62;filter:grayscale(.18) drop-shadow(0 2px 2px #000)}
+.place.active .place-icon{animation:bob 1.8s ease-in-out infinite}
 .state-dot{position:absolute;right:15px;top:-20px;width:12px;height:12px;border-radius:50%;background:var(--green);
 box-shadow:0 0 0 4px rgba(107,226,161,.12),0 0 12px var(--green);z-index:5}
 .place.attention .state-dot{background:var(--amber);box-shadow:0 0 0 5px rgba(255,200,102,.13),0 0 16px var(--amber);animation:pulse 1.4s infinite}
@@ -209,18 +212,18 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
     <div class="emergency-ward"></div>
     <div class="city-notice"><b id="cityMoodTitle">A cidade desperta...</b><span id="cityMoodText">Carregando o estado da Company.</span></div>
 
-    <button class="place citadel" data-location="citadel"><span class="state-dot"></span><div class="building"><span class="place-icon">🏰</span></div><div class="place-label"><div class="place-title">Citadel of Oversight</div><div class="place-character">Royal Steward · Supervisor</div></div></button>
-    <button class="place risk" data-location="risk"><span class="state-dot"></span><div class="building"><span class="place-icon">🧙</span></div><div class="place-label"><div class="place-title">Tower of Wards</div><div class="place-character">Archmage · Risk</div></div></button>
-    <button class="place observatory" data-location="observatory"><span class="state-dot"></span><div class="building"><span class="place-icon">🔭</span></div><div class="place-label"><div class="place-title">Arcane Observatory</div><div class="place-character">Market Seer · Quant</div></div></button>
-    <button class="place treasury" data-location="treasury"><span class="state-dot"></span><div class="building"><span class="place-icon">🪙</span></div><div class="place-label"><div class="place-title">Grand Vault</div><div class="place-character">Royal Treasurer</div></div></button>
-    <button class="place guild" data-location="guild"><span class="state-dot"></span><div class="building"><span class="place-icon">⚔️</span></div><div class="place-label"><div class="place-title">Trading Guild</div><div class="place-character">Traders · Questmaster</div></div></button>
-    <button class="place tavern" data-location="tavern"><span class="state-dot"></span><div class="building"><span class="place-icon">🎻</span></div><div class="place-label"><div class="place-title">Whispering Tankard</div><div class="place-character">Bard · News</div></div></button>
-    <button class="place quests" data-location="quests"><span class="state-dot"></span><div class="building"><span class="place-icon">📜</span></div><div class="place-label"><div class="place-title">Quest Board</div><div class="place-character">Opportunities</div></div></button>
-    <button class="place scout" data-location="scout"><span class="state-dot"></span><div class="building"><span class="place-icon">🧭</span></div><div class="place-label"><div class="place-title">Scout Lodge</div><div class="place-character">Royal Pathfinder</div></div></button>
-    <button class="place arena" data-location="arena"><span class="state-dot"></span><div class="building"><span class="place-icon">🏟️</span></div><div class="place-label"><div class="place-title">Tournament Arena</div><div class="place-character">Training Arena</div></div></button>
-    <button class="place nexus" data-location="nexus"><span class="state-dot"></span><div class="building"><span class="place-icon">🔮</span></div><div class="place-label"><div class="place-title">Arcane Nexus</div><div class="place-character">C.A.O.S</div></div></button>
-    <button class="place workshop" data-location="workshop"><span class="state-dot"></span><div class="building"><span class="place-icon">⚗️</span></div><div class="place-label"><div class="place-title">Arcane Workshop</div><div class="place-character">Improvement Manager</div></div></button>
-    <button class="place chronicle" data-location="chronicle"><span class="state-dot"></span><div class="building"><span class="place-icon">📚</span></div><div class="place-label"><div class="place-title">Chronicle Vault</div><div class="place-character">Memory & Recovery</div></div></button>
+    <button class="place citadel" data-location="citadel"><span class="state-dot"></span><div class="building"><span class="place-icon">🏰</span></div><div class="place-label"><div class="place-title">Citadel of Oversight</div><div class="place-character">Royal Steward · Supervisor</div><div class="place-activity" data-activity="citadel">auditing the city</div></div></button>
+    <button class="place risk" data-location="risk"><span class="state-dot"></span><div class="building"><span class="place-icon">🧙</span></div><div class="place-label"><div class="place-title">Tower of Wards</div><div class="place-character">Archmage · Risk</div><div class="place-activity" data-activity="risk">reading the wards</div></div></button>
+    <button class="place observatory" data-location="observatory"><span class="state-dot"></span><div class="building"><span class="place-icon">🔭</span></div><div class="place-label"><div class="place-title">Arcane Observatory</div><div class="place-character">Market Seer · Quant</div><div class="place-activity" data-activity="observatory">studying the sky</div></div></button>
+    <button class="place treasury" data-location="treasury"><span class="state-dot"></span><div class="building"><span class="place-icon">🪙</span></div><div class="place-label"><div class="place-title">Grand Vault</div><div class="place-character">Royal Treasurer</div><div class="place-activity" data-activity="treasury">counting the vault</div></div></button>
+    <button class="place guild" data-location="guild"><span class="state-dot"></span><div class="building"><span class="place-icon">⚔️</span></div><div class="place-label"><div class="place-title">Trading Guild</div><div class="place-character">Traders · Questmaster</div><div class="place-activity" data-activity="guild">organizing adventurers</div></div></button>
+    <button class="place tavern" data-location="tavern"><span class="state-dot"></span><div class="building"><span class="place-icon">🎻</span></div><div class="place-label"><div class="place-title">Whispering Tankard</div><div class="place-character">Bard · News</div><div class="place-activity" data-activity="tavern">listening for news</div></div></button>
+    <button class="place quests" data-location="quests"><span class="state-dot"></span><div class="building"><span class="place-icon">📜</span></div><div class="place-label"><div class="place-title">Quest Board</div><div class="place-character">Opportunities</div><div class="place-activity" data-activity="quests">posting quests</div></div></button>
+    <button class="place scout" data-location="scout"><span class="state-dot"></span><div class="building"><span class="place-icon">🧭</span></div><div class="place-label"><div class="place-title">Scout Lodge</div><div class="place-character">Royal Pathfinder</div><div class="place-activity" data-activity="scout">scouting markets</div></div></button>
+    <button class="place arena" data-location="arena"><span class="state-dot"></span><div class="building"><span class="place-icon">🏟️</span></div><div class="place-label"><div class="place-title">Tournament Arena</div><div class="place-character">Training Arena</div><div class="place-activity" data-activity="arena">training challengers</div></div></button>
+    <button class="place nexus" data-location="nexus"><span class="state-dot"></span><div class="building"><span class="place-icon">🔮</span></div><div class="place-label"><div class="place-title">Arcane Nexus</div><div class="place-character">C.A.O.S</div><div class="place-activity" data-activity="nexus">feeding the ley lines</div></div></button>
+    <button class="place workshop" data-location="workshop"><span class="state-dot"></span><div class="building"><span class="place-icon">⚗️</span></div><div class="place-label"><div class="place-title">Arcane Workshop</div><div class="place-character">Improvement Manager</div><div class="place-activity" data-activity="workshop">researching improvements</div></div></button>
+    <button class="place chronicle" data-location="chronicle"><span class="state-dot"></span><div class="building"><span class="place-icon">📚</span></div><div class="place-label"><div class="place-title">Chronicle Vault</div><div class="place-character">Memory & Recovery</div><div class="place-activity" data-activity="chronicle">recording history</div></div></button>
 
     <div id="alertBeacon" class="alert-beacon"><strong>City Watch</strong><div id="alertText">No alerts.</div></div>
   </section>
@@ -241,6 +244,11 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
 let currentStatus=null;
 let currentCity=null;
 let activeLocation=null;
+const byId=function(id){return document.getElementById(id)};
+const hudEquity=byId('hudEquity'),hudReserve=byId('hudReserve'),hudTraders=byId('hudTraders'),hudRisk=byId('hudRisk');
+const healthRune=byId('healthRune'),alertRune=byId('alertRune'),cityWorld=byId('cityWorld');
+const cityMoodTitle=byId('cityMoodTitle'),cityMoodText=byId('cityMoodText'),alertText=byId('alertText');
+const drawer=byId('drawer'),drawerBackdrop=byId('drawerBackdrop'),drawerTitle=byId('drawerTitle'),drawerTech=byId('drawerTech'),drawerBody=byId('drawerBody'),drawerClose=byId('drawerClose');
 
 const money=function(v){return '$'+Number(v||0).toFixed(4)};
 const pct=function(v){return Number(v||0).toFixed(2)+'%'};
@@ -274,6 +282,8 @@ function applyPlaceStates(){
    el.classList.remove('healthy','attention','critical','emergency','active','quiet');
    if(loc)el.classList.add(stateClass(loc.state,loc.attention));
    if(loc)el.title=loc.title+' — '+loc.summary;
+   const activity=document.querySelector('[data-activity="'+id+'"]');
+   if(activity&&loc)activity.textContent=loc.summary;
  });
 }
 
@@ -387,7 +397,7 @@ function locationDetails(id){
    body+=section('Recovery State','<div class="metric-grid">'+metric('Reconciliation',(s.reconciliation_mismatches||[]).length?'MISMATCH':'OK')+metric('Paper accounts',Object.keys((s.paper&&s.paper.accounts)||{}).length)+'</div>');
  }
  if(alerts.length)body+=section('Attention requested','<div class="list">'+alerts.map(function(a){return listItem(a.kind,a.severity||'attention')}).join('')+'</div>');
- body+=section('Technical truth',json({location:loc,status_snapshot:technicalSnapshot(id,s)}));
+ body+='<details class="detail-section"><summary style="cursor:pointer;color:#f1d796;font-weight:700">Technical truth</summary>'+json({location:loc,status_snapshot:technicalSnapshot(id,s)})+'</details>';
  return body;
 }
 
@@ -438,7 +448,7 @@ function openTrader(id){
  section('Current Quest','<div class="metric-grid">'+metric('Market',t.market||'none')+metric('Direction',t.direction||'—')+metric('Strategy',t.strategy_id||'—')+metric('Mode',t.mode)+'</div>')+
  section('Capital & Risk Seal','<div class="metric-grid">'+metric('Realized capital',money(bal))+metric('Open exposure',money(exp))+metric('Chosen sizing',pct(requested))+metric('Maximum exposure',pct(t.max_trade_exposure_pct))+metric('Requested notional',money(requestedNotional))+metric('Maximum notional',money(maxNotional))+'</div>')+
  section('Guild Controls',actions+exposureControls)+
- section('Technical truth',json({trader:t,paper:currentStatus.paper&&currentStatus.paper.accounts&&currentStatus.paper.accounts[id],assignment:currentStatus.assignments&&currentStatus.assignments[id]}));
+ '<details class="detail-section"><summary style="cursor:pointer;color:#f1d796;font-weight:700">Technical truth</summary>'+json({trader:t,paper:currentStatus.paper&&currentStatus.paper.accounts&&currentStatus.paper.accounts[id],assignment:currentStatus.assignments&&currentStatus.assignments[id]})+'</details>';
  drawer.classList.add('open');drawerBackdrop.classList.add('open');drawer.setAttribute('aria-hidden','false');
 }
 
