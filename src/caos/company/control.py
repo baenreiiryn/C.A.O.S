@@ -36,6 +36,38 @@ class CompanyControlPort:
             for experiment in self.company.training.experiments.values()
         ]
 
+    def get_strategy_rollouts(self) -> dict:
+        return self.company.rollout.snapshot()
+
+    def get_strategy_rollout_summary(self) -> dict:
+        return self.company.rollout.summary()
+
+    def sync_strategy_rollouts(self) -> list[dict]:
+        return self.company.sync_strategy_rollouts()
+
+    def process_strategy_rollouts(
+        self,
+        symbol: str,
+    ) -> list[dict]:
+        return self.company.process_strategy_rollouts(symbol)
+
+    def activate_strategy_release(
+        self,
+        release_id: str,
+    ) -> dict:
+        return self.company.activate_strategy_release(release_id)
+
+    def rollback_strategy_release(
+        self,
+        release_id: str,
+        *,
+        reason: str = "manual_rollback",
+    ) -> dict:
+        return self.company.rollback_strategy_release(
+            release_id,
+            reason=reason,
+        )
+
     def get_research(self) -> dict:
         return self.company.research.snapshot()
 
