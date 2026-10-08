@@ -199,6 +199,10 @@ class TradeCompanyCell:
         research = status.get("research_summary", {})
         rollout = status.get("rollout_summary", {})
         rollout_stages = rollout.get("stages", {})
+        reliability = status.get(
+            "execution_reliability",
+            {},
+        )
         values = {
             "company_equity": status.get(
                 "marked_company_equity",
@@ -250,6 +254,14 @@ class TradeCompanyCell:
             ),
             "rollout_active": rollout_stages.get(
                 "active",
+                0,
+            ),
+            "execution_intents": reliability.get(
+                "total",
+                0,
+            ),
+            "execution_recovery_required": reliability.get(
+                "recovery_required",
                 0,
             ),
         }
@@ -359,6 +371,20 @@ class TradeCompanyCell:
                 "count",
                 "rollout",
             ).to_dict(),
+            CellMetric(
+                "execution_intents",
+                "Execution Intents",
+                values["execution_intents"],
+                "count",
+                "execution",
+            ).to_dict(),
+            CellMetric(
+                "execution_recovery_required",
+                "Execution Reconciliation Required",
+                values["execution_recovery_required"],
+                "count",
+                "execution",
+            ).to_dict(),
         ]
         return {
             "cell_id": self.manifest.cell_id,
@@ -373,6 +399,19 @@ class TradeCompanyCell:
             {},
         ).get("alerts", [])
         normalized = []
+        reliability_recovery = int(
+            self._company_status()
+            .get("execution_reliability", {})
+            .get("recovery_required", 0)
+        )
+        if reliability_recovery > 0:
+            alerts.append(
+                {
+                    "kind": "execution_reconciliation_required",
+                    "severity": "high",
+                    "count": reliability_recovery,
+                }
+            )
         severity_map = {
             "medium": "warning",
             "high": "high",
@@ -430,6 +469,11 @@ class TradeCompanyCell:
         alerts = self.get_alerts()
         recent_events = self.get_recent_events(5)
         highlights = [
+            (
+                f"Execution reliability: "
+                f"{metrics['execution_intents']} intent(s), "
+                f"{metrics['execution_recovery_required']} require reconciliation."
+            ),
             (
                 f"Strategy rollout: "
                 f"{metrics['rollout_canaries']} canary, "
