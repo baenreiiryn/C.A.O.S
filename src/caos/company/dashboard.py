@@ -320,7 +320,7 @@ function renderSettings(){
    settingsField('Local GGUF file','ollamaModelPath',selectedLocalModelPath)+
    settingsField('Imported model name','ollamaImportedName','')+
    '</div>'+
-   '<div class="settings-note">Importing creates an Ollama model inside the Trade Company model store. The original GGUF is not used as a live server endpoint. Applying the model also selects Ollama as the active LLM provider without resetting Company state.</div>'+
+   '<div class="settings-note">Importing creates an Ollama model inside the Trade Company model store. The original GGUF is not used as a live server endpoint. Applying selects the model without resetting Company state; if Ollama was stopped before the import, it returns to stopped so you can start it explicitly.</div>'+
    '<div class="control-row"><button class="btn" onclick="pickLocalOllamaModel()">Choose GGUF</button><button class="btn" onclick="applyLocalOllamaModel()">Apply Local Model</button><button class="btn" onclick="startManagedOllama()">Start Ollama</button><button class="btn" onclick="stopManagedOllama()">Stop Ollama</button><button class="btn" onclick="refreshManagedOllama()">Refresh Runtime</button></div>'+
    '<div id="ollamaRuntimeStatus" class="settings-status">'+(managed.running?'Managed Ollama is ready.':(managed.installed?'Managed Ollama is installed but stopped.':'Managed Ollama runtime files are missing from this installation.'))+'</div>'
  );
@@ -441,7 +441,11 @@ async function applyLocalOllamaModel(){
  try{
   const r=await api('/api/settings/ollama/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source_path:source,model_name:(nameEl&&nameEl.value||'').trim()})});
   settingsCache=await api('/api/settings');renderSettings();
-  const el=byId('ollamaRuntimeStatus');if(el)el.textContent='✓ '+((r.imported&&r.imported.model)||'Model')+' imported, selected, and ready.';
+  const el=byId('ollamaRuntimeStatus');
+  if(el){
+   const running=!!(r.ollama_runtime&&r.ollama_runtime.running);
+   el.textContent='✓ '+((r.imported&&r.imported.model)||'Model')+(running?' imported, selected, and running.':' imported and selected. Click Start Ollama when you want to use it.');
+  }
  }catch(e){if(status)status.textContent='Error: '+e.message}
 }
 function collectNewsSources(){
