@@ -42,7 +42,9 @@ class CompanyCheckpoint:
 
     @staticmethod
     def _validate_policy(company, payload: dict) -> None:
-        saved = CompanyPolicy(**payload["policy"])
+        policy_payload = dict(payload["policy"])
+        policy_payload.setdefault("paper_pending_orders", True)
+        saved = CompanyPolicy(**policy_payload)
         if saved != company.policy:
             raise CompanyCheckpointError("company_policy_mismatch")
 
