@@ -187,6 +187,7 @@ class CompanyDaemon:
         *,
         refreshed: dict[str, int],
         errors: dict[str, str],
+        allow_new_risk: bool = True,
     ) -> tuple[list[dict], list[dict]]:
         actions: list[dict] = []
         retirements: list[dict] = []
@@ -205,7 +206,10 @@ class CompanyDaemon:
                 continue
 
             try:
-                result = self.company.paper.cycle_trader(trader.id)
+                result = self.company.paper.cycle_trader(
+                    trader.id,
+                    allow_new_risk=allow_new_risk,
+                )
                 actions.append(result.to_dict())
 
                 marked = self.company.paper.marked_equity(trader.id)
@@ -348,8 +352,11 @@ class CompanyDaemon:
         if self.company.operations_paused:
             opportunities: list[str] = []
             assignments: list[dict] = []
-            paper_actions: list[dict] = []
-            retirements: list[dict] = []
+            paper_actions, retirements = self._paper_cycles(
+                refreshed=refreshed,
+                errors=errors,
+                allow_new_risk=False,
+            )
             expansions: list[dict] = []
         else:
             opportunities = self._scan(
