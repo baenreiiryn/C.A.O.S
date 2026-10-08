@@ -231,7 +231,41 @@ The Arcane Workshop in the themed city displays hypotheses, candidates, champion
 
 See [`docs/COMPANY_V5_RESEARCH_FACTORY.md`](docs/COMPANY_V5_RESEARCH_FACTORY.md).
 
-## Strategy Rollout (Company V6)\n\nResearch champions do not jump directly into production assignments. They pass through a controlled rollout:\n\n```text\nResearch champion\n    -> shadow\n    -> paper_canary\n    -> eligible\n    -> explicit active\n    -> future new assignments\n```\n\nShadow produces decisions only. Paper canary uses an isolated virtual account and consumes no Treasury capital or Trader slot. Canary drawdown can automatically roll a release back.\n\nAn `eligible` release still cannot be assigned until an operator explicitly activates it. Once active, it is prioritized only for new opportunities on its symbol; existing Traders are never hot-swapped.\n\nRollback immediately blocks new risk/assignments for that research strategy. Existing positions are not force-closed; they may only drain/reduce and the assignment is released once flat.\n\nStandalone inspection and controls:\n\n```bash\ncaos --provider static company rollout\ncaos --provider static company rollout-sync\ncaos --provider static company rollout-process --symbol BTCUSDT\ncaos --provider static company rollout-activate <release-id>\ncaos --provider static company rollout-rollback <release-id>\n```\n\nThe Tournament Arena in the themed city displays shadow/canary/eligible/active releases and exposes safe activate/rollback controls.\n\nSee [`docs/COMPANY_V6_STRATEGY_ROLLOUT.md`](docs/COMPANY_V6_STRATEGY_ROLLOUT.md).\n\n## Bybit TESTNET
+## Strategy Rollout (Company V6)\n\nResearch champions do not jump directly into production assignments. They pass through a controlled rollout:\n\n```text\nResearch champion\n    -> shadow\n    -> paper_canary\n    -> eligible\n    -> explicit active\n    -> future new assignments\n```\n\nShadow produces decisions only. Paper canary uses an isolated virtual account and consumes no Treasury capital or Trader slot. Canary drawdown can automatically roll a release back.\n\nAn `eligible` release still cannot be assigned until an operator explicitly activates it. Once active, it is prioritized only for new opportunities on its symbol; existing Traders are never hot-swapped.\n\nRollback immediately blocks new risk/assignments for that research strategy. Existing positions are not force-closed; they may only drain/reduce and the assignment is released once flat.\n\nStandalone inspection and controls:\n\n```bash\ncaos --provider static company rollout\ncaos --provider static company rollout-sync\ncaos --provider static company rollout-process --symbol BTCUSDT\ncaos --provider static company rollout-activate <release-id>\ncaos --provider static company rollout-rollback <release-id>\n```\n\nThe Tournament Arena in the themed city displays shadow/canary/eligible/active releases and exposes safe activate/rollback controls.\n\nSee [`docs/COMPANY_V6_STRATEGY_ROLLOUT.md`](docs/COMPANY_V6_STRATEGY_ROLLOUT.md).\n\n## Production Reliability / Broker Reconciliation (Company V7)
+
+ExecutionPlan-based external TESTNET submission now has a durable SQLite intent/outbox layer:
+
+```text
+ExecutionPlan
+   -> PREPARED
+   -> SUBMITTING (persisted before network)
+   -> ACKNOWLEDGED
+   -> RECONCILED
+```
+
+Ambiguous network outcomes become `UNCERTAIN` and are never automatically resent. Recovery queries Bybit TESTNET by the same deterministic `plan_id` propagated as `orderLinkId`, checking real-time orders and then order history.
+
+```bash
+caos --provider static company reliability
+caos --provider static execution-intents
+caos --provider static testnet-recover
+```
+
+If both broker lookups confirm no order, an operator may explicitly resolve the stuck intent without retrying:
+
+```bash
+caos --provider static testnet-abandon-missing <intent-id> --confirm "ABANDON MISSING TESTNET INTENT"
+```
+
+The journal stores order intent/payload state but never API credentials. It is independent from the normal Company checkpoint so crash recovery cannot erase external execution history.
+
+The Chronicle Vault in the themed city displays execution intents and raises attention when broker reconciliation is required. Its HTTP reliability endpoint is read-only; broker credentials and submit controls remain absent.
+
+Company V7 does not enable autonomous TESTNET or LIVE deployment. Human TESTNET arming is still required for any money-moving submit, and LIVE remains unavailable.
+
+See [`docs/COMPANY_V7_PRODUCTION_RELIABILITY.md`](docs/COMPANY_V7_PRODUCTION_RELIABILITY.md).
+
+## Bybit TESTNET
 
 TESTNET is a separate human-only execution surface. The client rejects production Bybit hosts in code and TESTNET orders require the exact confirmation `ARM TESTNET`.
 
