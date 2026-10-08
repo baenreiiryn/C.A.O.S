@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.7.1 standalone Trade Company with persistent in-app LLM and broker settings**. Research, public market/order-book data, multi-family strategy mining, correlation-aware portfolio construction, optional Hugging Face specialists, local-LLM Goal orchestration, crash recovery, autonomous paper cycles and a human-gated Bybit TESTNET path are implemented. Production LIVE remains deliberately unavailable.
+> Current milestone: **v0.7.2 standalone Trade Company with Binance Japan / Spot integration and persistent in-app LLM/broker settings**. Public market/order-book data now comes from Binance Spot, test execution uses human-gated Binance Spot Testnet, and a real Binance Japan production profile can be authenticated read-only. Production order submission and LIVE remain deliberately unavailable.
 
 ## Why it is built this way
 
@@ -62,7 +62,7 @@ Runtime state is stored outside the program directory:
 
 This means uninstalling/reinstalling the application does not automatically delete the Company state. The packaged `caos.exe` also defaults to this same database.
 
-Bybit TESTNET API credentials are intentionally **not stored by the installer or first-run wizard**. The existing human-gated TESTNET tools continue to read credentials from environment variables. LIVE execution remains unavailable.
+Broker credentials are intentionally **not stored by the installer or first-run wizard**. Binance profiles created later in the Broker Embassy store secrets in Windows Credential Manager. LIVE execution remains unavailable.
 
 The current installer is unsigned, so Windows SmartScreen may show a warning until code signing is added.
 
@@ -78,13 +78,13 @@ The Founding Charter is only the first-run onboarding. After installation, confi
 - connection testing;
 - optional OpenAI-compatible API key stored in Windows Credential Manager.
 
-**Broker Embassy** supports persistent broker profiles. Bybit TESTNET is the currently implemented active execution adapter; Binance, OKX and Kraken profiles are schema-ready but cannot be activated until their broker adapters exist.
+**Broker Embassy** supports Binance Japan / Spot profiles. `spot-testnet` provides the human-gated test-order adapter; `production-readonly` authenticates a real Binance Japan account for safe account metadata/reconciliation work while production order submission remains disabled.
 
-Broker API keys and secrets are stored in **Windows Credential Manager**, not in `launcher.json` or `caos.db`. The packaged `caos.exe` automatically loads credentials from the active Bybit TESTNET profile, so PowerShell environment-variable setup is no longer required for the installed application.
+Broker API keys and secrets are stored in **Windows Credential Manager**, not in `launcher.json` or `caos.db`. The packaged `caos.exe` automatically loads credentials from the active Binance Spot Testnet profile, so PowerShell environment-variable setup is not required when that profile is configured in the installed application.
 
 Changing the active broker is blocked while unresolved external execution intents exist.
 
-Installing v0.7.1 over v0.7.0 preserves:
+Installing v0.7.2 over v0.7.1 preserves:
 
 ```text
 %LOCALAPPDATA%\CAOS\caos.db
@@ -176,7 +176,7 @@ Before forecast evidence is promoted into portfolio logic, C.A.O.S can walk-forw
 
 ## Public market data and paper automation
 
-C.A.O.S includes a public Bybit kline client that requires no API key, a local SQLite store, portfolio scoring and a deterministic paper runner/daemon. The LLM is not called on every market tick.
+C.A.O.S uses the public Binance Spot REST API for candles and order-book data with no API key, plus a local SQLite store, portfolio scoring and a deterministic paper runner/daemon. The LLM is not called on every market tick.
 
 ## Trade Company standalone
 
@@ -256,7 +256,7 @@ caos --provider static company execution-plans
 
 The fantasy city Trader detail also shows the latest Execution Plan.
 
-Bybit TESTNET can consume an ExecutionPlan only through the existing explicit human gate. LIVE execution remains unavailable.
+Binance Spot Testnet can consume an ExecutionPlan only through the existing explicit human gate. Spot SELL plans must be risk-reducing; opening naked shorts is not supported. LIVE execution remains unavailable.
 
 See [`docs/COMPANY_V4_EXECUTION_FABRIC.md`](docs/COMPANY_V4_EXECUTION_FABRIC.md).
 
@@ -336,7 +336,7 @@ ExecutionPlan
    -> RECONCILED
 ```
 
-Ambiguous network outcomes become `UNCERTAIN` and are never automatically resent. Recovery queries Bybit TESTNET by the same deterministic `plan_id` propagated as `orderLinkId`, checking real-time orders and then order history.
+Ambiguous network outcomes become `UNCERTAIN` and are never automatically resent. Recovery queries Binance Spot Testnet by the same deterministic `plan_id` propagated as `newClientOrderId`, then resolves it through `origClientOrderId`.
 
 ```bash
 caos --provider static company reliability
@@ -358,20 +358,27 @@ Company V7 does not enable autonomous TESTNET or LIVE deployment. Human TESTNET 
 
 See [`docs/COMPANY_V7_PRODUCTION_RELIABILITY.md`](docs/COMPANY_V7_PRODUCTION_RELIABILITY.md).
 
-## Bybit TESTNET
+## Binance Japan / Spot
 
-TESTNET is a separate human-only execution surface. The client rejects production Bybit hosts in code and TESTNET orders require the exact confirmation `ARM TESTNET`.
+Binance is the supported broker family in v0.7.2.
 
-Set credentials in environment variables; do not pass secrets to the LLM:
+- `spot-testnet` — human-gated Binance Spot Testnet order submission and durable recovery;
+- `production-readonly` — authenticate a real Binance Japan account and read safe account metadata; production order submission is blocked in code.
+
+TESTNET orders still require the exact confirmation `ARM TESTNET`.
+
+For development/CLI use without a Broker Embassy profile:
 
 ```bash
 # Windows PowerShell
-$env:BYBIT_TESTNET_API_KEY="..."
-$env:BYBIT_TESTNET_API_SECRET="..."
-caos --provider static testnet-order --confirm "ARM TESTNET" BTCUSDT Buy Limit 0.001 --price 50000
+$env:BINANCE_TESTNET_API_KEY="..."
+$env:BINANCE_TESTNET_API_SECRET="..."
+caos --provider static testnet-order --confirm "ARM TESTNET" BTCUSDT BUY LIMIT 0.001 --price 50000
 ```
 
-The `testnet-order` command can only target `https://api-testnet.bybit.com`.
+The TESTNET client is hard-locked to `https://testnet.binance.vision`. The production profile uses Binance Spot account APIs read-only; C.A.O.S refuses production order creation.
+
+Because this adapter is Spot-only, a SELL ExecutionPlan is accepted only when it reduces an existing long position. Naked short positions are not supported.
 
 ## Dashboard
 
@@ -389,9 +396,9 @@ python -m unittest discover -s tests -v
 
 GitHub Actions executes the same suite on every push and pull request.
 
-## Safety boundaries in v0.5
+## Safety boundaries in v0.7.2
 
-- research, paper trading and explicitly armed Bybit TESTNET only;
+- research, paper trading and explicitly armed Binance Spot TESTNET only;
 - configurable position cap (20% default);
 - drawdown guard;
 - kill-switch;
