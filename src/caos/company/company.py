@@ -9,6 +9,7 @@ from .improvement import ImprovementManager
 from .market import MarketAllocator, MarketAllocationError, OpportunityRegistry
 from .paper import CompanyPaperBook, CompanyPaperError
 from .registry import TraderRegistry
+from .research import ResearchFactory
 from .risk import CompanyRiskGovernor
 from .scout import MarketScout
 from .state import CompanyCheckpoint
@@ -64,6 +65,10 @@ class TradeCompany:
         self.diversity = StrategyDiversity(self.registry)
         self.scout = MarketScout(self.engine, self.opportunities)
         self.training = TrainingArena()
+        self.research = ResearchFactory(
+            self.strategies,
+            self.training,
+        )
         self.paper = CompanyPaperBook(
             self.engine,
             self.policy,
@@ -475,6 +480,61 @@ class TradeCompany:
             "caos": engine_result,
         }
 
+    def submit_research_hypothesis(
+        self,
+        *,
+        symbol: str,
+        family: str,
+        thesis: str,
+        source: str = "manual",
+        parent_strategy_id: str | None = None,
+    ) -> dict:
+        hypothesis = self.research.submit_hypothesis(
+            symbol=symbol,
+            family=family,
+            thesis=thesis,
+            source=source,
+            parent_strategy_id=parent_strategy_id,
+        )
+        self._save()
+        return hypothesis.to_dict()
+
+    def run_research_cycle(
+        self,
+        hypothesis_id: str,
+        *,
+        generator_id: str = "builtin_grid",
+        candidate_limit: int = 12,
+        starting_capital: float = 10.0,
+        cost_bps: float = 8.0,
+    ) -> dict:
+        hypothesis = self.research.hypotheses[hypothesis_id]
+        bars = self.engine.bars(hypothesis.symbol)
+        if not bars:
+            raise TradeCompanyError("research_market_data_required")
+        result = self.research.run_cycle(
+            hypothesis_id,
+            bars,
+            generator_id=generator_id,
+            candidate_limit=candidate_limit,
+            starting_capital=starting_capital,
+            cost_bps=cost_bps,
+            max_drawdown_pct=self.policy.company_max_drawdown_pct,
+            max_position_pct=(
+                self.policy.default_trader_max_exposure_pct
+            ),
+        )
+        self._save()
+        if self.store is not None:
+            self.store.event(
+                "trade_company_research_cycle",
+                {
+                    "hypothesis_id": hypothesis_id,
+                    "promotion": result["promotion"],
+                },
+            )
+        return result
+
     def audit(self) -> dict:
         return self.supervisor.audit().to_dict()
 
@@ -511,6 +571,8 @@ class TradeCompany:
             "exposure": self.paper.exposure(),
             "reconciliation_mismatches": self.paper.audit_reconciliation(),
             "training": self.training.snapshot(),
+            "research": self.research.snapshot(),
+            "research_summary": self.research.summary(),
             "audit": audit.to_dict(),
             "caos": self.engine.health(),
         }
