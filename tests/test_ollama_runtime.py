@@ -105,8 +105,12 @@ class ManagedOllamaRuntimeTests(unittest.TestCase):
             ), patch.object(
                 ManagedOllamaRuntime,
                 "status",
-                return_value={"running": True},
-            ), patch(
+                return_value={"running": False},
+            ), patch.object(
+                ManagedOllamaRuntime,
+                "stop",
+                return_value={"running": False},
+            ) as stop, patch(
                 "caos.ollama_runtime.subprocess.run",
                 return_value=completed,
             ) as run:
@@ -119,6 +123,10 @@ class ManagedOllamaRuntimeTests(unittest.TestCase):
                 result["model"],
                 "trade-brain",
             )
+            self.assertFalse(
+                result["runtime"]["running"]
+            )
+            stop.assert_called_once()
             modelfile = (
                 runtime.data_dir
                 / "ollama-import"
