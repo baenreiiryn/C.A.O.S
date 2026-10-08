@@ -4,7 +4,7 @@ import json
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from .cell import TradeCompanyCell
 from .city import CityPresentationMapper
@@ -184,6 +184,26 @@ background:rgba(28,24,40,.75);border-radius:10px;padding:9px;cursor:pointer}.tra
 .empty{color:var(--muted);font-style:italic;padding:6px 0}
 .tech-json{white-space:pre-wrap;word-break:break-word;background:#09101a;border:1px solid rgba(255,255,255,.08);
 border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monospace,Consolas,monospace;color:#c9d5e5}
+.trader-chart-shell{border:1px solid rgba(233,189,99,.22);border-radius:12px;overflow:hidden;background:#090f18}
+.trader-chart-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px;border-bottom:1px solid rgba(255,255,255,.07);font:11px system-ui,sans-serif}
+.trader-chart-title{font-weight:800;color:#ffe2a0}.trader-chart-meta{color:var(--muted);text-align:right}
+.trader-phase{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;border:1px solid rgba(255,255,255,.16);font-weight:800;letter-spacing:.05em}
+.trader-phase.waiting_entry,.trader-phase.waiting_assignment{color:var(--amber);border-color:rgba(255,200,102,.45)}
+.trader-phase.in_position{color:var(--green);border-color:rgba(107,226,161,.45)}
+.trader-phase.paused,.trader-phase.halted,.trader-phase.retired{color:#b8c0ca}
+.trader-chart{display:block;width:100%;height:auto;min-height:260px;background:linear-gradient(180deg,#0a111b,#080d14)}
+.chart-grid{stroke:rgba(180,195,215,.12);stroke-width:1}
+.chart-axis{fill:#9aa7b6;font:10px system-ui,sans-serif}
+.chart-wick.up,.chart-body.up{stroke:#36d399;fill:#36d399}.chart-wick.down,.chart-body.down{stroke:#ff5c72;fill:#ff5c72}
+.chart-ma7{fill:none;stroke:#e4a84d;stroke-width:1.6}.chart-ma25{fill:none;stroke:#a86ee6;stroke-width:1.6}.chart-ma99{fill:none;stroke:#61c8d4;stroke-width:1.6}
+.chart-average{stroke:#79c7ff;stroke-width:1.4;stroke-dasharray:8 5}.chart-current{stroke:#f2d17c;stroke-width:1;stroke-dasharray:3 5;opacity:.65}
+.chart-buy{fill:#19c979;stroke:#d9ffec;stroke-width:1.5}.chart-sell{fill:#f05168;stroke:#ffe1e5;stroke-width:1.5}
+.chart-marker-text{fill:#fff;font:800 10px system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.chart-avg-label{fill:#9fd5ff;font:10px system-ui,sans-serif}
+.chart-legend{display:flex;gap:12px;flex-wrap:wrap;padding:7px 10px;border-top:1px solid rgba(255,255,255,.06);font:10px system-ui,sans-serif;color:var(--muted)}
+.chart-legend b{color:#f6e5b8}.chart-events{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;padding:0 10px 10px}
+.chart-event{background:rgba(255,255,255,.035);border-radius:7px;padding:6px 8px;font:10px system-ui,sans-serif;color:var(--muted)}
+.chart-event strong{display:block;color:#f4dda4;margin-bottom:2px}
 @keyframes bob{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,-5px)}}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.35)}}
 @keyframes wardPulse{0%,100%{opacity:.65}50%{opacity:1}}
@@ -264,6 +284,7 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
 let currentStatus=null;
 let currentCity=null;
 let activeLocation=null;
+let activeTraderId=null;
 let settingsCache=null;
 let editingBrokerId=null;
 let selectedLocalModelPath='';
@@ -372,7 +393,7 @@ async function openSettings(){
  try{
   settingsCache=await api('/api/settings');
   if(!settingsCache.enabled)throw new Error(settingsCache.reason||'Runtime settings unavailable');
-  activeLocation=null;editingBrokerId=null;renderSettings();
+  activeLocation=null;activeTraderId=null;editingBrokerId=null;renderSettings();
  }catch(e){alert(e.message)}
 }
 async function discoverModels(){
@@ -710,6 +731,7 @@ function technicalSnapshot(id,s){
 
 function openLocation(id){
  if(!currentCity||!currentStatus)return;
+ activeTraderId=null;
  activeLocation=id;
  const loc=currentCity.locations[id];
  if(!loc)return;
@@ -718,32 +740,87 @@ function openLocation(id){
  drawerBody.innerHTML=locationDetails(id);
  drawer.classList.add('open');drawerBackdrop.classList.add('open');drawer.setAttribute('aria-hidden','false');
 }
-function closeDrawer(){drawer.classList.remove('open');drawerBackdrop.classList.remove('open');drawer.setAttribute('aria-hidden','true');activeLocation=null}
+function closeDrawer(){drawer.classList.remove('open');drawerBackdrop.classList.remove('open');drawer.setAttribute('aria-hidden','true');activeLocation=null;activeTraderId=null}
 
-function openTrader(id){
+function price(v){
+ const n=Number(v);
+ if(!Number.isFinite(n))return '—';
+ if(Math.abs(n)>=1000)return n.toFixed(2);
+ if(Math.abs(n)>=1)return n.toFixed(4);
+ return n.toPrecision(6);
+}
+function phaseLabel(phase){
+ const labels={waiting_assignment:'WAITING ASSIGNMENT',waiting_entry:'WAITING ENTRY',in_position:'IN POSITION',paused:'PAUSED',halted:'HALTED',retired:'RETIRED',flat:'FLAT'};
+ return labels[phase]||String(phase||'UNKNOWN').replaceAll('_',' ').toUpperCase();
+}
+function renderTraderChart(chart){
+ const bars=chart&&chart.bars||[],position=chart&&chart.position||{},markers=chart&&chart.markers||[],ind=chart&&chart.indicators||{};
+ const phase=chart&&chart.phase||'flat';
+ const title=esc((chart&&chart.symbol)||'No market assigned');
+ const phaseHtml='<span class="trader-phase '+esc(phase)+'">'+esc(phaseLabel(phase))+'</span>';
+ if(!bars.length){
+  return '<div class="trader-chart-shell"><div class="trader-chart-head"><div><div class="trader-chart-title">'+title+'</div>'+phaseHtml+'</div><div class="trader-chart-meta">PAPER · waiting for market candles</div></div><div class="empty" style="padding:28px 12px">No candle data is loaded for this Trader yet.</div></div>';
+ }
+ const W=900,H=360,L=58,R=18,T=22,B=32,plotW=W-L-R,plotH=H-T-B;
+ let lo=Math.min.apply(null,bars.map(function(b){return Number(b.low)})),hi=Math.max.apply(null,bars.map(function(b){return Number(b.high)}));
+ if(position.avg_price){lo=Math.min(lo,Number(position.avg_price));hi=Math.max(hi,Number(position.avg_price))}
+ let span=hi-lo;if(!Number.isFinite(span)||span<=0)span=Math.max(Math.abs(hi)*.01,1);
+ lo-=span*.06;hi+=span*.06;span=hi-lo;
+ const x=function(i){return L+(bars.length<=1?plotW/2:(i/(bars.length-1))*plotW)};
+ const y=function(v){return T+((hi-Number(v))/span)*plotH};
+ let svg='';
+ for(let i=0;i<=4;i++){const yy=T+(plotH*i/4),val=hi-(span*i/4);svg+='<line class="chart-grid" x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'"></line><text class="chart-axis" x="4" y="'+(yy+3).toFixed(1)+'">'+esc(price(val))+'</text>'}
+ const step=plotW/Math.max(bars.length,1),bodyW=Math.max(1.4,Math.min(8,step*.62));
+ bars.forEach(function(b,i){const xx=x(i),up=Number(b.close)>=Number(b.open),cls=up?'up':'down',yo=y(b.open),yc=y(b.close),yh=y(b.high),yl=y(b.low),top=Math.min(yo,yc),height=Math.max(1.2,Math.abs(yc-yo));svg+='<line class="chart-wick '+cls+'" x1="'+xx.toFixed(2)+'" y1="'+yh.toFixed(2)+'" x2="'+xx.toFixed(2)+'" y2="'+yl.toFixed(2)+'"></line><rect class="chart-body '+cls+'" x="'+(xx-bodyW/2).toFixed(2)+'" y="'+top.toFixed(2)+'" width="'+bodyW.toFixed(2)+'" height="'+height.toFixed(2)+'"></rect>'});
+ const byTs={};bars.forEach(function(b,i){byTs[String(b.ts)]=i});
+ function poly(rows,cls){if(!rows||!rows.length)return '';const pts=rows.map(function(p){let i=byTs[String(p.ts)];if(i===undefined)return null;return x(i).toFixed(1)+','+y(p.value).toFixed(1)}).filter(Boolean);return pts.length>1?'<polyline class="'+cls+'" points="'+pts.join(' ')+'"></polyline>':''}
+ svg+=poly(ind.ma7,'chart-ma7')+poly(ind.ma25,'chart-ma25')+poly(ind.ma99,'chart-ma99');
+ if(position.avg_price){const yy=y(position.avg_price);svg+='<line class="chart-average" x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'"></line><text class="chart-avg-label" x="'+(L+5)+'" y="'+(yy-5).toFixed(1)+'">AVG '+esc(price(position.avg_price))+'</text>'}
+ if(position.current_price){const yy=y(position.current_price);svg+='<line class="chart-current" x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'"></line>'}
+ markers.forEach(function(m){let best=0,bestD=Infinity;bars.forEach(function(b,i){const d=Math.abs(Number(b.ts)-Number(m.ts));if(d<bestD){bestD=d;best=i}});const xx=x(best),yy=y(m.price),buy=m.kind==='buy',cy=buy?Math.min(H-B-14,yy+18):Math.max(T+14,yy-18),cls=buy?'chart-buy':'chart-sell',letter=buy?'B':'S';svg+='<line x1="'+xx.toFixed(1)+'" y1="'+yy.toFixed(1)+'" x2="'+xx.toFixed(1)+'" y2="'+cy.toFixed(1)+'" stroke="rgba(255,255,255,.28)" stroke-width="1"></line><circle class="'+cls+'" cx="'+xx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="10"></circle><text class="chart-marker-text" x="'+xx.toFixed(1)+'" y="'+(cy+.5).toFixed(1)+'">'+letter+'</text>'});
+ const first=new Date(Number(bars[0].ts)).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),last=new Date(Number(bars[bars.length-1].ts)).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+ svg+='<text class="chart-axis" x="'+L+'" y="'+(H-8)+'">'+esc(first)+'</text><text class="chart-axis" text-anchor="end" x="'+(W-R)+'" y="'+(H-8)+'">'+esc(last)+'</text>';
+ const pnl=position.unrealized_pnl_pct===null||position.unrealized_pnl_pct===undefined?'—':pct(position.unrealized_pnl_pct);
+ const events=markers.slice(-8).reverse().map(function(m){return '<div class="chart-event"><strong>'+(m.kind==='buy'?'🟢 BUY':'🔴 SELL')+' · '+esc(price(m.price))+'</strong>'+esc(new Date(Number(m.ts)).toLocaleString())+' · '+esc(m.action||'fill')+'</div>'}).join('');
+ return '<div class="trader-chart-shell"><div class="trader-chart-head"><div><div class="trader-chart-title">'+title+' · PAPER</div>'+phaseHtml+'</div><div class="trader-chart-meta">Last '+bars.length+' candles<br>Price '+esc(price(position.current_price))+(position.avg_price?'<br>Avg entry '+esc(price(position.avg_price))+' · PnL '+esc(pnl):'')+'</div></div><svg class="trader-chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="PAPER candlestick chart for '+title+'">'+svg+'</svg><div class="chart-legend"><span><b>MA7</b> gold</span><span><b>MA25</b> violet</span><span><b>MA99</b> cyan</span><span><b>B</b> PAPER buy</span><span><b>S</b> PAPER sell/reduce</span>'+(position.avg_price?'<span><b>AVG</b> active position average</span>':'')+'</div>'+(events?'<div class="chart-events">'+events+'</div>':'')+'</div>';
+}
+async function refreshTraderChart(id){
+ const slot=byId('traderLiveChart');
+ if(!slot||activeTraderId!==id)return;
+ try{
+  const chart=await api('/api/company/traders/'+encodeURIComponent(id)+'/chart?limit=160');
+  if(activeTraderId===id&&byId('traderLiveChart'))byId('traderLiveChart').innerHTML=renderTraderChart(chart);
+ }catch(e){
+  if(activeTraderId===id&&byId('traderLiveChart'))byId('traderLiveChart').innerHTML='<div class="trader-chart-shell"><div class="empty" style="padding:20px">Chart unavailable: '+esc(e.message)+'</div></div>';
+ }
+}
+
+async function openTrader(id){
  const t=currentStatus&&currentStatus.traders&&currentStatus.traders.traders&&currentStatus.traders.traders[id];
  if(!t)return;
+ activeLocation=null;activeTraderId=id;
  const bal=(currentStatus.treasury&&currentStatus.treasury.balances&&currentStatus.treasury.balances['TRADER:'+id])||0;
  const exp=(currentStatus.exposure&&currentStatus.exposure.by_trader&&currentStatus.exposure.by_trader[id])||0;
- const marked=(currentStatus.paper&&currentStatus.paper.accounts&&currentStatus.paper.accounts[id])?null:bal;
  const requested=t.trade_exposure_pct===null||t.trade_exposure_pct===undefined?t.max_trade_exposure_pct:t.trade_exposure_pct;
  const maxNotional=Number(bal)*Number(t.max_trade_exposure_pct||0)/100;
  const requestedNotional=Number(bal)*Number(requested||0)/100;
  const fabric=currentStatus.execution_fabric||{};
  const lastPlan=(fabric.last_plans||{})[id]||null;
  drawerTitle.textContent='Adventurer '+id;
- drawerTech.textContent='Trader '+id+' · '+t.status;
+ drawerTech.textContent='Trader '+id+' · '+t.status+' · live PAPER view';
  let actions='';
  if(t.status==='active')actions='<button class="btn" onclick="pauseTrader(\''+esc(id)+'\')">Pause Adventurer</button>';
  if(t.status==='paused')actions='<button class="btn" onclick="resumeTrader(\''+esc(id)+'\')">Resume Adventurer</button>';
  const exposureControls='<div class="control-row"><label>Chosen size % <input id="traderSizeInput" type="number" min="0.01" step="0.01" value="'+esc(requested)+'"></label><label>Max seal % <input id="traderMaxInput" type="number" min="0.01" max="100" step="0.01" value="'+esc(t.max_trade_exposure_pct)+'"></label><button class="btn" onclick="setTraderExposure(\''+esc(id)+'\')">Apply</button></div>';
- drawerBody.innerHTML='<div class="story">'+traderAvatar(t.status)+' This adventurer is '+esc(t.status)+' and follows the real Trader state beneath the fantasy skin.</div>'+
+ drawerBody.innerHTML='<div class="story">'+traderAvatar(t.status)+' This adventurer is '+esc(t.status)+'. The chart below uses the same live market candles and PAPER fills used by the Company.</div>'+
+ section('Live PAPER Chart','<div id="traderLiveChart"><div class="trader-chart-shell"><div class="empty" style="padding:20px">Loading market chart…</div></div></div>')+
  section('Current Quest','<div class="metric-grid">'+metric('Market',t.market||'none')+metric('Direction',t.direction||'—')+metric('Strategy',t.strategy_id||'—')+metric('Mode',t.mode)+'</div>')+
  section('Capital & Risk Seal','<div class="metric-grid">'+metric('Realized capital',money(bal))+metric('Open exposure',money(exp))+metric('Chosen sizing',pct(requested))+metric('Maximum exposure',pct(t.max_trade_exposure_pct))+metric('Requested notional',money(requestedNotional))+metric('Maximum notional',money(maxNotional))+'</div>')+
  section('Execution Fabric',lastPlan?'<div class="metric-grid">'+metric('Fabric',fabric.version||'—')+metric('Plan action',lastPlan.action||'—')+metric('Desired target',money(lastPlan.desired_target_notional))+metric('Effective target',money(lastPlan.effective_target_notional))+metric('Order delta',money(lastPlan.order_notional))+metric('Risk reducing',lastPlan.risk_reducing?'YES':'NO')+'</div><div class="list-sub">Plan '+esc(lastPlan.plan_id||'')+'</div>':'<div class="empty">No execution plan has been produced for this Trader yet.</div>')+
  section('Guild Controls',actions+exposureControls)+
  '<details class="detail-section"><summary style="cursor:pointer;color:#f1d796;font-weight:700">Technical truth</summary>'+json({trader:t,paper:currentStatus.paper&&currentStatus.paper.accounts&&currentStatus.paper.accounts[id],assignment:currentStatus.assignments&&currentStatus.assignments[id]})+'</details>';
  drawer.classList.add('open');drawerBackdrop.classList.add('open');drawer.setAttribute('aria-hidden','false');
+ await refreshTraderChart(id);
 }
 
 async function activateRelease(id){
@@ -782,7 +859,8 @@ async function tick(){
  try{
   const pair=await Promise.all([api('/api/company/status'),api('/api/company/city')]);
   currentStatus=pair[0];currentCity=pair[1];updateHud();
-  if(activeLocation)openLocation(activeLocation);
+  if(activeTraderId)await refreshTraderChart(activeTraderId);
+  else if(activeLocation)openLocation(activeLocation);
  }catch(e){
   healthRune.textContent='CITY OFFLINE';healthRune.className='rune bad';
   cityMoodTitle.textContent='The city has gone silent.';cityMoodText.textContent=e.message;
@@ -838,7 +916,9 @@ def serve_company(
             )
 
         def do_GET(self):
-            path = urlparse(self.path).path
+            parsed = urlparse(self.path)
+            path = parsed.path
+            query = parse_qs(parsed.query)
             if path == "/api/cell/v1/manifest":
                 self._json(200, cell.get_manifest())
                 return
@@ -871,6 +951,29 @@ def serve_company(
                 return
             if path == "/api/company/traders":
                 self._json(200, control.list_traders())
+                return
+            if (
+                path.startswith("/api/company/traders/")
+                and path.endswith("/chart")
+            ):
+                parts = path.strip("/").split("/")
+                if len(parts) != 5:
+                    self.send_error(404)
+                    return
+                trader_id = unquote(parts[3])
+                try:
+                    limit = int(
+                        query.get("limit", ["160"])[0]
+                    )
+                except (TypeError, ValueError):
+                    limit = 160
+                self._json(
+                    200,
+                    control.get_trader_chart(
+                        trader_id,
+                        limit=limit,
+                    ),
+                )
                 return
             if path == "/api/company/opportunities":
                 self._json(200, control.list_opportunities())

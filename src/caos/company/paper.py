@@ -82,6 +82,7 @@ class CompanyPaperBook:
         self.fee_bps = float(fee_bps)
         self.accounts: dict[str, PaperBroker] = {}
         self.last_plans: dict[str, dict] = {}
+        self.visual_events: dict[str, list[dict]] = {}
 
     def ensure_account(self, trader_id: str) -> PaperBroker:
         trader = self.registry.get(trader_id)
@@ -213,6 +214,156 @@ class CompanyPaperBook:
             "price": fill.price,
             "fee": fill.fee,
             "strategy": fill.strategy,
+        }
+
+    def _record_visual_fill(
+        self,
+        trader_id: str,
+        *,
+        action: str,
+        ts: int,
+        fill,
+    ) -> None:
+        rows = self.visual_events.setdefault(trader_id, [])
+        rows.append(
+            {
+                "kind": "buy" if fill.side == "buy" else "sell",
+                "action": action,
+                "ts": int(ts),
+                "symbol": fill.symbol,
+                "price": float(fill.price),
+                "notional": float(fill.notional),
+                "fee": float(fill.fee),
+                "strategy": fill.strategy,
+            }
+        )
+        if len(rows) > 500:
+            del rows[:-500]
+
+    @staticmethod
+    def _moving_average(
+        bars,
+        window: int,
+    ) -> list[dict]:
+        values: list[dict] = []
+        running = 0.0
+        closes: list[float] = []
+        for bar in bars:
+            close = float(bar.close)
+            closes.append(close)
+            running += close
+            if len(closes) > window:
+                running -= closes[-window - 1]
+            if len(closes) >= window:
+                values.append(
+                    {
+                        "ts": int(bar.ts),
+                        "value": running / window,
+                    }
+                )
+        return values
+
+    def chart_snapshot(
+        self,
+        trader_id: str,
+        *,
+        limit: int = 160,
+    ) -> dict:
+        trader = self.registry.get(trader_id)
+        limit = max(30, min(int(limit), 500))
+        symbol = trader.market
+        bars = (
+            self.engine.bars(symbol)[-limit:]
+            if symbol
+            else []
+        )
+        account = self.accounts.get(trader_id)
+        position = (
+            account.positions.get(symbol)
+            if account is not None and symbol
+            else None
+        )
+        quantity = (
+            float(position.quantity)
+            if position is not None
+            else 0.0
+        )
+        current_price = (
+            float(bars[-1].close)
+            if bars
+            else None
+        )
+        avg_price = (
+            float(position.avg_price)
+            if position is not None and quantity > 1e-12
+            else None
+        )
+        unrealized_pnl = None
+        unrealized_pnl_pct = None
+        if (
+            current_price is not None
+            and avg_price is not None
+            and avg_price > 0
+        ):
+            unrealized_pnl = (
+                current_price - avg_price
+            ) * quantity
+            unrealized_pnl_pct = (
+                (current_price / avg_price) - 1.0
+            ) * 100.0
+
+        if trader.status == TraderStatus.WAITING_ASSIGNMENT:
+            phase = "waiting_assignment"
+        elif trader.status == TraderStatus.PAUSED:
+            phase = "paused"
+        elif trader.status == TraderStatus.HALTED:
+            phase = "halted"
+        elif trader.status == TraderStatus.RETIRED:
+            phase = "retired"
+        elif quantity > 1e-12:
+            phase = "in_position"
+        elif trader.market:
+            phase = "waiting_entry"
+        else:
+            phase = "flat"
+
+        marker_rows = [
+            dict(row)
+            for row in self.visual_events.get(trader_id, [])
+            if not symbol or row.get("symbol") == symbol
+        ][-100:]
+
+        return {
+            "version": "paper-trader-chart/v1",
+            "trader_id": trader_id,
+            "symbol": symbol,
+            "phase": phase,
+            "bars": [
+                {
+                    "ts": int(bar.ts),
+                    "open": float(bar.open),
+                    "high": float(bar.high),
+                    "low": float(bar.low),
+                    "close": float(bar.close),
+                    "volume": float(bar.volume),
+                }
+                for bar in bars
+            ],
+            "indicators": {
+                "ma7": self._moving_average(bars, 7),
+                "ma25": self._moving_average(bars, 25),
+                "ma99": self._moving_average(bars, 99),
+            },
+            "position": {
+                "side": "long" if quantity > 1e-12 else None,
+                "quantity": quantity,
+                "avg_price": avg_price,
+                "current_price": current_price,
+                "unrealized_pnl": unrealized_pnl,
+                "unrealized_pnl_pct": unrealized_pnl_pct,
+            },
+            "markers": marker_rows,
+            "last_plan": self.last_plans.get(trader_id),
         }
 
     def _execution_price(
@@ -369,6 +520,12 @@ class CompanyPaperBook:
                 else "reduce_long"
             )
 
+        self._record_visual_fill(
+            trader_id,
+            action=action,
+            ts=bars[-1].ts,
+            fill=fill,
+        )
         self.reconcile_trader(trader_id)
         return TraderPaperCycle(
             trader_id,
@@ -453,6 +610,12 @@ class CompanyPaperBook:
                 trader.strategy_id or "company_flatten",
             )
         )
+        self._record_visual_fill(
+            trader_id,
+            action="forced_flatten",
+            ts=bars[-1].ts,
+            fill=fill,
+        )
         self.reconcile_trader(trader_id)
         return TraderPaperCycle(
             trader_id,
@@ -500,6 +663,10 @@ class CompanyPaperBook:
         return {
             "fee_bps": self.fee_bps,
             "last_plans": dict(self.last_plans),
+            "visual_events": {
+                trader_id: [dict(row) for row in rows]
+                for trader_id, rows in self.visual_events.items()
+            },
             "accounts": {
                 trader_id: {
                     "paper": account.snapshot(),
@@ -518,6 +685,13 @@ class CompanyPaperBook:
 
         self.fee_bps = float(snapshot.get("fee_bps", self.fee_bps))
         self.last_plans = dict(snapshot.get("last_plans", {}))
+        self.visual_events = {
+            trader_id: [dict(row) for row in rows][-500:]
+            for trader_id, rows in snapshot.get(
+                "visual_events",
+                {},
+            ).items()
+        }
         self.accounts = {}
         for trader_id, row in snapshot.get("accounts", {}).items():
             trader = self.registry.get(trader_id)

@@ -147,6 +147,17 @@ class CompanyControlPort:
             ),
         }
 
+    def get_trader_chart(
+        self,
+        trader_id: str,
+        *,
+        limit: int = 160,
+    ) -> dict:
+        return self.company.paper.chart_snapshot(
+            trader_id,
+            limit=limit,
+        )
+
     def get_recent_events(self, limit: int = 30) -> list[dict]:
         if self.company.store is None:
             return []
