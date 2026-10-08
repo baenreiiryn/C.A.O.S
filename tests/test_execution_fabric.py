@@ -459,6 +459,40 @@ class TestnetExecutionFabricTests(unittest.TestCase):
             plan.plan_id[:36],
         )
 
+    def test_binance_spot_rejects_non_reducing_sell_plan(self):
+        decision = decision_from_signal(
+            symbol="BTCUSDT",
+            strategy_id="mom",
+            signal="flat",
+            requested_weight=0.0,
+            as_of=1,
+        )
+        target = resolve_target_position(
+            decision,
+            equity=100.0,
+            max_notional=20.0,
+        )
+        # A synthetic inconsistent current exposure can create a reducing
+        # SELL, which is valid.
+        reducing = plan_execution(
+            target,
+            current_notional=20.0,
+            reference_price=50_000.0,
+        )
+        payload = execution_plan_to_binance_order(
+            reducing
+        )
+        self.assertEqual(payload["side"], "SELL")
+
+        from dataclasses import replace
+        unsafe = replace(
+            reducing,
+            risk_reducing=False,
+        )
+        from caos.testnet import TestnetError
+        with self.assertRaises(TestnetError):
+            execution_plan_to_binance_order(unsafe)
+
     def test_human_gated_executor_can_execute_same_plan(self):
         captured = {}
 
