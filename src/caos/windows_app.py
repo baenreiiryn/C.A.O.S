@@ -477,6 +477,9 @@ class CompanyRuntimeHost:
             self.config,
             self.vault,
         )
+        self.company.set_resume_guard(
+            self.execution.resume_guard_reason
+        )
         self.settings = RuntimeSettingsService(
             self.caos,
             self.company,
