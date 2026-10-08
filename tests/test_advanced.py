@@ -13,7 +13,7 @@ from caos.domain import (
 )
 from caos.execution import estimate_execution_cost
 from caos.llm import StaticLLM
-from caos.marketdata import BybitPublicClient
+from caos.marketdata import BinancePublicClient
 from caos.news import NewsAnalyzer, RSSNewsClient
 from caos.orchestrator import CAOS
 from caos.portfolio import build_portfolio
@@ -43,17 +43,13 @@ def bars_up(n=160, step=0.5):
     return out
 
 
-class CostBybit(BybitPublicClient):
+class CostBinance(BinancePublicClient):
     def _get_json(self, path, params):
-        if path.endswith("orderbook"):
+        if path.endswith("depth"):
             return {
-                "retCode": 0,
-                "result": {
-                    "s": "BTCUSDT",
-                    "b": [["99", "2"], ["98", "10"]],
-                    "a": [["101", "1"], ["102", "10"]],
-                    "ts": 123,
-                },
+                "lastUpdateId": 123,
+                "bids": [["99", "2"], ["98", "10"]],
+                "asks": [["101", "1"], ["102", "10"]],
             }
         raise AssertionError(path)
 
@@ -163,7 +159,7 @@ class AdvancedCoreTests(unittest.TestCase):
         self.assertGreater(c.roundtrip_cost_bps, 10)
 
     def test_public_orderbook_parser(self):
-        book = CostBybit().orderbook("BTCUSDT", limit=2)
+        book = CostBinance().orderbook("BTCUSDT", limit=2)
         self.assertEqual(book["bids"][0], [99.0, 2.0])
         self.assertEqual(book["asks"][0], [101.0, 1.0])
 
