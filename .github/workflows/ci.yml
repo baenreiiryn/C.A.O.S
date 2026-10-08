@@ -25,3 +25,6 @@ jobs:
           caos --provider static --state-db /tmp/caos-company-smoke.db company cell-manifest
           caos --provider static --state-db /tmp/caos-company-smoke.db company cell-report
           caos --provider static --state-db /tmp/caos-company-smoke.db company execution-plans
+          caos --provider static --state-db /tmp/caos-company-smoke.db company research
+          caos --provider static --state-db /tmp/caos-company-smoke.db company research-hypothesis --symbol BTCUSDT --family momentum --thesis "CI research smoke"
+          caos --provider static --state-db /tmp/caos-company-smoke.db company research
