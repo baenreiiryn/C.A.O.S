@@ -288,6 +288,7 @@ class CompanyExecutionFabricTests(unittest.TestCase):
                 default_trader_max_exposure_pct=20,
                 operational_trader_cap=6,
                 company_max_drawdown_pct=30,
+                paper_pending_orders=False,
             ),
             store=store,
         )
