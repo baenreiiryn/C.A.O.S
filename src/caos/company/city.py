@@ -37,6 +37,7 @@ class CityPresentationMapper:
         "paper_treasury_reconciliation_mismatch": "treasury",
         "company_kill_switch": "risk",
         "caos_kill_switch": "nexus",
+        "execution_reconciliation_required": "chronicle",
     }
 
     def build(
@@ -48,6 +49,20 @@ class CityPresentationMapper:
     ) -> dict:
         audit = status.get("audit", {})
         alerts = list(audit.get("alerts", []))
+        reliability_recovery = int(
+            status.get("execution_reliability", {}).get(
+                "recovery_required",
+                0,
+            )
+        )
+        if reliability_recovery > 0:
+            alerts.append(
+                {
+                    "kind": "execution_reconciliation_required",
+                    "severity": "high",
+                    "count": reliability_recovery,
+                }
+            )
         improvements = list(improvements or [])
         events = list(recent_events or [])
         severity = {
