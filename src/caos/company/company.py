@@ -712,8 +712,8 @@ class TradeCompany:
                 if self.execution_reliability is not None
                 else {
                     "version": EXECUTION_RELIABILITY_VERSION,
-                    "venue": "bybit",
-                    "environment": "testnet",
+                    "venue": "binance",
+                    "environment": "spot-testnet",
                     "counts": {},
                     "total": 0,
                     "recovery_required": 0,
