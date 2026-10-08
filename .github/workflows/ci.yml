@@ -17,4 +17,18 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: CLI smoke
-        run: caos --provider static status
+        run: |
+          caos --provider static status
+          rm -f /tmp/caos-company-smoke.db*
+          caos --provider static --state-db /tmp/caos-company-smoke.db company init --targets BTCUSDT:long:momentum
+          caos --provider static --state-db /tmp/caos-company-smoke.db company status
+          caos --provider static --state-db /tmp/caos-company-smoke.db company cell-manifest
+          caos --provider static --state-db /tmp/caos-company-smoke.db company cell-report
+          caos --provider static --state-db /tmp/caos-company-smoke.db company execution-plans
+          caos --provider static --state-db /tmp/caos-company-smoke.db company reliability
+          caos --provider static --state-db /tmp/caos-company-smoke.db execution-intents --limit 5
+          caos --provider static --state-db /tmp/caos-company-smoke.db company research
+          caos --provider static --state-db /tmp/caos-company-smoke.db company rollout
+          caos --provider static --state-db /tmp/caos-company-smoke.db company rollout-sync
+          caos --provider static --state-db /tmp/caos-company-smoke.db company research-hypothesis --symbol BTCUSDT --family momentum --thesis "CI research smoke"
+          caos --provider static --state-db /tmp/caos-company-smoke.db company research

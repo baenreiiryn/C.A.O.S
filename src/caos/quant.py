@@ -6,6 +6,14 @@ from dataclasses import dataclass
 from statistics import mean, pstdev
 
 from .domain import BacktestResult, Mandate, MarketBar, StrategySpec, Trade
+from .execution_fabric import (
+    ExecutionPlan,
+    StrategyDecision,
+    TargetPosition,
+    decision_from_signal,
+    plan_execution,
+    resolve_target_position,
+)
 
 
 def _sma(values: list[float], period: int, idx: int) -> float | None:
@@ -444,3 +452,188 @@ def current_signal(spec: StrategySpec, bars: list[MarketBar]) -> str:
     return "long" if _entry_signal(spec, closes, i) or (
         signal_state_series(spec, bars)[-1] == 1
     ) else "flat"
+
+
+def current_decision(
+    spec: StrategySpec,
+    bars: list[MarketBar],
+    *,
+    symbol: str,
+    requested_weight: float = 1.0,
+) -> StrategyDecision:
+    """Return the venue-agnostic strategy decision for the latest bar."""
+    signal = current_signal(spec, bars)
+    as_of = bars[-1].ts if bars else None
+    return decision_from_signal(
+        symbol=symbol,
+        strategy_id=spec.name,
+        signal=signal,
+        requested_weight=float(requested_weight),
+        as_of=as_of,
+    )
+
+
+def target_position_series(
+    spec: StrategySpec,
+    bars: list[MarketBar],
+    *,
+    symbol: str,
+    requested_weight: float = 1.0,
+    equity: float = 1.0,
+    max_notional: float | None = None,
+) -> list[TargetPosition]:
+    """Research/backtest representation using the same target schema as execution."""
+    if not 0.0 <= float(requested_weight) <= 1.0:
+        raise ValueError("requested_weight_must_be_in_0_1")
+    ceiling = float(equity) if max_notional is None else float(max_notional)
+    states = signal_state_series(spec, bars)
+    targets: list[TargetPosition] = []
+    for bar, state in zip(bars, states):
+        decision = decision_from_signal(
+            symbol=symbol,
+            strategy_id=spec.name,
+            signal="long" if state else "flat",
+            requested_weight=float(requested_weight),
+            as_of=bar.ts,
+        )
+        targets.append(
+            resolve_target_position(
+                decision,
+                equity=float(equity),
+                max_notional=ceiling,
+            )
+        )
+    return targets
+
+
+
+def execution_plan_series(
+    spec: StrategySpec,
+    bars: list[MarketBar],
+    *,
+    symbol: str,
+    requested_weight: float = 1.0,
+    equity: float = 1.0,
+    max_notional: float | None = None,
+) -> list[ExecutionPlan]:
+    """Historical Execution Fabric trace for research/backtest diagnostics.
+
+    The trace uses the same target resolver and planner as paper/testnet.
+    It intentionally models strategy state transitions, not venue slippage.
+    """
+    targets = target_position_series(
+        spec,
+        bars,
+        symbol=symbol,
+        requested_weight=requested_weight,
+        equity=equity,
+        max_notional=max_notional,
+    )
+    plans: list[ExecutionPlan] = []
+    current_notional = 0.0
+    for bar, target in zip(bars, targets):
+        plan = plan_execution(
+            target,
+            current_notional=current_notional,
+            reference_price=bar.close,
+            allow_new_risk=True,
+        )
+        plans.append(plan)
+        current_notional = plan.effective_target_notional
+    return plans
+
+
+
+def backtest_execution_trace(
+    spec: StrategySpec,
+    bars: list[MarketBar],
+    *,
+    symbol: str,
+    requested_weight: float = 1.0,
+    equity: float = 1.0,
+    max_notional: float | None = None,
+    cost_bps: float = 8.0,
+) -> dict:
+    """Map the exact backtest trade log into Execution Fabric objects."""
+    result = backtest(spec, bars, cost_bps=cost_bps)
+    running_equity = float(equity)
+    events: list[dict] = []
+
+    for trade in result.trade_log:
+        ceiling = (
+            running_equity
+            if max_notional is None
+            else min(float(max_notional), running_equity)
+        )
+        entry_decision = decision_from_signal(
+            symbol=symbol,
+            strategy_id=spec.name,
+            signal="long",
+            requested_weight=float(requested_weight),
+            as_of=trade.entry_ts,
+            reason="backtest_entry",
+        )
+        entry_target = resolve_target_position(
+            entry_decision,
+            equity=running_equity,
+            max_notional=ceiling,
+        )
+        entry_plan = plan_execution(
+            entry_target,
+            current_notional=0.0,
+            reference_price=trade.entry,
+        )
+        events.append(
+            {
+                "phase": "entry",
+                "reason": "signal",
+                "decision": entry_decision.to_dict(),
+                "target": entry_target.to_dict(),
+                "plan": entry_plan.to_dict(),
+            }
+        )
+
+        marked_notional = (
+            entry_target.target_notional
+            * trade.exit
+            / trade.entry
+            if trade.entry > 0
+            else entry_target.target_notional
+        )
+        exit_decision = decision_from_signal(
+            symbol=symbol,
+            strategy_id=spec.name,
+            signal="flat",
+            requested_weight=0.0,
+            as_of=trade.exit_ts,
+            reason=f"backtest_exit:{trade.reason}",
+        )
+        exit_target = resolve_target_position(
+            exit_decision,
+            equity=running_equity,
+            max_notional=ceiling,
+        )
+        exit_plan = plan_execution(
+            exit_target,
+            current_notional=marked_notional,
+            reference_price=trade.exit,
+            allow_new_risk=False,
+        )
+        events.append(
+            {
+                "phase": "exit",
+                "reason": trade.reason,
+                "decision": exit_decision.to_dict(),
+                "target": exit_target.to_dict(),
+                "plan": exit_plan.to_dict(),
+            }
+        )
+        running_equity *= 1.0 + trade.pnl_pct / 100.0
+
+    return {
+        "strategy": spec.name,
+        "symbol": symbol.upper(),
+        "requested_weight": float(requested_weight),
+        "backtest": result.to_dict(),
+        "events": events,
+    }

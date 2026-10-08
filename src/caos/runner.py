@@ -3,8 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .domain import OrderRequest
+from .execution_fabric import (
+    decision_from_signal,
+    plan_execution,
+    resolve_target_position,
+)
 from .portfolio import PortfolioEntry
-from .quant import current_signal
+from .quant import current_decision
 
 
 @dataclass(slots=True)
@@ -14,6 +19,8 @@ class CycleResult:
 
 
 class PaperRunner:
+    """C.A.O.S paper runner backed by the shared Execution Fabric."""
+
     def __init__(self, caos):
         self.caos = caos
 
@@ -28,14 +35,23 @@ class PaperRunner:
             "strategy": fill.strategy,
         }
 
-    def _execution_price(self, symbol: str, side: str, mid_price: float) -> float:
+    def _execution_price(
+        self,
+        symbol: str,
+        side: str,
+        mid_price: float,
+    ) -> float:
         roundtrip = float(self.caos.execution_costs.get(symbol, 0.0))
         broker_fee = float(getattr(self.caos.paper, "fee_bps", 0.0))
         one_way_total = roundtrip / 2.0
         modeled_non_fee_bps = max(0.0, one_way_total - broker_fee)
         if side == "buy":
-            return mid_price * (1.0 + modeled_non_fee_bps / 10_000.0)
-        return mid_price * (1.0 - modeled_non_fee_bps / 10_000.0)
+            return mid_price * (
+                1.0 + modeled_non_fee_bps / 10_000.0
+            )
+        return mid_price * (
+            1.0 - modeled_non_fee_bps / 10_000.0
+        )
 
     def _marks(self) -> dict[str, float]:
         return {
@@ -68,46 +84,69 @@ class PaperRunner:
             pos = broker.positions.get(entry.symbol)
             open_qty = pos.quantity if pos else 0.0
             price = bars[-1].close
+            current_notional = open_qty * price
 
+            decision = current_decision(
+                entry.strategy,
+                bars,
+                symbol=entry.symbol,
+                requested_weight=float(entry.weight),
+            )
             if risk.state.kill_switch:
-                if open_qty > 1e-12:
-                    exit_price = self._execution_price(
-                        entry.symbol,
-                        "sell",
-                        price,
-                    )
-                    fill = broker.execute(
-                        OrderRequest(
-                            entry.symbol,
-                            "sell",
-                            open_qty * exit_price,
-                            exit_price,
-                            entry.strategy.name,
-                        )
-                    )
-                    actions.append(
-                        {
-                            "action": "emergency_close",
-                            "fill": self._fill_dict(fill),
-                        }
-                    )
-                else:
-                    skipped.append(
-                        {
-                            "symbol": entry.symbol,
-                            "reason": "kill_switch_no_position",
-                        }
-                    )
-                continue
+                decision = decision_from_signal(
+                    symbol=entry.symbol,
+                    strategy_id=entry.strategy.name,
+                    signal="flat",
+                    requested_weight=0.0,
+                    as_of=bars[-1].ts,
+                    reason="caos_kill_switch",
+                )
 
-            signal = current_signal(entry.strategy, bars)
-            target = min(
-                risk.max_position_notional,
-                risk.state.current_equity * entry.weight,
+            target = resolve_target_position(
+                decision,
+                equity=risk.state.current_equity,
+                max_notional=risk.max_position_notional,
+            )
+            plan = plan_execution(
+                target,
+                current_notional=current_notional,
+                reference_price=price,
+                allow_new_risk=not risk.state.kill_switch,
+                tolerance=max(
+                    1e-8,
+                    target.target_notional * 0.01,
+                ),
             )
 
-            if signal == "long" and open_qty <= 1e-12:
-                entry_price = self._execution_price(
+            if not plan.executable:
+                skipped.append(
+                    {
+                        "symbol": entry.symbol,
+                        "reason": (
+                            "kill_switch_no_position"
+                            if risk.state.kill_switch
+                            else "no_state_change"
+                        ),
+                        "signal": decision.signal,
+                        "decision": decision.to_dict(),
+                        "target": target.to_dict(),
+                        "plan": plan.to_dict(),
+                    }
+                )
+                continue
+
+            if plan.side == "buy":
+                # Validate the final aggregate target, not only the delta order.
+                risk.validate(
+                    OrderRequest(
+                        entry.symbol,
+                        "buy",
+                        plan.effective_target_notional,
+                        price,
+                        entry.strategy.name,
+                    )
+                )
+                execution_price = self._execution_price(
                     entry.symbol,
                     "buy",
                     price,
@@ -116,48 +155,51 @@ class PaperRunner:
                     OrderRequest(
                         entry.symbol,
                         "buy",
-                        target,
-                        entry_price,
+                        plan.order_notional,
+                        execution_price,
                         entry.strategy.name,
                     )
                 )
-                actions.append(
-                    {
-                        "action": "open_long",
-                        "fill": self._fill_dict(fill),
-                    }
+                action = (
+                    "open_long"
+                    if current_notional <= 1e-8
+                    else "increase_long"
                 )
-
-            elif signal == "flat" and open_qty > 1e-12:
-                exit_price = self._execution_price(
+            else:
+                execution_price = self._execution_price(
                     entry.symbol,
                     "sell",
                     price,
                 )
+                quantity_to_sell = plan.order_notional / price
+                execution_notional = quantity_to_sell * execution_price
                 fill = broker.execute(
                     OrderRequest(
                         entry.symbol,
                         "sell",
-                        open_qty * exit_price,
-                        exit_price,
+                        execution_notional,
+                        execution_price,
                         entry.strategy.name,
                     )
                 )
-                actions.append(
-                    {
-                        "action": "close_long",
-                        "fill": self._fill_dict(fill),
-                    }
-                )
+                if risk.state.kill_switch:
+                    action = "emergency_close"
+                else:
+                    action = (
+                        "close_long"
+                        if plan.action == "close"
+                        else "reduce_long"
+                    )
 
-            else:
-                skipped.append(
-                    {
-                        "symbol": entry.symbol,
-                        "reason": "no_state_change",
-                        "signal": signal,
-                    }
-                )
+            actions.append(
+                {
+                    "action": action,
+                    "fill": self._fill_dict(fill),
+                    "decision": decision.to_dict(),
+                    "target": target.to_dict(),
+                    "plan": plan.to_dict(),
+                }
+            )
 
         risk.set_equity(broker.equity(self._marks()))
         return CycleResult(actions, skipped)
