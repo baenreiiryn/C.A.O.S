@@ -59,6 +59,17 @@ class CompanyControlPort:
             parent_strategy_id=parent_strategy_id,
         )
 
+    def seed_research_from_improvements(
+        self,
+        *,
+        symbol: str,
+        family: str,
+    ) -> list[dict]:
+        return self.company.seed_research_from_improvements(
+            symbol=symbol,
+            family=family,
+        )
+
     def run_research_cycle(
         self,
         hypothesis_id: str,
