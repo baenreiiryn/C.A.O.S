@@ -266,6 +266,7 @@ let currentCity=null;
 let activeLocation=null;
 let settingsCache=null;
 let editingBrokerId=null;
+let selectedLocalModelPath='';
 const byId=function(id){return document.getElementById(id)};
 const hudEquity=byId('hudEquity'),hudReserve=byId('hudReserve'),hudTraders=byId('hudTraders'),hudRisk=byId('hudRisk');
 const healthRune=byId('healthRune'),alertRune=byId('alertRune'),cityWorld=byId('cityWorld');
@@ -296,7 +297,7 @@ function settingsSelect(label,id,value,options){
  return '<label for="'+esc(id)+'">'+esc(label)+'</label><select id="'+esc(id)+'">'+options.map(function(o){const v=(typeof o==='string'?o:o.value),t=(typeof o==='string'?o:o.label);return '<option value="'+esc(v)+'"'+(String(v)===String(value)?' selected':'')+'>'+esc(t)+'</option>'}).join('')+'</select>';
 }
 function renderSettings(){
- const st=settingsCache||{},llm=st.llm||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
+ const st=settingsCache||{},llm=st.llm||{},managed=st.ollama_runtime||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
  const providerOpts=['static','ollama','openai-compatible'];
  let html='<div class="story">Settings remain available after the Founding Charter. Saving the LLM swaps only the runtime provider; Treasury, Traders, PAPER state and research remain intact.</div>';
  html+=section('🔮 Arcane Nexus · LLM Configuration',
@@ -309,6 +310,19 @@ function renderSettings(){
    '<div class="settings-note">Stored LLM API keys use Windows Credential Manager. Leaving the API-key field blank keeps the existing key. Ollama usually does not need one.</div>'+
    '<div class="control-row"><button class="btn" onclick="discoverModels()">Refresh Models</button><button class="btn" onclick="testLLMSettings()">Test Connection</button><button class="btn" onclick="saveLLMSettings()">Save LLM</button></div>'+
    '<div id="settingsLlmStatus" class="settings-status">'+(llm.api_key_configured?'API key configured in credential vault.':'No LLM API key stored.')+'</div>'
+ );
+ html+=section('🜂 Arcane Nexus · Managed Ollama',
+   '<div class="settings-note">This is the Ollama runtime carried by Trade Company itself. It uses its own localhost port and model store, so it does not depend on a separate Ollama installation. Choose a local GGUF file, apply it once, then start or stop Ollama here whenever needed.</div>'+
+   '<div class="settings-grid">'+
+   '<label>Runtime</label><div><b>'+(managed.running?'RUNNING':(managed.installed?'STOPPED':'NOT INSTALLED'))+'</b>'+(managed.version?' · v'+esc(managed.version):'')+'</div>'+
+   '<label>Internal endpoint</label><div>'+esc(managed.base_url||'http://127.0.0.1:11435')+'</div>'+
+   '<label>Internal model store</label><div>'+esc(managed.models_dir||'')+'</div>'+
+   settingsField('Local GGUF file','ollamaModelPath',selectedLocalModelPath)+
+   settingsField('Imported model name','ollamaImportedName','')+
+   '</div>'+
+   '<div class="settings-note">Importing creates an Ollama model inside the Trade Company model store. The original GGUF is not used as a live server endpoint. Applying the model also selects Ollama as the active LLM provider without resetting Company state.</div>'+
+   '<div class="control-row"><button class="btn" onclick="pickLocalOllamaModel()">Choose GGUF</button><button class="btn" onclick="applyLocalOllamaModel()">Apply Local Model</button><button class="btn" onclick="startManagedOllama()">Start Ollama</button><button class="btn" onclick="stopManagedOllama()">Stop Ollama</button><button class="btn" onclick="refreshManagedOllama()">Refresh Runtime</button></div>'+
+   '<div id="ollamaRuntimeStatus" class="settings-status">'+(managed.running?'Managed Ollama is ready.':(managed.installed?'Managed Ollama is installed but stopped.':'Managed Ollama runtime files are missing from this installation.'))+'</div>'
  );
  const newsCards=newsSources.length?newsSources.map(function(src,i){
    return '<div class="broker-card"><div class="list-title"><label><input id="newsEnabled_'+i+'" type="checkbox" '+(src.enabled!==false?'checked':'')+'> '+esc(src.name||src.url)+'</label>'+(src.built_in?' · BUILT-IN':' · CUSTOM')+'</div><div class="list-sub">'+esc(src.category||'custom')+' · '+esc(src.kind||'custom')+' · '+esc(src.url)+'</div><div class="control-row"><button class="btn" onclick="testNewsSource('+i+')">Test</button><button class="btn danger" onclick="removeNewsSource('+i+')">Remove</button></div></div>';
@@ -385,6 +399,50 @@ async function saveLLMSettings(){
   await api('/api/settings/llm/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   settingsCache=await api('/api/settings');renderSettings();
  }catch(e){alert(e.message)}
+}
+async function refreshManagedOllama(){
+ try{
+  settingsCache=await api('/api/settings');
+  renderSettings();
+ }catch(e){const el=byId('ollamaRuntimeStatus');if(el)el.textContent='Error: '+e.message}
+}
+async function startManagedOllama(){
+ const el=byId('ollamaRuntimeStatus');if(el)el.textContent='Starting managed Ollama...';
+ try{
+  const r=await api('/api/settings/ollama/start',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  settingsCache=await api('/api/settings');renderSettings();
+  const status=byId('ollamaRuntimeStatus');if(status)status.textContent='Managed Ollama started at '+(r.base_url||'the internal endpoint')+'.';
+ }catch(e){const status=byId('ollamaRuntimeStatus');if(status)status.textContent='Error: '+e.message}
+}
+async function stopManagedOllama(){
+ const el=byId('ollamaRuntimeStatus');if(el)el.textContent='Stopping managed Ollama...';
+ try{
+  await api('/api/settings/ollama/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  settingsCache=await api('/api/settings');renderSettings();
+ }catch(e){const status=byId('ollamaRuntimeStatus');if(status)status.textContent='Error: '+e.message}
+}
+async function pickLocalOllamaModel(){
+ const el=byId('ollamaRuntimeStatus');if(el)el.textContent='Opening Windows model picker...';
+ try{
+  const r=await api('/api/settings/ollama/pick',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  if(!r.selected){if(el)el.textContent='No model selected.';return}
+  selectedLocalModelPath=r.path||'';
+  const pathEl=byId('ollamaModelPath');if(pathEl)pathEl.value=selectedLocalModelPath;
+  const nameEl=byId('ollamaImportedName');if(nameEl&&!nameEl.value)nameEl.value=r.suggested_name||'';
+  if(el)el.textContent='Selected '+selectedLocalModelPath;
+ }catch(e){if(el)el.textContent='Error: '+e.message}
+}
+async function applyLocalOllamaModel(){
+ const pathEl=byId('ollamaModelPath'),nameEl=byId('ollamaImportedName'),status=byId('ollamaRuntimeStatus');
+ const source=(pathEl&&pathEl.value||'').trim();
+ if(!source){if(status)status.textContent='Choose a GGUF file first.';return}
+ selectedLocalModelPath=source;
+ if(status)status.textContent='Importing the GGUF into managed Ollama. Large models can take a while...';
+ try{
+  const r=await api('/api/settings/ollama/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source_path:source,model_name:(nameEl&&nameEl.value||'').trim()})});
+  settingsCache=await api('/api/settings');renderSettings();
+  const el=byId('ollamaRuntimeStatus');if(el)el.textContent='✓ '+((r.imported&&r.imported.model)||'Model')+' imported, selected, and ready.';
+ }catch(e){if(status)status.textContent='Error: '+e.message}
 }
 function collectNewsSources(){
  const rows=(settingsCache&&settingsCache.news&&settingsCache.news.sources)||[];
@@ -890,6 +948,43 @@ def serve_company(
                             "runtime_settings_unavailable"
                         )
                     payload = self._read_json()
+                    if path == "/api/settings/ollama/start":
+                        self._json(
+                            200,
+                            settings_service.start_managed_ollama(),
+                        )
+                        return
+                    if path == "/api/settings/ollama/stop":
+                        self._json(
+                            200,
+                            settings_service.stop_managed_ollama(),
+                        )
+                        return
+                    if path == "/api/settings/ollama/pick":
+                        self._json(
+                            200,
+                            settings_service.pick_managed_ollama_model(),
+                        )
+                        return
+                    if path == "/api/settings/ollama/import":
+                        self._json(
+                            200,
+                            settings_service.import_managed_ollama_model(
+                                source_path=str(
+                                    payload.get(
+                                        "source_path",
+                                        "",
+                                    )
+                                ),
+                                model_name=str(
+                                    payload.get(
+                                        "model_name",
+                                        "",
+                                    )
+                                ),
+                            ),
+                        )
+                        return
                     if path == "/api/settings/llm/discover":
                         self._json(
                             200,
