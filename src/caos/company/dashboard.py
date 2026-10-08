@@ -55,6 +55,8 @@ font-family:system-ui,sans-serif;font-size:11px}
 .rune.ok{color:var(--green);border-color:rgba(107,226,161,.42)}
 .rune.warn{color:var(--amber);border-color:rgba(255,200,102,.45)}
 .rune.bad{color:var(--red);border-color:rgba(255,120,120,.5)}
+.settings-btn{border:1px solid var(--line);background:rgba(45,34,64,.82);color:var(--gold2);border-radius:999px;padding:6px 11px;cursor:pointer;font:11px system-ui,sans-serif}
+.settings-btn:hover{background:#3a2d50}
 .city-shell{position:relative;max-width:1550px;margin:auto;padding:14px 18px 28px}
 .hud{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;position:relative;z-index:8;margin-bottom:10px}
 .hud-item{background:linear-gradient(135deg,rgba(32,24,47,.88),rgba(17,23,36,.88));
@@ -161,6 +163,13 @@ border-bottom:1px solid var(--line);z-index:2}
 .btn:hover{background:#3a2d50}.btn.danger{border-color:rgba(255,120,120,.45);background:#40202a;color:#ffd1d1}
 .control-row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.control-row input{width:86px;background:#0e1520;
 border:1px solid var(--line);border-radius:7px;padding:7px;color:#fff}
+.settings-grid{display:grid;grid-template-columns:145px 1fr;gap:8px 10px;align-items:center}
+.settings-grid label{color:var(--muted);font:11px system-ui,sans-serif}
+.settings-grid input,.settings-grid select{width:100%;background:#0e1520;border:1px solid var(--line);border-radius:7px;padding:8px;color:#fff}
+.settings-note{font:11px system-ui,sans-serif;color:var(--muted);line-height:1.4;margin:6px 0}
+.settings-status{font:11px system-ui,sans-serif;color:var(--blue);margin-top:7px}
+.broker-card{border:1px solid var(--line);background:rgba(8,12,18,.45);border-radius:10px;padding:10px;margin:8px 0}
+.broker-card.active{border-color:rgba(107,226,161,.55);box-shadow:0 0 14px rgba(107,226,161,.08)}
 .guild-adventurers{position:absolute;left:35%;top:61%;width:25%;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;z-index:14;pointer-events:none}
 .mini-trader{pointer-events:auto;border:1px solid rgba(239,207,143,.4);background:rgba(15,13,24,.88);border-radius:999px;
 padding:5px 8px;display:flex;align-items:center;gap:5px;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.3);
@@ -203,6 +212,7 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
     <span id="healthRune" class="rune">CITY —</span>
     <span id="modeRune" class="rune">PAPER</span>
     <span id="alertRune" class="rune">0 alerts</span>
+    <button id="settingsBtn" class="settings-btn" type="button">⚙ Settings</button>
   </div>
 </header>
 <main class="city-shell">
@@ -254,11 +264,13 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
 let currentStatus=null;
 let currentCity=null;
 let activeLocation=null;
+let settingsCache=null;
+let editingBrokerId=null;
 const byId=function(id){return document.getElementById(id)};
 const hudEquity=byId('hudEquity'),hudReserve=byId('hudReserve'),hudTraders=byId('hudTraders'),hudRisk=byId('hudRisk');
 const healthRune=byId('healthRune'),alertRune=byId('alertRune'),cityWorld=byId('cityWorld');
 const cityMoodTitle=byId('cityMoodTitle'),cityMoodText=byId('cityMoodText'),alertText=byId('alertText'),guildAdventurers=byId('guildAdventurers');
-const drawer=byId('drawer'),drawerBackdrop=byId('drawerBackdrop'),drawerTitle=byId('drawerTitle'),drawerTech=byId('drawerTech'),drawerBody=byId('drawerBody'),drawerClose=byId('drawerClose');
+const drawer=byId('drawer'),drawerBackdrop=byId('drawerBackdrop'),drawerTitle=byId('drawerTitle'),drawerTech=byId('drawerTech'),drawerBody=byId('drawerBody'),drawerClose=byId('drawerClose'),settingsBtn=byId('settingsBtn');
 
 const money=function(v){return '$'+Number(v||0).toFixed(4)};
 const pct=function(v){return Number(v||0).toFixed(2)+'%'};
@@ -274,6 +286,109 @@ async function api(path,opts){
  try{j=await r.json()}catch(e){}
  if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
  return j;
+}
+
+
+function settingsField(label,id,value,type){
+ return '<label for="'+esc(id)+'">'+esc(label)+'</label><input id="'+esc(id)+'" type="'+esc(type||'text')+'" value="'+esc(value||'')+'">';
+}
+function settingsSelect(label,id,value,options){
+ return '<label for="'+esc(id)+'">'+esc(label)+'</label><select id="'+esc(id)+'">'+options.map(function(o){const v=(typeof o==='string'?o:o.value),t=(typeof o==='string'?o:o.label);return '<option value="'+esc(v)+'"'+(String(v)===String(value)?' selected':'')+'>'+esc(t)+'</option>'}).join('')+'</select>';
+}
+function renderSettings(){
+ const st=settingsCache||{},llm=st.llm||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{};
+ const providerOpts=['static','ollama','openai-compatible'];
+ let html='<div class="story">Settings remain available after the Founding Charter. Saving the LLM swaps only the runtime provider; Treasury, Traders, PAPER state and research remain intact.</div>';
+ html+=section('🔮 Arcane Nexus · LLM Configuration',
+   '<div class="settings-grid">'+
+   settingsSelect('Provider','settingsProvider',llm.provider||'static',providerOpts)+
+   '<label for="settingsModel">Model</label><div><input id="settingsModel" list="settingsModelList" value="'+esc(llm.model||'')+'"><datalist id="settingsModelList"></datalist></div>'+
+   settingsField('Base URL','settingsBaseUrl',llm.base_url||'')+
+   settingsField('API key (optional)','settingsLlmKey','','password')+
+   '</div>'+
+   '<div class="settings-note">Stored LLM API keys use Windows Credential Manager. Leaving the API-key field blank keeps the existing key. Ollama usually does not need one.</div>'+
+   '<div class="control-row"><button class="btn" onclick="discoverModels()">Refresh Models</button><button class="btn" onclick="testLLMSettings()">Test Connection</button><button class="btn" onclick="saveLLMSettings()">Save LLM</button></div>'+
+   '<div id="settingsLlmStatus" class="settings-status">'+(llm.api_key_configured?'API key configured in credential vault.':'No LLM API key stored.')+'</div>'
+ );
+ const cards=profiles.length?profiles.map(function(p){
+   const active=brokers.active_profile_id===p.id;
+   const support=supported[p.provider]||{};
+   return '<div class="broker-card '+(active?'active':'')+'"><div class="list-title">'+esc(p.label||p.id)+(active?' · ACTIVE':'')+'</div><div class="list-sub">'+esc(p.provider)+' · '+esc(p.environment)+' · key '+(p.api_key_configured?'configured':'missing')+' · secret '+(p.api_secret_configured?'configured':'missing')+(support.activatable?'':' · adapter pending')+'</div><div class="control-row"><button class="btn" onclick="editBrokerProfile(\''+esc(p.id)+'\')">Edit</button><button class="btn" onclick="testBrokerProfile(\''+esc(p.id)+'\')">Test</button>'+(support.activatable&&!active?'<button class="btn" onclick="activateBrokerProfile(\''+esc(p.id)+'\')">Set Active</button>':'')+(!active?'<button class="btn danger" onclick="deleteBrokerProfile(\''+esc(p.id)+'\')">Delete</button>':'')+'</div></div>';
+ }).join(''):'<div class="empty">No broker profiles configured.</div>';
+ html+=section('⚓ Broker Embassy',
+   '<div class="settings-note">Broker credentials are stored in Windows Credential Manager, never in launcher.json or the Company database. Bybit TESTNET is the currently implemented execution adapter; Binance/OKX/Kraken profiles are schema-ready but cannot be activated until their adapters exist.</div>'+
+   cards+
+   '<h3 id="brokerFormTitle">'+(editingBrokerId?'Edit broker profile':'Add broker profile')+'</h3>'+
+   '<div class="settings-grid">'+
+   settingsField('Label','brokerLabel','')+
+   settingsSelect('Broker','brokerProvider','bybit',Object.keys(supported).map(function(k){return {value:k,label:(supported[k]&&supported[k].label)||k}}))+
+   settingsField('Environment','brokerEnvironment','testnet')+
+   settingsField('API key','brokerApiKey','','password')+
+   settingsField('API secret','brokerApiSecret','','password')+
+   '</div>'+
+   '<div class="settings-note">When editing, blank credential fields keep the existing secret. Switching the active broker is blocked while unresolved external execution intents exist.</div>'+
+   '<div class="control-row"><button class="btn" onclick="saveBrokerProfile()">Save Profile</button><button class="btn" onclick="newBrokerProfile()">New Profile</button></div>'+
+   '<div id="brokerStatus" class="settings-status"></div>'
+ );
+ drawerTitle.textContent='City Settings';
+ drawerTech.textContent='Arcane Nexus · Broker Embassy · persistent runtime configuration';
+ drawerBody.innerHTML=html;
+ if(editingBrokerId){
+   const p=profiles.find(function(x){return x.id===editingBrokerId});
+   if(p){byId('brokerLabel').value=p.label||'';byId('brokerProvider').value=p.provider||'bybit';byId('brokerEnvironment').value=p.environment||'testnet'}
+ }
+ drawer.classList.add('open');drawerBackdrop.classList.add('open');drawer.setAttribute('aria-hidden','false');
+}
+async function openSettings(){
+ try{
+  settingsCache=await api('/api/settings');
+  if(!settingsCache.enabled)throw new Error(settingsCache.reason||'Runtime settings unavailable');
+  activeLocation=null;editingBrokerId=null;renderSettings();
+ }catch(e){alert(e.message)}
+}
+async function discoverModels(){
+ try{
+  const payload={provider:byId('settingsProvider').value,base_url:byId('settingsBaseUrl').value,api_key:byId('settingsLlmKey').value||null};
+  const r=await api('/api/settings/llm/discover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const models=r.models||[];
+  const list=byId('settingsModelList');
+  if(list)list.innerHTML=models.map(function(m){return '<option value="'+esc(m)+'"></option>'}).join('');
+  if(models.length){const current=byId('settingsModel').value;if(models.indexOf(current)<0)byId('settingsModel').value=models[0]}
+  byId('settingsLlmStatus').textContent=models.length?'Discovered '+models.length+' model(s). Choose one from the Model field.':'Connection succeeded; provider returned no model list.';
+ }catch(e){byId('settingsLlmStatus').textContent='Error: '+e.message}
+}
+async function testLLMSettings(){
+ try{
+  const payload={provider:byId('settingsProvider').value,model:byId('settingsModel').value,base_url:byId('settingsBaseUrl').value,api_key:byId('settingsLlmKey').value||null};
+  const r=await api('/api/settings/llm/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  byId('settingsLlmStatus').textContent=(r.ok?'✓ ':'⚠ ')+(r.message||'Test complete')+(r.models&&r.models.length?' · '+r.models.length+' model(s) discovered':'');
+ }catch(e){byId('settingsLlmStatus').textContent='Error: '+e.message}
+}
+async function saveLLMSettings(){
+ try{
+  const payload={provider:byId('settingsProvider').value,model:byId('settingsModel').value,base_url:byId('settingsBaseUrl').value,api_key:byId('settingsLlmKey').value||null};
+  await api('/api/settings/llm/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  settingsCache=await api('/api/settings');renderSettings();
+ }catch(e){alert(e.message)}
+}
+function newBrokerProfile(){editingBrokerId=null;renderSettings()}
+function editBrokerProfile(id){editingBrokerId=id;renderSettings()}
+async function saveBrokerProfile(){
+ try{
+  const payload={profile_id:editingBrokerId,label:byId('brokerLabel').value,provider:byId('brokerProvider').value,environment:byId('brokerEnvironment').value,api_key:byId('brokerApiKey').value||null,api_secret:byId('brokerApiSecret').value||null};
+  const saved=await api('/api/settings/brokers/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  editingBrokerId=saved.id;settingsCache=await api('/api/settings');renderSettings();
+ }catch(e){byId('brokerStatus').textContent='Error: '+e.message}
+}
+async function testBrokerProfile(id){
+ try{const r=await api('/api/settings/brokers/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profile_id:id})});alert('Broker connection OK: '+(r.message||'authenticated'))}catch(e){alert(e.message)}
+}
+async function activateBrokerProfile(id){
+ try{await api('/api/settings/brokers/active',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profile_id:id})});settingsCache=await api('/api/settings');renderSettings()}catch(e){alert(e.message)}
+}
+async function deleteBrokerProfile(id){
+ if(!confirm('Delete this broker profile and its stored credentials?'))return;
+ try{await api('/api/settings/brokers/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profile_id:id})});editingBrokerId=null;settingsCache=await api('/api/settings');renderSettings()}catch(e){alert(e.message)}
 }
 
 function stateClass(state,attention){
@@ -532,6 +647,7 @@ async function tick(){
 }
 
 document.querySelectorAll('.place').forEach(function(el){el.addEventListener('click',function(){openLocation(el.dataset.location)})});
+settingsBtn.addEventListener('click',openSettings);
 drawerClose.addEventListener('click',closeDrawer);drawerBackdrop.addEventListener('click',closeDrawer);
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeDrawer()});
 tick();setInterval(tick,2000);
@@ -546,6 +662,7 @@ def serve_company(
     host: str = "127.0.0.1",
     port: int = 5191,
     open_browser: bool = True,
+    settings_service=None,
 ) -> ThreadingHTTPServer:
     mapper = CityPresentationMapper()
     cell = TradeCompanyCell(control)
@@ -630,6 +747,24 @@ def serve_company(
             if path == "/api/company/events":
                 self._json(200, control.get_recent_events(50))
                 return
+            if path == "/api/settings":
+                if settings_service is None:
+                    self._json(
+                        200,
+                        {
+                            "enabled": False,
+                            "reason": "runtime_settings_unavailable",
+                        },
+                    )
+                else:
+                    self._json(
+                        200,
+                        {
+                            "enabled": True,
+                            **settings_service.get_settings(),
+                        },
+                    )
+                return
             if path in {"/", "/index.html"}:
                 body = HTML.encode()
                 self.send_response(200)
@@ -668,6 +803,166 @@ def serve_company(
                 if path == "/api/company/emergency-stop":
                     self._json(200, control.emergency_stop())
                     return
+                if path.startswith("/api/settings/"):
+                    if settings_service is None:
+                        raise RuntimeError(
+                            "runtime_settings_unavailable"
+                        )
+                    payload = self._read_json()
+                    if path == "/api/settings/llm/discover":
+                        self._json(
+                            200,
+                            settings_service.discover_models(
+                                provider=str(
+                                    payload.get(
+                                        "provider",
+                                        "static",
+                                    )
+                                ),
+                                base_url=str(
+                                    payload.get(
+                                        "base_url",
+                                        "",
+                                    )
+                                ),
+                                api_key=payload.get(
+                                    "api_key"
+                                ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/llm/test":
+                        self._json(
+                            200,
+                            settings_service.test_llm(
+                                provider=str(
+                                    payload.get(
+                                        "provider",
+                                        "static",
+                                    )
+                                ),
+                                model=str(
+                                    payload.get(
+                                        "model",
+                                        "",
+                                    )
+                                ),
+                                base_url=str(
+                                    payload.get(
+                                        "base_url",
+                                        "",
+                                    )
+                                ),
+                                api_key=payload.get(
+                                    "api_key"
+                                ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/llm/save":
+                        self._json(
+                            200,
+                            settings_service.save_llm(
+                                provider=str(
+                                    payload.get(
+                                        "provider",
+                                        "static",
+                                    )
+                                ),
+                                model=str(
+                                    payload.get(
+                                        "model",
+                                        "",
+                                    )
+                                ),
+                                base_url=str(
+                                    payload.get(
+                                        "base_url",
+                                        "",
+                                    )
+                                ),
+                                api_key=payload.get(
+                                    "api_key"
+                                ),
+                                clear_api_key=bool(
+                                    payload.get(
+                                        "clear_api_key",
+                                        False,
+                                    )
+                                ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/brokers/save":
+                        self._json(
+                            200,
+                            settings_service.save_broker_profile(
+                                profile_id=payload.get(
+                                    "profile_id"
+                                ),
+                                label=str(
+                                    payload.get(
+                                        "label",
+                                        "",
+                                    )
+                                ),
+                                provider=str(
+                                    payload.get(
+                                        "provider",
+                                        "",
+                                    )
+                                ),
+                                environment=str(
+                                    payload.get(
+                                        "environment",
+                                        "",
+                                    )
+                                ),
+                                api_key=payload.get(
+                                    "api_key"
+                                ),
+                                api_secret=payload.get(
+                                    "api_secret"
+                                ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/brokers/test":
+                        self._json(
+                            200,
+                            settings_service.test_broker(
+                                str(
+                                    payload["profile_id"]
+                                ),
+                                api_key=payload.get(
+                                    "api_key"
+                                ),
+                                api_secret=payload.get(
+                                    "api_secret"
+                                ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/brokers/active":
+                        self._json(
+                            200,
+                            settings_service.set_active_broker(
+                                payload.get(
+                                    "profile_id"
+                                )
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/brokers/delete":
+                        self._json(
+                            200,
+                            settings_service.delete_broker_profile(
+                                str(
+                                    payload["profile_id"]
+                                )
+                            ),
+                        )
+                        return
                 parts = [
                     unquote(part)
                     for part in path.split("/")

@@ -6,10 +6,12 @@ on:
     branches:
       - main
       - feature/windows-installer
+      - feature/persistent-settings
     paths:
       - "src/caos/**"
       - "installer/**"
       - "pyproject.toml"
+      - "tests/**"
       - ".github/workflows/windows-installer.yml"
 
 permissions:

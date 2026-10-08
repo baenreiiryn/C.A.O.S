@@ -86,6 +86,51 @@ class TestnetTests(unittest.TestCase):
             "123456",
         )
 
+    def test_api_key_info_authentication(self):
+        captured = {}
+
+        def query(url, headers):
+            captured["url"] = url
+            captured["headers"] = dict(headers)
+            return {
+                "retCode": 0,
+                "retMsg": "OK",
+                "result": {
+                    "readOnly": 0,
+                    "note": "caos-test",
+                    "kycLevel": "LEVEL_1",
+                    "kycRegion": "JP",
+                    "permissions": {
+                        "ContractTrade": [
+                            "Order",
+                            "Position",
+                        ]
+                    },
+                },
+            }
+
+        client = BybitTestnetClient(
+            "key",
+            "secret",
+            time_ms=lambda: 123456,
+            transport=lambda u, d, h: {},
+            query_transport=query,
+        )
+        info = client.get_api_key_info()
+        self.assertEqual(
+            captured["url"],
+            "https://api-testnet.bybit.com/v5/user/query-api",
+        )
+        self.assertIn(
+            "X-BAPI-SIGN",
+            captured["headers"],
+        )
+        self.assertFalse(info["read_only"])
+        self.assertIn(
+            "Order",
+            info["permissions"]["ContractTrade"],
+        )
+
     def test_human_gate_required(self):
         compliance = ComplianceEngine()
         client = BybitTestnetClient(
