@@ -399,7 +399,10 @@ function locationDetails(id){
    body+='<div class="story">'+(news.configured?'Messengers are configured. News evidence remains advisory and never bypasses deterministic risk gates.':'No news messengers are configured. The Bard will not invent rumors.')+'</div>';
  }
  if(id==='arena'){
-   const experiments=Object.values(s.training||{});
+   const experiments=Object.values(s.training||{}), rollout=c.rollout||{}, rsummary=c.rollout_summary||{}, releases=Object.values(rollout.releases||{});
+   body+=section('Rollout Gate','<div class="metric-grid">'+metric('Releases',rsummary.releases||0)+metric('Shadow',(rsummary.stages||{}).shadow||0)+metric('Paper canary',(rsummary.stages||{}).paper_canary||0)+metric('Eligible',(rsummary.stages||{}).eligible||0)+metric('Active',(rsummary.stages||{}).active||0)+metric('Rolled back',(rsummary.stages||{}).rolled_back||0)+'</div>');
+   body+=section('Strategy Releases',releases.length?'<div class="list">'+releases.map(function(r){const ca=r.canary||{};let controls='';if(r.stage==='eligible')controls='<button class="btn" onclick="event.stopPropagation();activateRelease(\''+esc(r.id)+'\')">Activate release</button>';if(r.stage==='active')controls='<button class="btn danger" onclick="event.stopPropagation();rollbackRelease(\''+esc(r.id)+'\')">Rollback</button>';const detail=(r.strategy_id||'')+' · '+r.stage+(r.canary?' · equity '+money(ca.equity)+' · PnL '+pct(ca.pnl_pct)+' · DD '+pct(ca.max_drawdown_pct)+' · '+String(ca.trades||0)+' trades':'')+(r.rollback_reason?' · '+r.rollback_reason:'');return '<div class="list-item"><div class="list-title">'+esc(r.symbol+' · '+String(r.id).slice(0,12))+'</div><div class="list-sub">'+esc(detail)+'</div><div class="control-row">'+controls+'</div></div>'}).join('')+'</div>':'<div class="empty">No champion releases are in rollout yet.</div>');
+   body+=section('Production Catalog',Object.keys(rsummary.production_catalog||{}).length?'<div class="list">'+Object.entries(rsummary.production_catalog||{}).map(function(row){return listItem(row[0],row[1])}).join('')+'</div>':'<div class="empty">No research strategy is active for new assignments.</div>');
    body+=section('Tournament Records',experiments.length?'<div class="list">'+experiments.map(function(e){const best=(e.results||[])[0];return listItem(e.symbol+' · '+String(e.id).slice(0,8),(best?'leader '+best.variant:'no results')+' · capital '+money(e.starting_capital))}).join('')+'</div>':'<div class="empty">No tournaments have been recorded.</div>');
  }
  if(id==='workshop'){
@@ -438,7 +441,7 @@ function technicalSnapshot(id,s){
  if(id==='scout')return {symbols_loaded:s.caos&&s.caos.symbols_loaded,execution_cost_bps:s.caos&&s.caos.execution_cost_bps};
  if(id==='observatory')return {approved_by_symbol:s.caos&&s.caos.approved_by_symbol,portfolio:s.caos&&s.caos.portfolio,experts:s.caos&&s.caos.experts};
  if(id==='tavern')return {news:s.caos&&s.caos.news,sentiment:s.caos&&s.caos.experts&&s.caos.experts.sentiment};
- if(id==='arena')return s.training;
+ if(id==='arena')return {training:s.training,rollout:s.rollout,rollout_summary:s.rollout_summary};
  if(id==='workshop')return {research:currentCity&&currentCity.research,improvements:currentCity&&currentCity.improvements};
  if(id==='nexus')return s.caos;
  if(id==='chronicle')return currentCity&&currentCity.recent_events;
@@ -481,6 +484,20 @@ function openTrader(id){
  section('Guild Controls',actions+exposureControls)+
  '<details class="detail-section"><summary style="cursor:pointer;color:#f1d796;font-weight:700">Technical truth</summary>'+json({trader:t,paper:currentStatus.paper&&currentStatus.paper.accounts&&currentStatus.paper.accounts[id],assignment:currentStatus.assignments&&currentStatus.assignments[id]})+'</details>';
  drawer.classList.add('open');drawerBackdrop.classList.add('open');drawer.setAttribute('aria-hidden','false');
+}
+
+async function activateRelease(id){
+ try{
+  await api('/api/company/rollout/'+encodeURIComponent(id)+'/activate',{method:'POST'});
+  await tick();openLocation('arena');
+ }catch(e){alert(e.message)}
+}
+async function rollbackRelease(id){
+ if(!confirm('Rollback this strategy release for future assignments? Existing Trader positions will not be force-closed.'))return;
+ try{
+  await api('/api/company/rollout/'+encodeURIComponent(id)+'/rollback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:'themed_city_manual_rollback'})});
+  await tick();openLocation('arena');
+ }catch(e){alert(e.message)}
 }
 
 async function setLimit(){
@@ -599,6 +616,9 @@ def serve_company(
             if path == "/api/company/experiments":
                 self._json(200, control.list_experiments())
                 return
+            if path == "/api/company/rollout":
+                self._json(200, control.get_strategy_rollouts())
+                return
             if path == "/api/company/events":
                 self._json(200, control.get_recent_events(50))
                 return
@@ -645,6 +665,35 @@ def serve_company(
                     for part in path.split("/")
                     if part
                 ]
+                if (
+                    len(parts) == 5
+                    and parts[:3] == ["api", "company", "rollout"]
+                ):
+                    release_id = parts[3]
+                    action = parts[4]
+                    if action == "activate":
+                        self._json(
+                            200,
+                            control.activate_strategy_release(
+                                release_id
+                            ),
+                        )
+                        return
+                    if action == "rollback":
+                        payload = self._read_json()
+                        self._json(
+                            200,
+                            control.rollback_strategy_release(
+                                release_id,
+                                reason=str(
+                                    payload.get(
+                                        "reason",
+                                        "manual_rollback",
+                                    )
+                                ),
+                            ),
+                        )
+                        return
                 if (
                     len(parts) == 5
                     and parts[:3] == ["api", "company", "traders"]
