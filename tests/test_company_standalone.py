@@ -855,6 +855,88 @@ class PaperTraderChartTests(unittest.TestCase):
             )
             store.close()
 
+    def test_strategy_exit_is_pending_until_later_candle_touches(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "company.db")
+            caos, _policy, company, bars = (
+                self._build_assigned_company(store)
+            )
+
+            company.paper.cycle_trader("A")
+            entry = company.paper.pending_order_snapshot("A")
+            entry_trigger = entry["trigger_price"]
+            entry_touch = MarketBar(
+                ts=bars[-1].ts + 60_000,
+                open=entry_trigger,
+                high=entry_trigger + 0.20,
+                low=entry_trigger - 0.20,
+                close=entry_trigger + 0.05,
+                volume=1000.0,
+            )
+            caos.load_bars(
+                "BTCUSDT",
+                bars + [entry_touch],
+            )
+            opened = company.paper.cycle_trader("A")
+            self.assertEqual(opened.action, "open_long")
+            self.assertFalse(
+                company.paper.positions_flat("A")
+            )
+
+            flat_price = float(entry_trigger)
+            flat = [
+                MarketBar(
+                    ts=entry_touch.ts + (i + 1) * 60_000,
+                    open=flat_price,
+                    high=flat_price + 0.05,
+                    low=flat_price - 0.05,
+                    close=flat_price,
+                    volume=1000.0,
+                )
+                for i in range(80)
+            ]
+            caos.load_bars("BTCUSDT", flat)
+            armed_exit = company.paper.cycle_trader("A")
+            self.assertEqual(
+                armed_exit.action,
+                "pending_exit",
+            )
+            exit_order = company.paper.pending_order_snapshot(
+                "A"
+            )
+            self.assertEqual(exit_order["side"], "sell")
+            chart = company.paper.chart_snapshot("A")
+            self.assertEqual(chart["phase"], "pending_exit")
+            self.assertFalse(
+                company.paper.positions_flat("A")
+            )
+
+            exit_trigger = exit_order["trigger_price"]
+            exit_touch = MarketBar(
+                ts=flat[-1].ts + 60_000,
+                open=exit_trigger,
+                high=exit_trigger + 0.10,
+                low=exit_trigger - 0.10,
+                close=exit_trigger,
+                volume=1000.0,
+            )
+            caos.load_bars(
+                "BTCUSDT",
+                flat + [exit_touch],
+            )
+            closed = company.paper.cycle_trader("A")
+            self.assertEqual(closed.action, "close_long")
+            self.assertTrue(
+                company.paper.positions_flat("A")
+            )
+            closed_chart = company.paper.chart_snapshot("A")
+            self.assertIsNone(closed_chart["pending_order"])
+            self.assertEqual(
+                closed_chart["markers"][-1]["kind"],
+                "sell",
+            )
+            store.close()
+
     def test_kill_switch_closes_position_immediately(self):
         with tempfile.TemporaryDirectory() as d:
             store = Store(Path(d) / "company.db")
