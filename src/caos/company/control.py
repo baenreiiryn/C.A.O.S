@@ -36,6 +36,46 @@ class CompanyControlPort:
             for experiment in self.company.training.experiments.values()
         ]
 
+    def get_research(self) -> dict:
+        return self.company.research.snapshot()
+
+    def get_research_summary(self) -> dict:
+        return self.company.research.summary()
+
+    def submit_research_hypothesis(
+        self,
+        *,
+        symbol: str,
+        family: str,
+        thesis: str,
+        source: str = "manual",
+        parent_strategy_id: str | None = None,
+    ) -> dict:
+        return self.company.submit_research_hypothesis(
+            symbol=symbol,
+            family=family,
+            thesis=thesis,
+            source=source,
+            parent_strategy_id=parent_strategy_id,
+        )
+
+    def run_research_cycle(
+        self,
+        hypothesis_id: str,
+        *,
+        generator_id: str = "builtin_grid",
+        candidate_limit: int = 12,
+        starting_capital: float = 10.0,
+        cost_bps: float = 8.0,
+    ) -> dict:
+        return self.company.run_research_cycle(
+            hypothesis_id,
+            generator_id=generator_id,
+            candidate_limit=candidate_limit,
+            starting_capital=starting_capital,
+            cost_bps=cost_bps,
+        )
+
     def get_execution_plans(self) -> dict:
         return {
             "version": self.company.status()[
