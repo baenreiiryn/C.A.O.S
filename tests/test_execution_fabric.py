@@ -334,6 +334,23 @@ class CompanyExecutionFabricTests(unittest.TestCase):
             )
             store.close()
 
+    def test_paused_trader_can_be_force_flattened(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, company = self.make_company(d)
+            opened = company.paper.cycle_trader("A")
+            self.assertEqual(opened.action, "open_long")
+            company.pause_trader("A")
+            flattened = company.paper.force_flatten("A")
+            self.assertEqual(flattened.action, "forced_flatten")
+            self.assertTrue(
+                flattened.plan["risk_reducing"]
+            )
+            self.assertTrue(
+                company.paper.positions_flat("A")
+            )
+            store.close()
+
+
 
 class TestnetExecutionFabricTests(unittest.TestCase):
     def test_plan_maps_to_testnet_order_without_credentials(self):
