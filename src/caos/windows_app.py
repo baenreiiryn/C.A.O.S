@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import socket
+import sys
 import tempfile
 import threading
 import webbrowser
@@ -17,6 +18,7 @@ from .app_settings import (
 )
 from .cli import build_caos
 from .news import default_news_sources, normalize_news_sources
+from .ollama_runtime import ManagedOllamaRuntime
 from .company.control import CompanyControlPort
 from .company.dashboard import serve_company
 from .company.domain import TraderMode
@@ -54,6 +56,12 @@ def app_data_dir(
         return Path(local) / "CAOS"
     base = home if home is not None else Path.home()
     return base / ".caos"
+
+
+def application_install_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[2]
 
 
 def default_launcher_config(
@@ -457,12 +465,17 @@ class CompanyRuntimeHost:
             self.config.update(saved)
             return saved
 
+        self.ollama_runtime = ManagedOllamaRuntime(
+            application_install_dir(),
+            app_data_dir(),
+        )
         self.settings = RuntimeSettingsService(
             self.caos,
             self.company,
             self.config,
             persist_runtime_config,
             self.vault,
+            self.ollama_runtime,
         )
         self.daemon = build_daemon(
             self.company,
@@ -530,6 +543,10 @@ class CompanyRuntimeHost:
 
     def stop(self) -> None:
         self.stop_event.set()
+        try:
+            self.ollama_runtime.stop()
+        except Exception:
+            pass
         if self.server is not None:
             self.server.shutdown()
             self.server.server_close()
