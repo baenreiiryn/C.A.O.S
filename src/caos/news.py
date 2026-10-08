@@ -187,7 +187,6 @@ class _FeedLinkParser(HTMLParser):
             and typ in {
                 "application/rss+xml",
                 "application/atom+xml",
-                "application/feed+json",
             }
         ):
             self.links.append(href)
