@@ -11,6 +11,7 @@ from .paper import CompanyPaperBook, CompanyPaperError
 from .registry import TraderRegistry
 from .research import ResearchFactory
 from .risk import CompanyRiskGovernor
+from .rollout import StrategyRolloutManager
 from .scout import MarketScout
 from .state import CompanyCheckpoint
 from .strategy import CompanyStrategyRegistry
@@ -68,6 +69,9 @@ class TradeCompany:
         self.research = ResearchFactory(
             self.strategies,
             self.training,
+        )
+        self.rollout = StrategyRolloutManager(
+            self.strategies,
         )
         self.paper = CompanyPaperBook(
             self.engine,
@@ -550,6 +554,13 @@ class TradeCompany:
                 self.policy.default_trader_max_exposure_pct
             ),
         )
+        created_releases = self.rollout.sync_research(
+            self.research
+        )
+        result["rollout_releases"] = [
+            row.to_dict()
+            for row in created_releases
+        ]
         self._save()
         if self.store is not None:
             self.store.event(
@@ -557,9 +568,79 @@ class TradeCompany:
                 {
                     "hypothesis_id": hypothesis_id,
                     "promotion": result["promotion"],
+                    "rollout_releases": [
+                        row.id
+                        for row in created_releases
+                    ],
                 },
             )
         return result
+
+    def sync_strategy_rollouts(self) -> list[dict]:
+        rows = self.rollout.sync_research(self.research)
+        if rows:
+            self._save()
+        return [row.to_dict() for row in rows]
+
+    def process_strategy_rollouts(
+        self,
+        symbol: str,
+    ) -> list[dict]:
+        bars = self.engine.bars(symbol)
+        if not bars:
+            raise TradeCompanyError("rollout_market_data_required")
+        events = self.rollout.process_market(
+            symbol,
+            bars,
+        )
+        if events:
+            self._save()
+        return events
+
+    def activate_strategy_release(
+        self,
+        release_id: str,
+    ) -> dict:
+        release = self.rollout.activate(release_id)
+        self._save()
+        if self.store is not None:
+            self.store.event(
+                "trade_company_strategy_release_activated",
+                release.to_dict(),
+            )
+        return release.to_dict()
+
+    def rollback_strategy_release(
+        self,
+        release_id: str,
+        *,
+        reason: str = "manual_rollback",
+    ) -> dict:
+        release = self.rollout.rollback(
+            release_id,
+            reason=reason,
+        )
+        impacted = [
+            trader.id
+            for trader in self.registry.traders.values()
+            if (
+                trader.status != TraderStatus.RETIRED
+                and trader.strategy_id == release.strategy_id
+            )
+        ]
+        self._save()
+        if self.store is not None:
+            self.store.event(
+                "trade_company_strategy_release_rolled_back",
+                {
+                    "release": release.to_dict(),
+                    "impacted_traders": impacted,
+                },
+            )
+        return {
+            "release": release.to_dict(),
+            "impacted_traders": impacted,
+        }
 
     def audit(self) -> dict:
         return self.supervisor.audit().to_dict()
@@ -599,6 +680,8 @@ class TradeCompany:
             "training": self.training.snapshot(),
             "research": self.research.snapshot(),
             "research_summary": self.research.summary(),
+            "rollout": self.rollout.snapshot(),
+            "rollout_summary": self.rollout.summary(),
             "audit": audit.to_dict(),
             "caos": self.engine.health(),
         }
