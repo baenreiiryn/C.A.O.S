@@ -938,7 +938,7 @@ def main() -> None:
                 {
                     "order_id": ack.order_id,
                     "order_link_id": ack.order_link_id,
-                    "environment": "BYBIT_TESTNET_ONLY",
+                    "environment": "BINANCE_SPOT_TESTNET_ONLY",
                 },
                 indent=2,
                 ensure_ascii=False,
