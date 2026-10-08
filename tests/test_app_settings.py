@@ -1,3 +1,5 @@
+import os
+import uuid
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +10,7 @@ from caos.app_settings import (
     MemoryCredentialVault,
     RuntimeSettingsService,
     SettingsError,
+    WindowsCredentialVault,
 )
 from caos.llm import OllamaClient, OpenAICompatClient, StaticLLM
 
@@ -230,3 +233,29 @@ class BrokerSettingsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+@unittest.skipUnless(
+    os.name == "nt",
+    "Windows Credential Manager test",
+)
+class WindowsCredentialVaultTests(unittest.TestCase):
+    def test_native_windows_credential_roundtrip(self):
+        vault = WindowsCredentialVault(
+            namespace="CAOS-TEST"
+        )
+        key = "roundtrip-" + uuid.uuid4().hex
+        try:
+            vault.set(key, "secret-value-123")
+            self.assertEqual(
+                vault.get(key),
+                "secret-value-123",
+            )
+            vault.delete(key)
+            self.assertIsNone(vault.get(key))
+        finally:
+            try:
+                vault.delete(key)
+            except Exception:
+                pass
