@@ -630,13 +630,6 @@ class RuntimeExecutionService:
         rejected = self.cancel_new_risk_proposals()
         self.company.operations_paused = True
         self.company.risk.kill()
-        engine_result = None
-        try:
-            engine_result = self.company.engine.emergency_kill()
-        except Exception as exc:
-            engine_result = {
-                "error": f"{type(exc).__name__}: {exc}",
-            }
 
         close_proposals: list[str] = []
         for trader_id in list(self.company.paper.accounts):
@@ -673,6 +666,13 @@ class RuntimeExecutionService:
                     prepared["intent"]["intent_id"]
                 )
 
+        engine_result = None
+        try:
+            engine_result = self.company.engine.emergency_kill()
+        except Exception as exc:
+            engine_result = {
+                "error": f"{type(exc).__name__}: {exc}",
+            }
         self.company.checkpoint()
         return {
             "company_kill_switch": True,
