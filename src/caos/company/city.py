@@ -83,6 +83,7 @@ class CityPresentationMapper:
             for row in traders.values()
         )
         experiments = status.get("training", {})
+        research = status.get("research_summary", {})
         opportunities = status.get("opportunities", {})
         available = sum(
             row.get("status") == "available"
@@ -208,10 +209,18 @@ class CityPresentationMapper:
             loc(
                 "workshop",
                 "Arcane Workshop",
-                "ImprovementManager",
+                "ResearchFactory + ImprovementManager",
                 "Royal Arcanist",
-                "attention" if improvements else "quiet",
-                f"{len(improvements)} improvement proposal(s).",
+                (
+                    "active"
+                    if research.get("candidates", 0)
+                    else ("attention" if improvements else "quiet")
+                ),
+                (
+                    f"{research.get('hypotheses', 0)} hypothesis(es), "
+                    f"{research.get('candidates', 0)} candidate(s), "
+                    f"{len(research.get('champions', {}))} champion(s)."
+                ),
             ),
             loc(
                 "nexus",
@@ -272,5 +281,7 @@ class CityPresentationMapper:
             "traders": list(traders.values()),
             "alerts": alerts,
             "improvements": improvements,
+            "research": status.get("research", {}),
+            "research_summary": research,
             "recent_events": events,
         }
