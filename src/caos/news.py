@@ -74,6 +74,13 @@ DEFAULT_NEWS_SOURCES = (
         "url": "https://www.boj.or.jp/en/rss/whatsnew.xml",
         "kind": "official",
     },
+    {
+        "id": "japan-fsa-news",
+        "name": "Japan Financial Services Agency",
+        "category": "regulation-japan",
+        "url": "https://www.fsa.go.jp/fsaNewsListAll_rss2.xml",
+        "kind": "official",
+    },
 )
 
 
