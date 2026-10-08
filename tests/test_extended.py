@@ -5,7 +5,7 @@ from pathlib import Path
 from caos.cli import synthetic_bars
 from caos.domain import Mandate, StrategySpec
 from caos.llm import StaticLLM
-from caos.marketdata import BybitPublicClient
+from caos.marketdata import BinancePublicClient
 from caos.orchestrator import CAOS
 from caos.portfolio import build_portfolio
 from caos.quant import backtest, current_signal, robustness
@@ -13,7 +13,7 @@ from caos.runner import PaperRunner
 from caos.store import Store
 
 
-class FakeBybit(BybitPublicClient):
+class FakeBybit(BinancePublicClient):
     def _get_json(self, path, params):
         return {
             "retCode": 0,
