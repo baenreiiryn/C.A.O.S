@@ -142,7 +142,13 @@ class CompanyCellProtocolTests(unittest.TestCase):
             self.assertEqual(manifest["cell_type"], "trading")
             self.assertEqual(
                 manifest["commands"],
-                ["pause", "resume", "emergency_stop"],
+                [
+                    "start",
+                    "stop",
+                    "pause",
+                    "resume",
+                    "emergency_stop",
+                ],
             )
             self.assertEqual(
                 manifest["ui"]["kind"],
@@ -383,6 +389,113 @@ class CompanyCellProtocolTests(unittest.TestCase):
             )
             self.assertEqual(cycle.opportunities, [])
             self.assertEqual(cycle.expansions, [])
+            store.close()
+
+    def test_stop_enters_stopping_until_open_position_finishes(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, _, company = make_company(d)
+            company.publish_opportunity(
+                Opportunity(
+                    "btc-stop",
+                    "BTCUSDT",
+                    "long",
+                    100,
+                    strategy_candidates=("momentum",),
+                )
+            )
+            company.assign_best("A")
+            company.engine.load_bars(
+                "BTCUSDT",
+                rising_bars(),
+            )
+            opened = company.paper.cycle_trader("A")
+            self.assertEqual(opened.action, "open_long")
+            self.assertEqual(
+                company.operational_state(),
+                "running",
+            )
+
+            result = TradeCompanyCell(
+                CompanyControlPort(company)
+            ).execute_command("stop")
+            self.assertTrue(
+                result["result"]["operations_paused"]
+            )
+            self.assertEqual(
+                result["result"]["operational_state"],
+                "stopping",
+            )
+
+            company.engine.load_bars(
+                "BTCUSDT",
+                flat_bars(price=180.0),
+            )
+            company.engine.fetch_market = (
+                lambda symbol, interval="60", limit=500: {
+                    "symbol": symbol,
+                    "bars": 80,
+                }
+            )
+            daemon = CompanyDaemon(
+                company,
+                [ScanTarget("BTCUSDT", "long", ("momentum",))],
+            )
+            daemon.run_once(now=2_500)
+            self.assertTrue(
+                company.paper.positions_flat("A")
+            )
+            self.assertEqual(
+                company.operational_state(),
+                "stopped",
+            )
+            store.close()
+
+    def test_emergency_stop_flattens_paper_positions_immediately(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, _, company = make_company(d)
+            company.publish_opportunity(
+                Opportunity(
+                    "btc-emergency",
+                    "BTCUSDT",
+                    "long",
+                    100,
+                    strategy_candidates=("momentum",),
+                )
+            )
+            company.assign_best("A")
+            company.engine.load_bars(
+                "BTCUSDT",
+                rising_bars(),
+            )
+            opened = company.paper.cycle_trader("A")
+            self.assertEqual(opened.action, "open_long")
+            self.assertFalse(
+                company.paper.positions_flat("A")
+            )
+
+            result = TradeCompanyCell(
+                CompanyControlPort(company)
+            ).execute_command("emergency_stop")
+            self.assertTrue(
+                company.paper.positions_flat("A")
+            )
+            self.assertTrue(
+                result["result"]["company_kill_switch"]
+            )
+            self.assertEqual(
+                result["result"]["operational_state"],
+                "emergency_stopped",
+            )
+            self.assertEqual(
+                result["result"]["flatten_errors"],
+                {},
+            )
+            self.assertTrue(
+                any(
+                    row["trader_id"] == "A"
+                    for row in result["result"]["flattened"]
+                )
+            )
             store.close()
 
     def test_resume_cannot_bypass_emergency_kill(self):
