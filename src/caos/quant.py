@@ -6,6 +6,12 @@ from dataclasses import dataclass
 from statistics import mean, pstdev
 
 from .domain import BacktestResult, Mandate, MarketBar, StrategySpec, Trade
+from .execution_fabric import (
+    StrategyDecision,
+    TargetPosition,
+    decision_from_signal,
+    resolve_target_position,
+)
 
 
 def _sma(values: list[float], period: int, idx: int) -> float | None:
@@ -444,3 +450,55 @@ def current_signal(spec: StrategySpec, bars: list[MarketBar]) -> str:
     return "long" if _entry_signal(spec, closes, i) or (
         signal_state_series(spec, bars)[-1] == 1
     ) else "flat"
+
+
+def current_decision(
+    spec: StrategySpec,
+    bars: list[MarketBar],
+    *,
+    symbol: str,
+    requested_weight: float = 1.0,
+) -> StrategyDecision:
+    """Return the venue-agnostic strategy decision for the latest bar."""
+    signal = current_signal(spec, bars)
+    as_of = bars[-1].ts if bars else None
+    return decision_from_signal(
+        symbol=symbol,
+        strategy_id=spec.name,
+        signal=signal,
+        requested_weight=float(requested_weight),
+        as_of=as_of,
+    )
+
+
+def target_position_series(
+    spec: StrategySpec,
+    bars: list[MarketBar],
+    *,
+    symbol: str,
+    requested_weight: float = 1.0,
+    equity: float = 1.0,
+    max_notional: float | None = None,
+) -> list[TargetPosition]:
+    """Research/backtest representation using the same target schema as execution."""
+    if not 0.0 <= float(requested_weight) <= 1.0:
+        raise ValueError("requested_weight_must_be_in_0_1")
+    ceiling = float(equity) if max_notional is None else float(max_notional)
+    states = signal_state_series(spec, bars)
+    targets: list[TargetPosition] = []
+    for bar, state in zip(bars, states):
+        decision = decision_from_signal(
+            symbol=symbol,
+            strategy_id=spec.name,
+            signal="long" if state else "flat",
+            requested_weight=float(requested_weight),
+            as_of=bar.ts,
+        )
+        targets.append(
+            resolve_target_position(
+                decision,
+                equity=float(equity),
+                max_notional=ceiling,
+            )
+        )
+    return targets
