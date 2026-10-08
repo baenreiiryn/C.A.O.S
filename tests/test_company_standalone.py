@@ -627,56 +627,123 @@ class FantasyCityPresentationTests(unittest.TestCase):
 
 
 class PaperTraderChartTests(unittest.TestCase):
-    def test_chart_records_paper_fill_and_survives_restore(self):
+    def _build_assigned_company(self, store):
+        caos = make_runtime(store)
+        policy = build_policy(
+            initial_company_capital=10,
+            trader_initial_bucket=10,
+            trader_stop_floor=3,
+            default_trader_max_exposure_pct=20,
+            operational_trader_cap=6,
+            company_max_drawdown_pct=30,
+        )
+        company = TradeCompany(
+            CAOSAdapter(caos),
+            policy,
+            store=store,
+        )
+        initialize_company(
+            company,
+            parse_scan_targets(
+                "BTCUSDT:long:momentum"
+            ),
+        )
+        bars = [
+            MarketBar(
+                ts=1_700_000_000_000 + i * 60_000,
+                open=100.0 + i * 0.2,
+                high=100.15 + i * 0.2,
+                low=99.85 + i * 0.2,
+                close=100.1 + i * 0.2,
+                volume=1000.0,
+            )
+            for i in range(120)
+        ]
+        caos.load_bars("BTCUSDT", bars)
+        company.publish_opportunity(
+            Opportunity(
+                id="chart-btc",
+                symbol="BTCUSDT",
+                direction="long",
+                score=90.0,
+                strategy_candidates=("momentum",),
+            )
+        )
+        company.assign_best("A", now=bars[-1].ts)
+        return caos, policy, company, bars
+
+    def test_pending_entry_becomes_fill_and_survives_restore(self):
         with tempfile.TemporaryDirectory() as d:
             store = Store(Path(d) / "company.db")
-            caos = make_runtime(store)
-            policy = build_policy(
-                initial_company_capital=10,
-                trader_initial_bucket=10,
-                trader_stop_floor=3,
-                default_trader_max_exposure_pct=20,
-                operational_trader_cap=6,
-                company_max_drawdown_pct=30,
+            caos, policy, company, bars = (
+                self._build_assigned_company(store)
             )
-            company = TradeCompany(
+
+            armed = company.paper.cycle_trader("A")
+            self.assertEqual(armed.action, "pending_entry")
+            self.assertIsNone(armed.fill)
+
+            pending_chart = company.paper.chart_snapshot(
+                "A",
+                limit=120,
+            )
+            self.assertEqual(
+                pending_chart["version"],
+                "paper-trader-chart/v2",
+            )
+            self.assertEqual(
+                pending_chart["phase"],
+                "pending_entry",
+            )
+            self.assertIsNotNone(
+                pending_chart["pending_order"]
+            )
+            self.assertEqual(
+                pending_chart["pending_order"]["side"],
+                "buy",
+            )
+            self.assertEqual(
+                pending_chart["pending_order"]["order_type"],
+                "limit",
+            )
+            self.assertEqual(pending_chart["markers"], [])
+
+            company.checkpoint()
+            restored = TradeCompany(
                 CAOSAdapter(caos),
                 policy,
                 store=store,
             )
-            initialize_company(
-                company,
-                parse_scan_targets(
-                    "BTCUSDT:long:momentum"
-                ),
+            self.assertTrue(restored.restore_checkpoint())
+            restored_pending = restored.paper.chart_snapshot(
+                "A",
+                limit=120,
             )
-            bars = [
-                MarketBar(
-                    ts=1_700_000_000_000 + i * 60_000,
-                    open=100.0 + i * 0.2,
-                    high=100.15 + i * 0.2,
-                    low=99.85 + i * 0.2,
-                    close=100.1 + i * 0.2,
-                    volume=1000.0,
-                )
-                for i in range(120)
-            ]
-            caos.load_bars("BTCUSDT", bars)
-            company.publish_opportunity(
-                Opportunity(
-                    id="chart-btc",
-                    symbol="BTCUSDT",
-                    direction="long",
-                    score=90.0,
-                    strategy_candidates=("momentum",),
-                )
+            self.assertEqual(
+                restored_pending["phase"],
+                "pending_entry",
             )
-            company.assign_best("A", now=bars[-1].ts)
+            trigger = restored_pending[
+                "pending_order"
+            ]["trigger_price"]
 
-            result = company.paper.cycle_trader("A")
-            self.assertEqual(result.action, "open_long")
+            next_bar = MarketBar(
+                ts=bars[-1].ts + 60_000,
+                open=trigger + 0.05,
+                high=trigger + 0.20,
+                low=trigger - 0.10,
+                close=trigger + 0.10,
+                volume=1200.0,
+            )
+            caos.load_bars(
+                "BTCUSDT",
+                bars + [next_bar],
+            )
+            filled = restored.paper.cycle_trader("A")
+            self.assertEqual(filled.action, "open_long")
+            self.assertIsNotNone(filled.fill)
 
-            company.paper.visual_events["A"].insert(
+            restored.paper.visual_events["A"].insert(
                 0,
                 {
                     "kind": "buy",
@@ -689,53 +756,141 @@ class PaperTraderChartTests(unittest.TestCase):
                     "strategy": "momentum",
                 },
             )
-            chart = company.paper.chart_snapshot(
+            chart = restored.paper.chart_snapshot(
                 "A",
                 limit=120,
             )
-            self.assertEqual(
-                chart["version"],
-                "paper-trader-chart/v1",
-            )
             self.assertEqual(chart["phase"], "in_position")
-            self.assertEqual(chart["symbol"], "BTCUSDT")
+            self.assertIsNone(chart["pending_order"])
             self.assertEqual(len(chart["bars"]), 120)
-            self.assertEqual(len(chart["indicators"]["ma7"]), 114)
-            self.assertEqual(len(chart["indicators"]["ma25"]), 96)
-            self.assertEqual(len(chart["indicators"]["ma99"]), 22)
+            self.assertEqual(
+                len(chart["indicators"]["ma7"]),
+                114,
+            )
+            self.assertEqual(
+                len(chart["indicators"]["ma25"]),
+                96,
+            )
+            self.assertEqual(
+                len(chart["indicators"]["ma99"]),
+                22,
+            )
             self.assertEqual(len(chart["markers"]), 1)
-            self.assertEqual(chart["markers"][0]["kind"], "buy")
+            self.assertEqual(
+                chart["markers"][0]["kind"],
+                "buy",
+            )
             self.assertEqual(
                 chart["markers"][0]["action"],
                 "open_long",
             )
             self.assertEqual(
                 chart["markers"][0]["ts"],
-                bars[-1].ts,
+                next_bar.ts,
             )
             self.assertGreater(
                 chart["position"]["quantity"],
                 0,
             )
+            self.assertEqual(
+                [row["kind"] for row in chart["order_events"]],
+                ["opened", "filled"],
+            )
 
-            company.checkpoint()
-            restored = TradeCompany(
+            restored.checkpoint()
+            restored_again = TradeCompany(
                 CAOSAdapter(caos),
                 policy,
                 store=store,
             )
-            self.assertTrue(restored.restore_checkpoint())
-            restored_chart = restored.paper.chart_snapshot(
+            self.assertTrue(
+                restored_again.restore_checkpoint()
+            )
+            persisted = restored_again.paper.chart_snapshot(
                 "A",
                 limit=120,
             )
             self.assertEqual(
-                restored_chart["markers"],
+                persisted["markers"],
                 chart["markers"],
             )
             self.assertEqual(
-                restored_chart["phase"],
-                "in_position",
+                persisted["order_events"],
+                chart["order_events"],
+            )
+            store.close()
+
+    def test_new_risk_block_cancels_pending_entry(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "company.db")
+            _caos, _policy, company, _bars = (
+                self._build_assigned_company(store)
+            )
+            armed = company.paper.cycle_trader("A")
+            self.assertEqual(armed.action, "pending_entry")
+            self.assertTrue(
+                company.paper.has_pending_order("A")
+            )
+
+            blocked = company.paper.cycle_trader(
+                "A",
+                allow_new_risk=False,
+            )
+            self.assertEqual(
+                blocked.action,
+                "no_state_change",
+            )
+            self.assertFalse(
+                company.paper.has_pending_order("A")
+            )
+            chart = company.paper.chart_snapshot("A")
+            self.assertEqual(chart["phase"], "waiting_entry")
+            self.assertEqual(
+                chart["order_events"][-1]["kind"],
+                "cancelled",
+            )
+            self.assertEqual(
+                chart["order_events"][-1]["reason"],
+                "new_risk_blocked",
+            )
+            store.close()
+
+    def test_kill_switch_closes_position_immediately(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "company.db")
+            caos, _policy, company, bars = (
+                self._build_assigned_company(store)
+            )
+            company.paper.cycle_trader("A")
+            pending = company.paper.pending_order_snapshot(
+                "A"
+            )
+            trigger = pending["trigger_price"]
+            next_bar = MarketBar(
+                ts=bars[-1].ts + 60_000,
+                open=trigger,
+                high=trigger + 0.20,
+                low=trigger - 0.20,
+                close=trigger + 0.10,
+                volume=1000.0,
+            )
+            caos.load_bars(
+                "BTCUSDT",
+                bars + [next_bar],
+            )
+            company.paper.cycle_trader("A")
+            self.assertFalse(
+                company.paper.positions_flat("A")
+            )
+
+            company.risk.kill()
+            killed = company.paper.cycle_trader("A")
+            self.assertEqual(killed.action, "close_long")
+            self.assertTrue(
+                company.paper.positions_flat("A")
+            )
+            self.assertFalse(
+                company.paper.has_pending_order("A")
             )
             store.close()
 
@@ -812,7 +967,7 @@ class CompanyDashboardTests(unittest.TestCase):
                     )
                 self.assertEqual(
                     chart["version"],
-                    "paper-trader-chart/v1",
+                    "paper-trader-chart/v2",
                 )
                 self.assertEqual(
                     chart["phase"],
@@ -1019,6 +1174,9 @@ class CompanyDashboardTests(unittest.TestCase):
                 self.assertIn("Live PAPER Chart", html)
                 self.assertIn("renderTraderChart", html)
                 self.assertIn("WAITING ENTRY", html)
+                self.assertIn("OPEN ENTRY ORDER", html)
+                self.assertIn("OPEN PAPER ORDER", html)
+                self.assertIn("chart-pending", html)
                 self.assertNotIn('data-tab="overview"', html)
                 self.assertNotIn("King Drizzt", html)
 
