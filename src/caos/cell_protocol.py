@@ -45,6 +45,44 @@ class CellManifest:
         }
 
 
+@dataclass(slots=True, frozen=True)
+class CellMetric:
+    id: str
+    label: str
+    value: Any
+    unit: str | None = None
+    category: str = "general"
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "label": self.label,
+            "value": self.value,
+            "unit": self.unit,
+            "category": self.category,
+        }
+
+
+@dataclass(slots=True, frozen=True)
+class CellAlert:
+    id: str
+    severity: str
+    code: str
+    title: str
+    message: str
+    data: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "severity": self.severity,
+            "code": self.code,
+            "title": self.title,
+            "message": self.message,
+            "data": dict(self.data),
+        }
+
+
 @runtime_checkable
 class CompanyCell(Protocol):
     """Stable generic contract consumed by future supervisors.
