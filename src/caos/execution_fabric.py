@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass
 from typing import Literal
 
 
+EXECUTION_FABRIC_VERSION = "execution-fabric/v1"
+
 Signal = Literal["long", "flat"]
 PositionSide = Literal["long", "flat"]
 PlanAction = Literal["hold", "increase", "reduce", "close"]
