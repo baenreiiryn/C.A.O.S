@@ -582,9 +582,14 @@ class CompanyDashboardTests(unittest.TestCase):
                     settings["llm"]["provider"],
                     "ollama",
                 )
+                serialized_settings = json.dumps(settings)
                 self.assertNotIn(
-                    "api_secret",
-                    json.dumps(settings),
+                    '"api_secret":',
+                    serialized_settings,
+                )
+                self.assertNotIn(
+                    '"api_key":',
+                    serialized_settings,
                 )
 
                 save_llm = urllib.request.Request(
