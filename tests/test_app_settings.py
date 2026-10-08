@@ -26,7 +26,49 @@ class FakeReliability:
         }
 
 
-def make_service(*, recovery_required=0):
+class FakeManagedOllama:
+    base_url = "http://127.0.0.1:11435"
+
+    def __init__(self):
+        self.running = False
+
+    def status(self):
+        return {
+            "installed": True,
+            "running": self.running,
+            "managed_process": self.running,
+            "base_url": self.base_url,
+            "runtime_dir": "C:/CAOS/ollama",
+            "models_dir": "C:/CAOS/models",
+            "version": "0.test" if self.running else None,
+        }
+
+    def start(self):
+        self.running = True
+        return self.status()
+
+    def stop(self):
+        self.running = False
+        return self.status()
+
+    def pick_model_file(self):
+        return {
+            "selected": True,
+            "path": "C:/models/test.gguf",
+            "suggested_name": "caos-test",
+        }
+
+    def import_gguf(self, source_path, *, model_name=""):
+        self.running = True
+        return {
+            "model": model_name or "caos-test",
+            "source_file": source_path,
+            "base_url": self.base_url,
+            "runtime": self.status(),
+        }
+
+
+def make_service(*, recovery_required=0, ollama_runtime=None):
     config = {
         "version": 1,
         "provider": "static",
@@ -57,6 +99,7 @@ def make_service(*, recovery_required=0):
         config,
         persist,
         vault,
+        ollama_runtime,
     )
     return service, caos, config, persisted, vault
 
@@ -96,6 +139,51 @@ class RuntimeLLMSettingsTests(unittest.TestCase):
         self.assertNotIn(
             "super-secret-key",
             str(persisted),
+        )
+
+    def test_managed_ollama_status_is_exposed(self):
+        runtime = FakeManagedOllama()
+        service, *_ = make_service(
+            ollama_runtime=runtime
+        )
+        status = service.get_settings()[
+            "ollama_runtime"
+        ]
+        self.assertTrue(status["enabled"])
+        self.assertTrue(status["installed"])
+        self.assertFalse(status["running"])
+        started = service.start_managed_ollama()
+        self.assertTrue(started["running"])
+
+    def test_import_managed_model_selects_it_live(self):
+        runtime = FakeManagedOllama()
+        service, caos, config, persisted, _ = (
+            make_service(ollama_runtime=runtime)
+        )
+        result = service.import_managed_ollama_model(
+            source_path="C:/models/my.gguf",
+            model_name="my-local-model",
+        )
+        self.assertIsInstance(caos.llm, OllamaClient)
+        self.assertEqual(
+            caos.llm.model,
+            "my-local-model",
+        )
+        self.assertEqual(
+            caos.llm.base_url,
+            runtime.base_url,
+        )
+        self.assertEqual(
+            config["provider"],
+            "ollama",
+        )
+        self.assertEqual(
+            persisted[-1]["base_url"],
+            runtime.base_url,
+        )
+        self.assertEqual(
+            result["llm"]["model"],
+            "my-local-model",
         )
 
     @patch("caos.app_settings._json_get")
