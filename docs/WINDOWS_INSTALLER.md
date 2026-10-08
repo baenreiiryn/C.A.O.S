@@ -78,15 +78,29 @@ After the charter is accepted:
 3. the background daemon starts only for market/news observation and risk-reducing drain logic; it cannot open new risk until the operator presses **Start**;
 4. the themed city HTTP server starts on localhost;
 5. the Arcane Trading City opens in the default browser with **Start**, **Stop**, and **Emergency** controls;
-6. **Stop** blocks new entries and leaves existing PAPER positions in a **STOPPING** drain state until they close through their normal risk-reducing path;
-7. **Emergency** cancels pending PAPER orders and immediately attempts to flatten every closable PAPER position;
-8. a small Windows control window remains available to reopen or stop the Company process.
+6. **Stop** blocks new entries and leaves existing confirmed positions in a **STOPPING** drain state until they close through their normal risk-reducing path;
+7. **Emergency** cancels pending PAPER entries immediately; in REAL · MANUAL it creates close proposals that still require your per-order confirmation before any production order is sent;
+8. the execution-mode selector is available only in the local city UI and always resets to PAPER on restart;
+9. a small Windows control window remains available to reopen or stop the Company process.
 
 The default city address is:
 
 ```text
 http://127.0.0.1:5191
 ```
+
+
+### Execution Gate
+
+Click the execution-mode rune in the Arcane Trading City to open the local Execution Gate.
+
+- **PAPER** — autonomous simulation using the internal PAPER broker.
+- **BINANCE TESTNET** — autonomous Spot Testnet submission after you manually select TESTNET mode.
+- **REAL · MANUAL** — agents may create Binance production proposals, but every order stays in `prepared` state until you click **Confirm Order** for that exact `intent_id`.
+- Selecting REAL requires typing `ENABLE REAL`, the Company must be STOPPED, and the internal execution ledger must be flat.
+- A production confirmation is scoped to one exact intent via `CONFIRM <intent_id>`; it cannot authorize a different order.
+- Restarting Trade Company always returns execution mode to PAPER.
+- The LLM/Company Cell has no command for changing execution mode or confirming a production order.
 
 ## Default news intelligence
 
