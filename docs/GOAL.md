@@ -14,7 +14,7 @@ C.A.O.S reaches the first executable goal when all items below are true:
 - Paper broker executes simulated orders after risk validation.
 - Supervisor measures expected-vs-real divergence.
 - Local dashboard exposes desk and safety state on `127.0.0.1`.
-- Public Bybit candles can be ingested without credentials.
+- Public Binance Spot candles can be ingested without credentials.
 - Strategy candidates can be scored into a portfolio.
 - A deterministic paper daemon can refresh data and execute approved strategy state changes.
 - QUANT, MACRO, NEWS, RISK, COMPLIANCE and SUPERVISOR exist as logical agents with individual tool boundaries.
