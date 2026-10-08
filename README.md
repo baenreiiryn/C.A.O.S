@@ -37,7 +37,7 @@ The LLM chooses what to inspect or run. Python computes the numbers and enforces
 
 For normal Windows use, Python is not required. The Windows build bundles its own runtime and installs:
 
-- `CAOS-Trade-Company.exe` — graphical launcher, first-run wizard, autonomous PAPER daemon and Arcane Trading City;
+- `CAOS-Trade-Company.exe` — graphical launcher, first-run wizard, manually started PAPER operations loop and Arcane Trading City;
 - `caos.exe` — administrative CLI using the same installed Company state;
 - `ollama\` — the official portable Ollama runtime used only by the Trade Company managed LLM service;
 - Start Menu shortcuts, with optional desktop shortcut and optional sign-in autostart.
