@@ -73,6 +73,99 @@ def make_runtime(store):
     return caos
 
 
+class FakeSettingsService:
+    def __init__(self):
+        self.saved_llm = None
+
+    def get_settings(self):
+        return {
+            "version": "settings/v1",
+            "llm": {
+                "provider": "ollama",
+                "model": "qwen3:8b",
+                "base_url": "http://127.0.0.1:11434",
+                "api_key_configured": False,
+            },
+            "brokers": {
+                "supported": {
+                    "bybit": {
+                        "label": "Bybit",
+                        "environments": ["testnet"],
+                        "activatable": True,
+                    }
+                },
+                "profiles": [
+                    {
+                        "id": "bybit-testnet",
+                        "label": "Bybit TESTNET",
+                        "provider": "bybit",
+                        "environment": "testnet",
+                        "api_key_configured": True,
+                        "api_secret_configured": True,
+                    }
+                ],
+                "active_profile_id": "bybit-testnet",
+            },
+        }
+
+    def discover_models(self, **kwargs):
+        return {
+            "provider": kwargs["provider"],
+            "models": ["qwen3:8b", "qwen3:14b"],
+        }
+
+    def test_llm(self, **kwargs):
+        return {
+            "ok": True,
+            "message": "Connection succeeded.",
+            "models": [kwargs["model"]],
+        }
+
+    def save_llm(self, **kwargs):
+        self.saved_llm = dict(kwargs)
+        return {
+            "provider": kwargs["provider"],
+            "model": kwargs["model"],
+            "base_url": kwargs["base_url"],
+            "api_key_configured": bool(
+                kwargs.get("api_key")
+            ),
+        }
+
+    def save_broker_profile(self, **kwargs):
+        return {
+            "id": kwargs.get("profile_id")
+            or "bybit-testnet",
+            "label": kwargs["label"],
+            "provider": kwargs["provider"],
+            "environment": kwargs["environment"],
+            "api_key_configured": bool(
+                kwargs.get("api_key")
+            ),
+            "api_secret_configured": bool(
+                kwargs.get("api_secret")
+            ),
+        }
+
+    def test_broker(self, profile_id, **kwargs):
+        return {
+            "ok": True,
+            "profile_id": profile_id,
+            "message": "Broker credentials authenticated.",
+        }
+
+    def set_active_broker(self, profile_id):
+        return {
+            "active_profile_id": profile_id,
+        }
+
+    def delete_broker_profile(self, profile_id):
+        return {
+            "active_profile_id": None,
+            "profiles": [],
+        }
+
+
 class StandaloneConfigTests(unittest.TestCase):
     def test_parse_scan_targets(self):
         targets = parse_scan_targets(
@@ -420,11 +513,13 @@ class CompanyDashboardTests(unittest.TestCase):
                 parse_scan_targets("BTCUSDT:long:momentum"),
             )
             control = CompanyControlPort(company)
+            settings_service = FakeSettingsService()
             server = serve_company(
                 control,
                 host="127.0.0.1",
                 port=0,
                 open_browser=False,
+                settings_service=settings_service,
             )
             thread = threading.Thread(
                 target=server.serve_forever,
@@ -474,6 +569,53 @@ class CompanyDashboardTests(unittest.TestCase):
                     city["city"]["subtitle"],
                     "Arcane Trading City",
                 )
+
+                with urllib.request.urlopen(
+                    base + "/api/settings",
+                    timeout=2,
+                ) as response:
+                    settings = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertTrue(settings["enabled"])
+                self.assertEqual(
+                    settings["llm"]["provider"],
+                    "ollama",
+                )
+                self.assertNotIn(
+                    "api_secret",
+                    json.dumps(settings),
+                )
+
+                save_llm = urllib.request.Request(
+                    base + "/api/settings/llm/save",
+                    data=json.dumps(
+                        {
+                            "provider": "static",
+                            "model": "static",
+                            "base_url": "",
+                        }
+                    ).encode(),
+                    headers={
+                        "Content-Type": "application/json"
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(
+                    save_llm,
+                    timeout=2,
+                ) as response:
+                    saved_llm = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertEqual(
+                    saved_llm["provider"],
+                    "static",
+                )
+                self.assertEqual(
+                    settings_service.saved_llm["model"],
+                    "static",
+                )
                 self.assertEqual(
                     len(city["locations"]),
                     12,
@@ -491,6 +633,8 @@ class CompanyDashboardTests(unittest.TestCase):
                 self.assertIn("Grand Trading Guild", html)
                 self.assertIn("Arcane Nexus", html)
                 self.assertIn("Execution Reliability", html)
+                self.assertIn("settingsBtn", html)
+                self.assertIn("Broker Embassy", html)
                 self.assertIn("guildAdventurers", html)
                 self.assertNotIn('data-tab="overview"', html)
                 self.assertNotIn("King Drizzt", html)
