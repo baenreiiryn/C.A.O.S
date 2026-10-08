@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import time
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -11,6 +12,10 @@ from typing import Any, Callable
 from .compliance import ComplianceEngine
 from .domain import Mode
 from .execution_fabric import ExecutionPlan
+from .execution_reliability import (
+    DurableExecutionJournal,
+    ExecutionReliabilityError,
+)
 
 
 class TestnetError(RuntimeError):
@@ -76,6 +81,7 @@ class BybitTestnetClient:
         base_url: str = TESTNET_BASE_URL,
         time_ms: Callable[[], int] | None = None,
         transport: Callable[[str, bytes, dict[str, str]], dict] | None = None,
+        query_transport: Callable[[str, dict[str, str]], dict] | None = None,
     ):
         if base_url.rstrip("/") != self.TESTNET_BASE_URL:
             raise TestnetError("production_or_unknown_bybit_host_forbidden")
@@ -89,6 +95,9 @@ class BybitTestnetClient:
         self.base_url = self.TESTNET_BASE_URL
         self._time_ms = time_ms or (lambda: int(time.time() * 1000))
         self._transport = transport or self._urllib_transport
+        self._query_transport = (
+            query_transport or self._urllib_query_transport
+        )
 
     @staticmethod
     def _canonical_json(payload: dict[str, Any]) -> str:
@@ -127,6 +136,57 @@ class BybitTestnetClient:
         with urllib.request.urlopen(req, timeout=15.0) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
+    @staticmethod
+    def _urllib_query_transport(
+        url: str,
+        headers: dict[str, str],
+    ) -> dict:
+        req = urllib.request.Request(
+            url,
+            headers=headers,
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=15.0) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    @staticmethod
+    def _canonical_query(
+        params: dict[str, Any],
+    ) -> str:
+        items = [
+            (key, str(value))
+            for key, value in sorted(params.items())
+            if value is not None
+        ]
+        return urllib.parse.urlencode(items)
+
+    def _get(
+        self,
+        path: str,
+        params: dict[str, Any],
+    ) -> dict:
+        timestamp = self._time_ms()
+        query = self._canonical_query(params)
+        headers = {
+            "Content-Type": "application/json",
+            "X-BAPI-API-KEY": self.api_key,
+            "X-BAPI-TIMESTAMP": str(timestamp),
+            "X-BAPI-RECV-WINDOW": str(self.recv_window),
+            "X-BAPI-SIGN": self.signature(timestamp, query),
+        }
+        url = self.base_url + path
+        if query:
+            url += "?" + query
+        result = self._query_transport(
+            url,
+            headers,
+        )
+        if int(result.get("retCode", -1)) != 0:
+            raise TestnetError(
+                f"bybit_testnet_error:{result.get('retCode')}:{result.get('retMsg')}"
+            )
+        return result
+
     def _post(self, path: str, payload: dict[str, Any]) -> dict:
         timestamp = self._time_ms()
         body = self._canonical_json(payload)
@@ -147,6 +207,65 @@ class BybitTestnetClient:
                 f"bybit_testnet_error:{result.get('retCode')}:{result.get('retMsg')}"
             )
         return result
+
+    @staticmethod
+    def _normalize_order(row: dict[str, Any]) -> dict:
+        reduce_only = row.get("reduceOnly", False)
+        if isinstance(reduce_only, str):
+            reduce_only = reduce_only.lower() == "true"
+        return {
+            "order_id": str(row.get("orderId", "")),
+            "order_link_id": str(
+                row.get("orderLinkId", "")
+            ),
+            "symbol": str(row.get("symbol", "")).upper(),
+            "side": str(row.get("side", "")),
+            "order_type": str(row.get("orderType", "")),
+            "qty": str(row.get("qty", "")),
+            "reduce_only": bool(reduce_only),
+            "order_status": str(
+                row.get("orderStatus", "")
+            ),
+            "cum_exec_qty": str(
+                row.get("cumExecQty", "")
+            ),
+            "avg_price": str(
+                row.get("avgPrice", "")
+            ),
+            "raw": dict(row),
+        }
+
+    def find_order(
+        self,
+        *,
+        category: str,
+        symbol: str,
+        order_link_id: str,
+    ) -> dict | None:
+        if category not in {"linear", "inverse", "spot"}:
+            raise ValueError("unsupported category")
+        if not symbol or not order_link_id:
+            raise ValueError(
+                "symbol_and_order_link_id_required"
+            )
+        params = {
+            "category": category,
+            "symbol": symbol.upper(),
+            "orderLinkId": order_link_id,
+        }
+        for path in (
+            "/v5/order/realtime",
+            "/v5/order/history",
+        ):
+            result = self._get(path, params)
+            rows = (
+                result.get("result", {}).get("list", [])
+                or []
+            )
+            for row in rows:
+                if str(row.get("orderLinkId", "")) == order_link_id:
+                    return self._normalize_order(row)
+        return None
 
     def place_order(
         self,
@@ -235,3 +354,121 @@ class HumanTestnetExecutor:
             quantity_decimals=quantity_decimals,
         )
         return self.client.place_order(**payload)
+
+
+
+class ReliableHumanTestnetExecutor:
+    """Durable, human-gated ExecutionPlan submission for TESTNET.
+
+    Prepared intents contain no credentials. Ambiguous submissions are never
+    automatically resent; they must be reconciled by orderLinkId first.
+    """
+
+    def __init__(
+        self,
+        compliance: ComplianceEngine,
+        client: BybitTestnetClient,
+        journal: DurableExecutionJournal,
+    ):
+        self.compliance = compliance
+        self.client = client
+        self.journal = journal
+
+    def prepare_plan(
+        self,
+        plan: ExecutionPlan,
+        *,
+        category: str = "linear",
+        order_type: str = "Market",
+        quantity_decimals: int = 8,
+    ) -> dict:
+        payload = execution_plan_to_bybit_order(
+            plan,
+            category=category,
+            order_type=order_type,
+            quantity_decimals=quantity_decimals,
+        )
+        return self.journal.prepare(
+            plan,
+            payload,
+        )
+
+    def submit_plan(
+        self,
+        plan: ExecutionPlan,
+        *,
+        category: str = "linear",
+        order_type: str = "Market",
+        quantity_decimals: int = 8,
+    ) -> dict:
+        self.compliance.allow_mode(Mode.TESTNET)
+        row = self.prepare_plan(
+            plan,
+            category=category,
+            order_type=order_type,
+            quantity_decimals=quantity_decimals,
+        )
+        if row["status"] in {
+            "acknowledged",
+            "reconciled",
+        }:
+            return row
+        try:
+            claimed = self.journal.claim_for_submit(
+                row["intent_id"]
+            )
+        except ExecutionReliabilityError as exc:
+            raise TestnetError(str(exc)) from exc
+        if claimed["status"] in {
+            "acknowledged",
+            "reconciled",
+        }:
+            return claimed
+
+        try:
+            ack = self.client.place_order(
+                **claimed["payload"]
+            )
+        except Exception as exc:
+            self.journal.mark_uncertain(
+                claimed["intent_id"],
+                error=(
+                    f"{type(exc).__name__}: {exc}"
+                ),
+            )
+            raise
+
+        return self.journal.mark_acknowledged(
+            claimed["intent_id"],
+            broker_order_id=ack.order_id,
+            broker_order_link_id=ack.order_link_id,
+            raw=ack.raw,
+        )
+
+    def reconcile_intent(
+        self,
+        intent_id: str,
+    ) -> dict:
+        row = self.journal.get(intent_id)
+        payload = row["payload"]
+        broker_order = self.client.find_order(
+            category=str(payload["category"]),
+            symbol=str(payload["symbol"]),
+            order_link_id=str(
+                payload["order_link_id"]
+            ),
+        )
+        return self.journal.reconcile(
+            intent_id,
+            broker_order,
+        ).to_dict()
+
+    def recover(self) -> list[dict]:
+        results = []
+        for row in self.journal.recovery_candidates():
+            results.append(
+                self.reconcile_intent(
+                    row["intent_id"]
+                )
+            )
+        return results
