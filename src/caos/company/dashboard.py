@@ -618,6 +618,12 @@ def serve_company(
             if path == "/api/company/experiments":
                 self._json(200, control.list_experiments())
                 return
+            if path == "/api/company/reliability":
+                self._json(
+                    200,
+                    control.get_execution_reliability(),
+                )
+                return
             if path == "/api/company/rollout":
                 self._json(200, control.get_strategy_rollouts())
                 return
