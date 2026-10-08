@@ -398,6 +398,7 @@ def initialize_or_restore(config: dict):
             opportunity_ttl_ms=config["opportunity_ttl_ms"],
             every_seconds=config["every_seconds"],
         )
+        company.stop_operations()
         return caos, company, targets, runtime, True
 
     company, restored = build_standalone_company(
@@ -423,6 +424,7 @@ def initialize_or_restore(config: dict):
         )
     else:
         targets = targets_from_runtime_config(runtime)
+    company.stop_operations()
     return caos, company, targets, runtime, False
 
 
@@ -605,7 +607,7 @@ def _wizard(config: dict) -> dict | None:
         outer,
         text=(
             "Configure the standalone Trade Company. "
-            "LIVE trading remains unavailable."
+            "Operations open stopped and must be started manually."
         ),
         style="CAOS.TLabel",
     ).pack(anchor="w", pady=(4, 18))
