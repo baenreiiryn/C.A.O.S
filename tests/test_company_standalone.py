@@ -176,6 +176,41 @@ class FantasyCityPresentationTests(unittest.TestCase):
             )
             store.close()
 
+    def test_mapper_emergency_state_seals_the_city(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "company.db")
+            caos = make_runtime(store)
+            policy = build_policy(
+                initial_company_capital=10,
+                trader_initial_bucket=10,
+                trader_stop_floor=3,
+                default_trader_max_exposure_pct=20,
+                operational_trader_cap=6,
+                company_max_drawdown_pct=30,
+            )
+            company = TradeCompany(
+                CAOSAdapter(caos),
+                policy,
+                store=store,
+            )
+            initialize_company(
+                company,
+                parse_scan_targets("BTCUSDT:long:momentum"),
+            )
+            company.emergency_stop()
+            city = CityPresentationMapper().build(
+                company.status(),
+                improvements=company.improvement_proposals(),
+                recent_events=store.recent_events(20),
+            )
+            self.assertEqual(city["city"]["mood"], "emergency")
+            self.assertTrue(city["city"]["emergency"])
+            self.assertEqual(
+                city["locations"]["risk"]["state"],
+                "emergency",
+            )
+            store.close()
+
 
 class CompanyDashboardTests(unittest.TestCase):
     def test_dashboard_reads_only_safe_company_surface(self):
@@ -257,7 +292,9 @@ class CompanyDashboardTests(unittest.TestCase):
                 self.assertIn("Whispering Tankard", html)
                 self.assertIn("Grand Trading Guild", html)
                 self.assertIn("Arcane Nexus", html)
+                self.assertIn("guildAdventurers", html)
                 self.assertNotIn('data-tab="overview"', html)
+                self.assertNotIn("King Drizzt", html)
 
                 exposure_request = urllib.request.Request(
                     base + "/api/company/traders/A/exposure",
