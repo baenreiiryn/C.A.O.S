@@ -115,6 +115,77 @@ class TradeCompany:
     def set_resume_guard(self, guard) -> None:
         self._resume_guard = guard
 
+    def _persistent_external_resume_block_reason(
+        self,
+    ) -> str | None:
+        if self.store is None:
+            return None
+        raw = self.store.get_json(
+            "runtime_execution_proposals_v1",
+            {},
+        )
+        if not isinstance(raw, dict):
+            return None
+        net: dict[str, float] = {}
+        for intent_id, meta in raw.items():
+            if (
+                not isinstance(meta, dict)
+                or meta.get("environment")
+                != "production-manual"
+            ):
+                continue
+            row = self.store.get_execution_intent(
+                str(intent_id)
+            )
+            if row is None:
+                continue
+            if (
+                row.get("status")
+                in {
+                    "submitting",
+                    "acknowledged",
+                    "uncertain",
+                }
+                and not meta.get("mirrored")
+            ):
+                return (
+                    "unresolved_real_execution_requires_"
+                    "real_manual_runtime"
+                )
+            if not meta.get("mirrored"):
+                continue
+            quantity = float(
+                meta.get("fill_quantity") or 0.0
+            )
+            trader_id = str(
+                meta.get("trader_id", "")
+            )
+            if not trader_id or quantity <= 0:
+                continue
+            side = str(
+                row.get("payload", {}).get(
+                    "side",
+                    "",
+                )
+            ).upper()
+            delta = (
+                quantity
+                if side == "BUY"
+                else -quantity
+            )
+            net[trader_id] = (
+                net.get(trader_id, 0.0) + delta
+            )
+        if any(
+            quantity > 1e-10
+            for quantity in net.values()
+        ):
+            return (
+                "real_positions_require_"
+                "real_manual_runtime"
+            )
+        return None
+
     def _save(self) -> None:
         if self.store is not None:
             CompanyCheckpoint.save(self, self.store)
@@ -513,8 +584,12 @@ class TradeCompany:
     def resume_operations(self) -> dict:
         if self._resume_guard is not None:
             reason = self._resume_guard()
-            if reason:
-                raise TradeCompanyError(str(reason))
+        else:
+            reason = (
+                self._persistent_external_resume_block_reason()
+            )
+        if reason:
+            raise TradeCompanyError(str(reason))
         if self.risk.state.kill_switch:
             raise TradeCompanyError(
                 "company_kill_switch_active_cannot_resume"
