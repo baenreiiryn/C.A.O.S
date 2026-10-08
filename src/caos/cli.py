@@ -27,6 +27,7 @@ from .company.standalone import (
 )
 from .desks import DeskCouncil
 from .domain import Mandate, MarketBar
+from .execution_reliability import DurableExecutionJournal
 from .experts.registry import build_experts, recommended_stack
 from .news import NewsAnalyzer, RSSNewsClient
 from .llm import (
@@ -36,7 +37,11 @@ from .llm import (
 )
 from .orchestrator import CAOS
 from .store import Store
-from .testnet import BybitTestnetClient, HumanTestnetExecutor
+from .testnet import (
+    BybitTestnetClient,
+    HumanTestnetExecutor,
+    ReliableHumanTestnetExecutor,
+)
 
 
 def synthetic_bars(
@@ -232,6 +237,12 @@ def parser() -> argparse.ArgumentParser:
         ],
     )
     desk.add_argument("question", nargs="+")
+    intents = sub.add_parser("execution-intents")
+    intents.add_argument("--limit", type=int, default=100)
+
+    trecover = sub.add_parser("testnet-recover")
+    trecover.add_argument("--intent-id", default=None)
+
     tnet = sub.add_parser("testnet-order")
     tnet.add_argument("--confirm", required=True)
     tnet.add_argument("--category", choices=["linear", "inverse", "spot"], default="linear")
@@ -820,6 +831,48 @@ def main() -> None:
                     c.status(),
                     " ".join(args.question),
                 ),
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    elif args.cmd == "execution-intents":
+        journal = DurableExecutionJournal(c.store)
+        print(
+            json.dumps(
+                {
+                    "summary": journal.summary(),
+                    "intents": journal.list(
+                        limit=args.limit
+                    ),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    elif args.cmd == "testnet-recover":
+        api_key = os.getenv("BYBIT_TESTNET_API_KEY", "")
+        api_secret = os.getenv("BYBIT_TESTNET_API_SECRET", "")
+        journal = DurableExecutionJournal(c.store)
+        executor = ReliableHumanTestnetExecutor(
+            c.compliance,
+            BybitTestnetClient(
+                api_key=api_key,
+                api_secret=api_secret,
+            ),
+            journal,
+        )
+        result = (
+            [executor.reconcile_intent(args.intent_id)]
+            if args.intent_id
+            else executor.recover()
+        )
+        print(
+            json.dumps(
+                {
+                    "reconciled": result,
+                    "summary": journal.summary(),
+                    "environment": "BYBIT_TESTNET_ONLY",
+                },
                 indent=2,
                 ensure_ascii=False,
             )
