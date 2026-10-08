@@ -100,8 +100,19 @@ class CompanyCellProtocolTests(unittest.TestCase):
                 health["state"],
                 {"healthy", "attention", "critical", "emergency"},
             )
-            self.assertIn("company_equity", metrics["metrics"])
+            self.assertIn("company_equity", metrics["values"])
+            self.assertTrue(
+                any(
+                    item["id"] == "company_equity"
+                    and item["unit"] == "USD"
+                    for item in metrics["items"]
+                )
+            )
             self.assertIsInstance(alerts, list)
+            if alerts:
+                self.assertIn("code", alerts[0])
+                self.assertIn("message", alerts[0])
+                self.assertIn("data", alerts[0])
             self.assertEqual(report["cell_id"], "trade-company")
             self.assertIn("headline", report)
             self.assertIn("highlights", report)
