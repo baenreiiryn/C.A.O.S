@@ -102,7 +102,16 @@ def load_launcher_config(
     payload = json.loads(path.read_text(encoding="utf-8"))
     if int(payload.get("version", 0)) != WINDOWS_APP_VERSION:
         raise WindowsAppError("unsupported_launcher_config")
-    return validate_launcher_config(payload, data_dir=data_dir)
+    validated = validate_launcher_config(
+        payload,
+        data_dir=data_dir,
+    )
+    if validated != payload:
+        save_launcher_config(
+            validated,
+            data_dir=data_dir,
+        )
+    return validated
 
 
 def save_launcher_config(
