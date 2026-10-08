@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "caos-trading-lab"
-version = "0.5.0"
+version = "0.7.0"
 description = "C.A.O.S — local-LLM orchestration for a clean-room quantitative trading lab"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -49,6 +49,7 @@ experts = [
 
 [project.scripts]
 caos = "caos.cli:main"
+caos-company = "caos.windows_app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
