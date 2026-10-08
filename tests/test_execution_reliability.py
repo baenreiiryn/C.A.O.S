@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from caos.compliance import ComplianceEngine
+from caos.compliance import ComplianceEngine, ComplianceViolation
 from caos.execution_fabric import (
     decision_from_signal,
     plan_execution,
@@ -135,6 +135,84 @@ class ReliableTestnetExecutorTests(unittest.TestCase):
             ),
             journal,
         )
+
+    def test_reliable_submit_still_requires_human_arm(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "reliability.db")
+            calls = {"post": 0}
+
+            def post(url, data, headers):
+                del url, data, headers
+                calls["post"] += 1
+                return {
+                    "retCode": 0,
+                    "result": {
+                        "orderId": "should-not-submit",
+                        "orderLinkId": "should-not-submit",
+                    },
+                }
+
+            compliance = ComplianceEngine()
+            client = BybitTestnetClient(
+                "key",
+                "secret",
+                transport=post,
+            )
+            journal = DurableExecutionJournal(store)
+            executor = ReliableHumanTestnetExecutor(
+                compliance,
+                client,
+                journal,
+            )
+            with self.assertRaises(ComplianceViolation):
+                executor.submit_plan(sample_plan())
+            self.assertEqual(calls["post"], 0)
+            self.assertEqual(journal.list(), [])
+            store.close()
+
+    def test_reconciliation_is_read_only_without_testnet_arm(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "reliability.db")
+            plan = sample_plan()
+            journal = DurableExecutionJournal(store)
+            row = journal.prepare(
+                plan,
+                execution_plan_to_bybit_order(plan),
+            )
+            journal.claim_for_submit(row["intent_id"])
+            journal.mark_uncertain(
+                row["intent_id"],
+                error="restart_recovery",
+            )
+
+            def query(url, headers):
+                del url, headers
+                return {
+                    "retCode": 0,
+                    "result": {
+                        "list": [broker_row(plan)]
+                    },
+                }
+
+            client = BybitTestnetClient(
+                "key",
+                "secret",
+                transport=lambda *args: {
+                    "retCode": 0,
+                    "result": {},
+                },
+                query_transport=query,
+            )
+            executor = ReliableHumanTestnetExecutor(
+                ComplianceEngine(),
+                client,
+                journal,
+            )
+            result = executor.reconcile_intent(
+                row["intent_id"]
+            )
+            self.assertEqual(result["status"], "reconciled")
+            store.close()
 
     def test_successful_submission_is_idempotent_after_restart(self):
         with tempfile.TemporaryDirectory() as d:
