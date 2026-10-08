@@ -380,6 +380,18 @@ def port_available(port: int) -> bool:
 class CompanyRuntimeHost:
     def __init__(self, config: dict):
         self.config = validate_launcher_config(config)
+        self.vault = (
+            WindowsCredentialVault()
+            if os.name == "nt"
+            else MemoryCredentialVault()
+        )
+        if self.config.get("provider") == "openai-compatible":
+            stored_llm_key = self.vault.get(
+                "llm:openai-compatible:api_key"
+            )
+            if stored_llm_key:
+                os.environ["CAOS_API_KEY"] = stored_llm_key
+
         (
             self.caos,
             self.company,
@@ -395,17 +407,12 @@ class CompanyRuntimeHost:
             self.config.update(saved)
             return saved
 
-        vault = (
-            WindowsCredentialVault()
-            if os.name == "nt"
-            else MemoryCredentialVault()
-        )
         self.settings = RuntimeSettingsService(
             self.caos,
             self.company,
             self.config,
             persist_runtime_config,
-            vault,
+            self.vault,
         )
         self.daemon = build_daemon(
             self.company,
