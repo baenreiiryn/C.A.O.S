@@ -36,6 +36,13 @@ class CompanyControlPort:
             for experiment in self.company.training.experiments.values()
         ]
 
+    def get_recent_events(self, limit: int = 30) -> list[dict]:
+        if self.company.store is None:
+            return []
+        return self.company.store.recent_events(
+            max(1, min(int(limit), 100))
+        )
+
     def pause_trader(self, trader_id: str) -> dict:
         return self.company.pause_trader(trader_id)
 
