@@ -224,11 +224,46 @@ class CompanyDaemon:
                 continue
 
             try:
+                strategy_assignable = (
+                    True
+                    if not trader.strategy_id
+                    else self.company.rollout.is_strategy_assignable(
+                        trader.market,
+                        trader.strategy_id,
+                    )
+                )
                 result = self.company.paper.cycle_trader(
                     trader.id,
-                    allow_new_risk=allow_new_risk,
+                    allow_new_risk=(
+                        allow_new_risk
+                        and strategy_assignable
+                    ),
                 )
                 actions.append(result.to_dict())
+
+                if (
+                    not strategy_assignable
+                    and self.company.paper.positions_flat(
+                        trader.id
+                    )
+                ):
+                    released = self.company.market.release(
+                        trader.id
+                    )
+                    actions.append(
+                        {
+                            "trader_id": trader.id,
+                            "action": (
+                                "release_inactive_strategy"
+                            ),
+                            "assignment": (
+                                released.to_dict()
+                                if released is not None
+                                else None
+                            ),
+                        }
+                    )
+                    continue
 
                 marked = self.company.paper.marked_equity(trader.id)
                 if marked < self.company.policy.trader_stop_floor:
