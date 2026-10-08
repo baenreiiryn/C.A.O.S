@@ -235,6 +235,29 @@ class BybitTestnetClient:
             "raw": dict(row),
         }
 
+    def get_api_key_info(self) -> dict:
+        """Authenticate the configured TESTNET API key and return safe metadata."""
+        result = self._get(
+            "/v5/user/query-api",
+            {},
+        )
+        row = result.get("result", {}) or {}
+        return {
+            "read_only": bool(
+                int(row.get("readOnly", 0))
+            ),
+            "permissions": dict(
+                row.get("permissions", {}) or {}
+            ),
+            "note": str(row.get("note", "")),
+            "kyc_level": str(
+                row.get("kycLevel", "")
+            ),
+            "kyc_region": str(
+                row.get("kycRegion", "")
+            ),
+        }
+
     def find_order(
         self,
         *,
