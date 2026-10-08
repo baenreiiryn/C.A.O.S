@@ -49,6 +49,12 @@ class TradeCompanyCell:
         "execution_reconciliation_required": (
             "One or more external execution intents require broker reconciliation."
         ),
+        "news_risk_ward": (
+            "News intelligence is restricting new risk in one or more markets."
+        ),
+        "news_feed_error": (
+            "One or more configured news feeds could not be read."
+        ),
     }
 
     def __init__(
@@ -77,6 +83,7 @@ class TradeCompanyCell:
                 "domain.trade.research",
                 "domain.trade.rollout",
                 "domain.trade.execution_reliability",
+                "domain.trade.news_intelligence",
             ),
             commands=self.SAFE_COMMANDS,
             ui={
@@ -107,6 +114,12 @@ class TradeCompanyCell:
                 0,
             )
             > 0
+        ):
+            return "attention"
+        news = status.get("news_intelligence", {})
+        if any(
+            bool(row.get("block_new_risk"))
+            for row in news.get("contexts", {}).values()
         ):
             return "attention"
         if audit.get("alerts"):
@@ -203,6 +216,18 @@ class TradeCompanyCell:
             "execution_reliability",
             {},
         )
+        news_intelligence = status.get(
+            "news_intelligence",
+            {},
+        )
+        news_contexts = news_intelligence.get(
+            "contexts",
+            {},
+        )
+        news_blocked = sum(
+            bool(row.get("block_new_risk"))
+            for row in news_contexts.values()
+        )
         values = {
             "company_equity": status.get(
                 "marked_company_equity",
@@ -263,6 +288,17 @@ class TradeCompanyCell:
             "execution_recovery_required": reliability.get(
                 "recovery_required",
                 0,
+            ),
+            "news_feeds": news_intelligence.get(
+                "feeds",
+                0,
+            ),
+            "news_blocked_markets": news_blocked,
+            "news_feed_errors": len(
+                news_intelligence.get(
+                    "errors",
+                    [],
+                )
             ),
         }
         descriptors = [
@@ -385,6 +421,27 @@ class TradeCompanyCell:
                 "count",
                 "execution",
             ).to_dict(),
+            CellMetric(
+                "news_feeds",
+                "News Sources",
+                values["news_feeds"],
+                "count",
+                "intelligence",
+            ).to_dict(),
+            CellMetric(
+                "news_blocked_markets",
+                "Markets Under News Ward",
+                values["news_blocked_markets"],
+                "count",
+                "risk",
+            ).to_dict(),
+            CellMetric(
+                "news_feed_errors",
+                "News Feed Errors",
+                values["news_feed_errors"],
+                "count",
+                "intelligence",
+            ).to_dict(),
         ]
         return {
             "cell_id": self.manifest.cell_id,
@@ -410,6 +467,34 @@ class TradeCompanyCell:
                     "kind": "execution_reconciliation_required",
                     "severity": "high",
                     "count": reliability_recovery,
+                }
+            )
+        news = self._company_status().get(
+            "news_intelligence",
+            {},
+        )
+        blocked_symbols = [
+            symbol
+            for symbol, row in news.get(
+                "contexts",
+                {},
+            ).items()
+            if row.get("block_new_risk")
+        ]
+        if blocked_symbols:
+            alerts.append(
+                {
+                    "kind": "news_risk_ward",
+                    "severity": "high",
+                    "symbols": blocked_symbols,
+                }
+            )
+        if news.get("errors"):
+            alerts.append(
+                {
+                    "kind": "news_feed_error",
+                    "severity": "medium",
+                    "count": len(news["errors"]),
                 }
             )
         severity_map = {
@@ -469,6 +554,12 @@ class TradeCompanyCell:
         alerts = self.get_alerts()
         recent_events = self.get_recent_events(5)
         highlights = [
+            (
+                f"News intelligence: "
+                f"{metrics['news_feeds']} source(s), "
+                f"{metrics['news_blocked_markets']} market(s) under ward, "
+                f"{metrics['news_feed_errors']} feed error(s)."
+            ),
             (
                 f"Execution reliability: "
                 f"{metrics['execution_intents']} intent(s), "
