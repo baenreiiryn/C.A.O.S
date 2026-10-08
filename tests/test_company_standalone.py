@@ -352,7 +352,7 @@ class FantasyCityPresentationTests(unittest.TestCase):
             )
             self.assertEqual(
                 city["locations"]["tavern"]["technical_name"],
-                "News / Sentiment",
+                "News / Sentiment / NewsIntelligence",
             )
             self.assertEqual(
                 city["locations"]["risk"]["technical_name"],
