@@ -274,6 +274,55 @@ class ReliableTestnetExecutorTests(unittest.TestCase):
             self.assertEqual(calls["post"], 1)
             store.close()
 
+    def test_confirmed_missing_intent_can_be_abandoned_without_retry(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "reliability.db")
+            calls = {"post": 0}
+
+            def post(url, data, headers):
+                del url, data, headers
+                calls["post"] += 1
+                raise TimeoutError("ambiguous")
+
+            def query(url, headers):
+                del url, headers
+                return {
+                    "retCode": 0,
+                    "result": {"list": []},
+                }
+
+            executor, journal = self.make_executor(
+                store,
+                post_transport=post,
+                query_transport=query,
+            )
+            plan = sample_plan()
+            with self.assertRaises(TimeoutError):
+                executor.submit_plan(plan)
+            intent = journal.list()[0]
+            result = executor.reconcile_intent(
+                intent["intent_id"]
+            )
+            self.assertEqual(
+                result["reconciliation_status"],
+                "not_found",
+            )
+            abandoned = journal.abandon_not_found(
+                intent["intent_id"]
+            )
+            self.assertEqual(
+                abandoned["status"],
+                "abandoned",
+            )
+            self.assertEqual(
+                journal.summary()["recovery_required"],
+                0,
+            )
+            with self.assertRaises(TestnetError):
+                executor.submit_plan(plan)
+            self.assertEqual(calls["post"], 1)
+            store.close()
+
     def test_broker_payload_mismatch_fails_closed(self):
         with tempfile.TemporaryDirectory() as d:
             store = Store(Path(d) / "reliability.db")
