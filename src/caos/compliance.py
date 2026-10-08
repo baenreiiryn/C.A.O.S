@@ -41,6 +41,18 @@ class ComplianceEngine:
     def human_disarm_live(self) -> None:
         self.state.live_armed = False
 
+    def confirm_live_order(
+        self,
+        intent_id: str,
+        *,
+        confirmation: str,
+    ) -> None:
+        expected = f"CONFIRM {intent_id}"
+        if confirmation != expected:
+            raise ComplianceViolation(
+                "explicit_per_order_confirmation_required"
+            )
+
     def allow_mode(self, mode: Mode) -> None:
         if mode is Mode.TESTNET and not self.state.testnet_armed:
             raise ComplianceViolation("testnet_not_armed")
