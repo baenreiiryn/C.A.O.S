@@ -25,6 +25,8 @@ jobs:
           caos --provider static --state-db /tmp/caos-company-smoke.db company cell-manifest
           caos --provider static --state-db /tmp/caos-company-smoke.db company cell-report
           caos --provider static --state-db /tmp/caos-company-smoke.db company execution-plans
+          caos --provider static --state-db /tmp/caos-company-smoke.db company reliability
+          caos --provider static --state-db /tmp/caos-company-smoke.db execution-intents --limit 5
           caos --provider static --state-db /tmp/caos-company-smoke.db company research
           caos --provider static --state-db /tmp/caos-company-smoke.db company rollout
           caos --provider static --state-db /tmp/caos-company-smoke.db company rollout-sync
