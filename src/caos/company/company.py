@@ -499,6 +499,21 @@ class TradeCompany:
         self._save()
         return hypothesis.to_dict()
 
+    def seed_research_from_improvements(
+        self,
+        *,
+        symbol: str,
+        family: str,
+    ) -> list[dict]:
+        rows = self.research.seed_from_improvement_proposals(
+            self.improvement_proposals(),
+            symbol=symbol,
+            family=family,
+        )
+        if rows:
+            self._save()
+        return [row.to_dict() for row in rows]
+
     def run_research_cycle(
         self,
         hypothesis_id: str,
@@ -510,6 +525,17 @@ class TradeCompany:
     ) -> dict:
         hypothesis = self.research.hypotheses[hypothesis_id]
         bars = self.engine.bars(hypothesis.symbol)
+        if not bars:
+            try:
+                self.engine.fetch_market(
+                    hypothesis.symbol,
+                    limit=500,
+                )
+            except Exception as exc:
+                raise TradeCompanyError(
+                    "research_market_data_required"
+                ) from exc
+            bars = self.engine.bars(hypothesis.symbol)
         if not bars:
             raise TradeCompanyError("research_market_data_required")
         result = self.research.run_cycle(
