@@ -436,6 +436,16 @@ class CompanyDaemon:
         refreshed: dict[str, int] = {}
         errors: dict[str, str] = {}
 
+        if self.execution_service is not None:
+            for row in (
+                self.execution_service.reconcile_outstanding()
+            ):
+                if row.get("error"):
+                    errors[
+                        "execution_reconcile:"
+                        + str(row.get("intent_id", "unknown"))
+                    ] = str(row["error"])
+
         expired = self.company.opportunities.expire_due(now)
 
         for symbol in self._symbols_to_refresh():
