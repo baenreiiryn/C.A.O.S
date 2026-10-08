@@ -10,6 +10,7 @@ from caos.cli import parser
 from caos.company import CAOSAdapter, CityPresentationMapper, TradeCompany
 from caos.company.control import CompanyControlPort
 from caos.company.dashboard import serve_company
+from caos.company.research import PromotionDecision
 from caos.company.standalone import (
     build_policy,
     build_standalone_company,
@@ -20,7 +21,7 @@ from caos.company.standalone import (
     save_runtime_config,
     targets_from_runtime_config,
 )
-from caos.domain import Mandate
+from caos.domain import Mandate, StrategySpec
 from caos.llm import StaticLLM
 from caos.orchestrator import CAOS
 from caos.store import Store
