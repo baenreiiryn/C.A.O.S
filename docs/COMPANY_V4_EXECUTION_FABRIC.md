@@ -24,7 +24,7 @@ ExecutionPlan
    |
    +------> Trade Company Paper
    |
-   +------> Human-gated Bybit TESTNET
+   +------> Human-gated Binance Spot TESTNET
    |
    +------> future LIVE adapter (not implemented)
 ```
@@ -377,13 +377,13 @@ The same canonical plan produces the same ID.
 
 This provides the basis for future durable execution/idempotency.
 
-Current Bybit TESTNET translation uses:
+Current Binance Spot TESTNET translation uses:
 
 ```text
-orderLinkId = plan_id
+newClientOrderId = plan_id
 ```
 
-within Bybit's length boundary.
+within Binance client-order-ID length boundaries.
 
 Durable external-broker intent storage is still a later production-readiness concern.
 
@@ -395,12 +395,12 @@ Durable external-broker intent storage is still a later production-readiness con
 execute_plan(plan)
 ```
 
-The plan is converted into a Bybit TESTNET order:
+The plan is converted into a Binance Spot TESTNET order:
 
 ```text
 buy plan  -> Buy
 sell plan -> Sell
-risk_reducing -> reduceOnly
+risk_reducing SELL -> allowed Spot reduction
 plan_id -> orderLinkId
 ```
 
@@ -415,10 +415,10 @@ Without the gate, execution is rejected.
 The client remains hard-locked to:
 
 ```text
-https://api-testnet.bybit.com
+https://testnet.binance.vision
 ```
 
-No production Bybit host is accepted.
+The TESTNET client rejects production Binance hosts. The separate production-readonly client cannot submit orders.
 
 ## LIVE
 
@@ -510,9 +510,9 @@ Company V4 is complete when:
 16. Trade Company Paper uses the Execution Fabric;
 17. Company Paper supports partial rebalance by delta;
 18. Company pause cannot create new risk through the Fabric;
-19. Bybit TESTNET can translate/execute the same ExecutionPlan;
+19. Binance Spot TESTNET can translate/execute the same ExecutionPlan;
 20. TESTNET still requires explicit human arming;
-21. TESTNET remains hard-locked to the Bybit test environment;
+21. TESTNET remains hard-locked to Binance Spot Testnet;
 22. LIVE remains unavailable;
 23. plan IDs are propagated as TESTNET idempotency/link IDs;
 24. latest plans are visible in Company status/control/CLI;
@@ -552,7 +552,7 @@ OK
 CI: SUCCESS
 CLI smoke: SUCCESS
 Company execution-plans smoke: SUCCESS
-Bybit TESTNET plan adapter tests: SUCCESS
+Binance Spot TESTNET plan adapter tests: SUCCESS
 Backtest Execution Fabric trace tests: SUCCESS
 Company Paper delta rebalance tests: SUCCESS
 Checkpoint compatibility tests: SUCCESS
