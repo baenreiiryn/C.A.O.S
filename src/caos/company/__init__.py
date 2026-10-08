@@ -10,6 +10,18 @@ from .domain import (
 )
 from .treasury import Treasury
 from .registry import TraderRegistry
+from .research import (
+    RESEARCH_FACTORY_VERSION,
+    BuiltinGridGenerator,
+    CallableResearchGeneratorAdapter,
+    PromotionDecision,
+    ResearchCandidate,
+    ResearchCandidateGenerator,
+    ResearchEvaluation,
+    ResearchFactory,
+    ResearchFactoryError,
+    ResearchHypothesis,
+)
 from .capital import CapitalAllocator
 from .market import MarketAllocator, OpportunityRegistry
 from .paper import CompanyPaperBook, CompanyPaperError
@@ -54,6 +66,16 @@ __all__ = [
     "OpportunityRegistry",
     "OpportunityStatus",
     "StrategyDiversity",
+    "RESEARCH_FACTORY_VERSION",
+    "BuiltinGridGenerator",
+    "CallableResearchGeneratorAdapter",
+    "PromotionDecision",
+    "ResearchCandidate",
+    "ResearchCandidateGenerator",
+    "ResearchEvaluation",
+    "ResearchFactory",
+    "ResearchFactoryError",
+    "ResearchHypothesis",
     "TradeCompany",
     "TradeCompanyCell",
     "TrainingArena",
