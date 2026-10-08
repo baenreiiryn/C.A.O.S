@@ -73,6 +73,30 @@ class WindowsLauncherConfigTests(unittest.TestCase):
                     data_dir=root,
                 )
 
+    def test_legacy_launcher_config_gains_news_defaults(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            legacy = default_launcher_config(
+                data_dir=root
+            )
+            legacy.pop("news_sources", None)
+            validated = validate_launcher_config(
+                legacy,
+                data_dir=root,
+            )
+            self.assertGreater(
+                len(validated["news_sources"]),
+                0,
+            )
+            self.assertTrue(
+                all(
+                    row["enabled"]
+                    for row in validated[
+                        "news_sources"
+                    ]
+                )
+            )
+
     def test_legacy_launcher_config_gains_broker_defaults(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
@@ -181,6 +205,38 @@ class WindowsLauncherRuntimeTests(unittest.TestCase):
                 runtime["targets"],
             )
             restored_caos.store.close()
+
+    def test_news_sources_are_passed_to_runtime_on_first_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            config = default_launcher_config(
+                data_dir=root
+            )
+            config["state_db"] = str(
+                root / "company.db"
+            )
+            config["news_sources"] = [
+                {
+                    "id": "custom",
+                    "name": "Custom",
+                    "category": "crypto",
+                    "url": "https://example.com/feed",
+                    "kind": "custom",
+                    "enabled": True,
+                    "built_in": False,
+                }
+            ]
+            caos, _, _, _, _ = (
+                initialize_or_restore(config)
+            )
+            self.assertIsNotNone(
+                caos.news_analyzer
+            )
+            self.assertEqual(
+                caos.news_analyzer.client.feed_urls,
+                ["https://example.com/feed"],
+            )
+            caos.store.close()
 
     def test_packaged_self_test_is_side_effect_free(self):
         self.assertEqual(run_self_test(), 0)
