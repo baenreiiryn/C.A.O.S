@@ -356,6 +356,70 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
+def _company_runtime_settings(args, store):
+    saved = load_runtime_config(store)
+    if saved is None:
+        raise CompanyStandaloneError(
+            "company_runtime_config_missing_run_company_init_first"
+        )
+
+    targets = (
+        parse_scan_targets(args.targets)
+        if getattr(args, "targets", None)
+        else targets_from_runtime_config(saved)
+    )
+    interval = (
+        args.interval
+        if getattr(args, "interval", None) is not None
+        else saved.get("interval", "60")
+    )
+    candle_limit = (
+        args.candle_limit
+        if getattr(args, "candle_limit", None) is not None
+        else int(saved.get("candle_limit", 500))
+    )
+    ttl = (
+        args.opportunity_ttl_ms
+        if getattr(args, "opportunity_ttl_ms", None) is not None
+        else int(saved.get("opportunity_ttl_ms", 3_600_000))
+    )
+    every = (
+        args.every
+        if getattr(args, "every", None) is not None
+        else float(saved.get("every_seconds", 60.0))
+    )
+    return targets, interval, candle_limit, ttl, every
+
+
+def _load_company_for_command(c):
+    policy = load_saved_policy(c.store)
+    if policy is None:
+        raise CompanyStandaloneError(
+            "company_not_initialized_run_company_init_first"
+        )
+    company, restored = build_standalone_company(
+        c,
+        policy,
+        restore=True,
+    )
+    if not restored:
+        raise CompanyStandaloneError(
+            "company_checkpoint_missing"
+        )
+    require_initialized(company)
+    return company
+
+
+def _print_json(payload) -> None:
+    print(
+        json.dumps(
+            payload,
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+
+
 def main() -> None:
     args = parser().parse_args()
     c = build_caos(args)
