@@ -12,30 +12,24 @@ from typing import Callable, Protocol
 from uuid import uuid4
 
 from .llm import OllamaClient, OpenAICompatClient, StaticLLM
-from .testnet import BybitTestnetClient
+from .execution_reliability import DurableExecutionJournal
+from .testnet import BinanceSpotClient
 
 
 SETTINGS_API_VERSION = "settings/v1"
 SUPPORTED_BROKERS = {
-    "bybit": {
-        "label": "Bybit",
-        "environments": ("testnet",),
-        "activatable": True,
-    },
     "binance": {
-        "label": "Binance",
-        "environments": ("testnet",),
-        "activatable": False,
-    },
-    "okx": {
-        "label": "OKX",
-        "environments": ("demo",),
-        "activatable": False,
-    },
-    "kraken": {
-        "label": "Kraken",
-        "environments": ("demo",),
-        "activatable": False,
+        "label": "Binance Japan / Spot",
+        "environments": (
+            "spot-testnet",
+            "production-readonly",
+        ),
+        "activatable": True,
+        "execution_environment": "spot-testnet",
+        "notes": (
+            "Spot TESTNET supports human-gated test orders. "
+            "Production profiles are read-only in C.A.O.S."
+        ),
     },
 }
 
@@ -246,6 +240,43 @@ class RuntimeSettingsService:
     persist_config: Callable[[dict], dict]
     vault: CredentialVault
 
+    def __post_init__(self) -> None:
+        """Drop legacy unsupported broker profiles from runtime metadata.
+
+        Secrets are not deleted from the OS vault automatically; only the
+        old profile metadata is removed from launcher configuration.
+        """
+        raw = self.config.get("broker_profiles", [])
+        kept = [
+            dict(row)
+            for row in raw
+            if (
+                isinstance(row, dict)
+                and str(
+                    row.get("provider", "")
+                ).lower()
+                in SUPPORTED_BROKERS
+            )
+        ]
+        active = self.config.get(
+            "active_broker_profile"
+        )
+        known_ids = {
+            str(row.get("id", ""))
+            for row in kept
+        }
+        if active not in known_ids:
+            active = None
+        if kept != raw or active != self.config.get(
+            "active_broker_profile"
+        ):
+            self._save_config(
+                {
+                    "broker_profiles": kept,
+                    "active_broker_profile": active,
+                }
+            )
+
     def _llm_key(self) -> str:
         return "llm:openai-compatible:api_key"
 
@@ -263,7 +294,13 @@ class RuntimeSettingsService:
         return [
             dict(row)
             for row in rows
-            if isinstance(row, dict)
+            if (
+                isinstance(row, dict)
+                and str(
+                    row.get("provider", "")
+                ).lower()
+                in SUPPORTED_BROKERS
+            )
         ]
 
     def _save_config(self, updates: dict) -> dict:
@@ -600,23 +637,37 @@ class RuntimeSettingsService:
             raise SettingsError(
                 "broker_credentials_required"
             )
-        if provider != "bybit" or environment != "testnet":
+        if provider != "binance":
             raise SettingsError(
                 "broker_adapter_not_implemented"
             )
-        client = BybitTestnetClient(
+        client = BinanceSpotClient(
             api_key=key,
             api_secret=secret,
+            environment=environment,
         )
-        info = client.get_api_key_info()
+        info = client.get_account_info()
         return {
             "ok": True,
             "profile_id": profile_id,
             "provider": provider,
             "environment": environment,
-            "read_only": info.get("read_only"),
-            "permissions": info.get("permissions", {}),
-            "message": "Broker credentials authenticated.",
+            "can_trade": info.get("can_trade"),
+            "permissions": info.get("permissions", []),
+            "account_type": info.get("account_type"),
+            "balances_nonzero": len(
+                info.get("balances_nonzero", [])
+            ),
+            "production_execution_enabled": False,
+            "message": (
+                "Binance credentials authenticated. "
+                + (
+                    "Spot TESTNET order adapter is available."
+                    if environment == "spot-testnet"
+                    else "Production account is connected read-only; "
+                    "LIVE order submission remains disabled."
+                )
+            ),
         }
 
     def set_active_broker(
@@ -661,4 +712,13 @@ class RuntimeSettingsService:
         self._save_config(
             {"active_broker_profile": str(profile_id)}
         )
+        store = getattr(self.company, "store", None)
+        if store is not None:
+            self.company.execution_reliability = (
+                DurableExecutionJournal(
+                    store,
+                    venue="binance",
+                    environment=environment,
+                )
+            )
         return self.get_settings()["brokers"]
