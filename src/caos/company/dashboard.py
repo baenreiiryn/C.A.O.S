@@ -160,6 +160,14 @@ border-bottom:1px solid var(--line);z-index:2}
 .btn:hover{background:#3a2d50}.btn.danger{border-color:rgba(255,120,120,.45);background:#40202a;color:#ffd1d1}
 .control-row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.control-row input{width:86px;background:#0e1520;
 border:1px solid var(--line);border-radius:7px;padding:7px;color:#fff}
+.guild-adventurers{position:absolute;left:35%;top:61%;width:25%;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;z-index:14;pointer-events:none}
+.mini-trader{pointer-events:auto;border:1px solid rgba(239,207,143,.4);background:rgba(15,13,24,.88);border-radius:999px;
+padding:5px 8px;display:flex;align-items:center;gap:5px;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.3);
+font:10px system-ui,sans-serif;color:#ffe7ad;transition:transform .18s ease}
+.mini-trader:hover{transform:translateY(-3px) scale(1.04)}
+.mini-trader.active{border-color:rgba(121,199,255,.6);box-shadow:0 0 12px rgba(121,199,255,.22)}
+.mini-trader.waiting_assignment{border-color:rgba(255,200,102,.55)}
+.mini-trader.paused,.mini-trader.halted{opacity:.66}
 .trader-strip{display:flex;gap:8px;overflow-x:auto;padding:6px 0 2px}.trader-chip{min-width:130px;border:1px solid var(--line);
 background:rgba(28,24,40,.75);border-radius:10px;padding:9px;cursor:pointer}.trader-chip:hover{border-color:#d9b66f}
 .trader-avatar{font-size:24px}.trader-id{font-weight:800;color:#ffe5a6}.trader-meta{font:10px system-ui,sans-serif;color:var(--muted);margin-top:3px}
@@ -225,6 +233,7 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
     <button class="place workshop" data-location="workshop"><span class="state-dot"></span><div class="building"><span class="place-icon">⚗️</span></div><div class="place-label"><div class="place-title">Arcane Workshop</div><div class="place-character">Improvement Manager</div><div class="place-activity" data-activity="workshop">researching improvements</div></div></button>
     <button class="place chronicle" data-location="chronicle"><span class="state-dot"></span><div class="building"><span class="place-icon">📚</span></div><div class="place-label"><div class="place-title">Chronicle Vault</div><div class="place-character">Memory & Recovery</div><div class="place-activity" data-activity="chronicle">recording history</div></div></button>
 
+    <div id="guildAdventurers" class="guild-adventurers" aria-label="Visible Trader adventurers"></div>
     <div id="alertBeacon" class="alert-beacon"><strong>City Watch</strong><div id="alertText">No alerts.</div></div>
   </section>
 </main>
@@ -247,7 +256,7 @@ let activeLocation=null;
 const byId=function(id){return document.getElementById(id)};
 const hudEquity=byId('hudEquity'),hudReserve=byId('hudReserve'),hudTraders=byId('hudTraders'),hudRisk=byId('hudRisk');
 const healthRune=byId('healthRune'),alertRune=byId('alertRune'),cityWorld=byId('cityWorld');
-const cityMoodTitle=byId('cityMoodTitle'),cityMoodText=byId('cityMoodText'),alertText=byId('alertText');
+const cityMoodTitle=byId('cityMoodTitle'),cityMoodText=byId('cityMoodText'),alertText=byId('alertText'),guildAdventurers=byId('guildAdventurers');
 const drawer=byId('drawer'),drawerBackdrop=byId('drawerBackdrop'),drawerTitle=byId('drawerTitle'),drawerTech=byId('drawerTech'),drawerBody=byId('drawerBody'),drawerClose=byId('drawerClose');
 
 const money=function(v){return '$'+Number(v||0).toFixed(4)};
@@ -287,6 +296,15 @@ function applyPlaceStates(){
  });
 }
 
+function renderVisibleTraders(){
+ if(!currentCity)return;
+ const traders=(currentCity.traders||[]).slice(0,8);
+ guildAdventurers.innerHTML=traders.map(function(t){
+   const activity=t.status==='active'?(t.market||'on expedition'):t.status.replaceAll('_',' ');
+   return '<button class="mini-trader '+esc(t.status)+'" onclick="openTrader(\''+esc(t.id)+'\')" title="Trader '+esc(t.id)+' — '+esc(activity)+'"><span>'+traderAvatar(t.status)+'</span><b>'+esc(t.id)+'</b><span>'+esc(activity)+'</span></button>';
+ }).join('');
+}
+
 function updateHud(){
  if(!currentStatus||!currentCity)return;
  const c=currentCity.city;
@@ -310,6 +328,7 @@ function updateHud(){
  const alerts=currentCity.alerts||[];
  alertText.textContent=alerts.length?alerts.slice(0,3).map(function(a){return a.kind}).join(' · '):'No alerts. The city watch is calm.';
  applyPlaceStates();
+ renderVisibleTraders();
 }
 
 function traderAvatar(status){
