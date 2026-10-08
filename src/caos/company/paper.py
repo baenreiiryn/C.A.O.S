@@ -327,10 +327,30 @@ class CompanyPaperBook:
         else:
             phase = "flat"
 
+        first_visible_ts = (
+            int(bars[0].ts)
+            if bars
+            else None
+        )
+        last_visible_ts = (
+            int(bars[-1].ts)
+            if bars
+            else None
+        )
         marker_rows = [
             dict(row)
             for row in self.visual_events.get(trader_id, [])
-            if not symbol or row.get("symbol") == symbol
+            if (
+                (not symbol or row.get("symbol") == symbol)
+                and (
+                    first_visible_ts is None
+                    or (
+                        first_visible_ts
+                        <= int(row.get("ts", 0))
+                        <= last_visible_ts
+                    )
+                )
+            )
         ][-100:]
 
         return {
