@@ -5,6 +5,7 @@ from pathlib import Path
 
 from caos.app_settings import MemoryCredentialVault
 from caos.company import CAOSAdapter, Opportunity, TradeCompany
+from caos.company.company import TradeCompanyError
 from caos.company.standalone import (
     build_policy,
     initialize_company,
@@ -227,6 +228,39 @@ class RuntimeExecutionTests(unittest.TestCase):
             )
             self.assertTrue(
                 proposal["meta"]["mirrored"],
+            )
+
+            company.stop_operations()
+            restarted = RuntimeExecutionService(
+                company,
+                config,
+                vault,
+            )
+            restarted._client = fake_client
+            company.set_resume_guard(
+                restarted.resume_guard_reason
+            )
+            self.assertEqual(
+                restarted.status()["mode"],
+                "paper",
+            )
+            self.assertIn(
+                "A",
+                restarted.status()[
+                    "real_open_positions"
+                ],
+            )
+            with self.assertRaises(TradeCompanyError):
+                company.start_operations()
+
+            restarted.set_mode(
+                "real-manual",
+                confirmation="ENABLE REAL",
+            )
+            company.start_operations()
+            self.assertEqual(
+                company.operational_state(),
+                "running",
             )
             store.close()
 
