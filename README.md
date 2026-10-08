@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.7.3 standalone Trade Company with Binance Japan / Spot and continuous news intelligence**. The Whispering Tankard ships with trusted market/crypto/regulatory RSS sources, accepts custom HTTPS news sites/feeds, and can conservatively block only new risk when directly relevant critical negative news is detected. News never creates an order. Production order submission and LIVE remain deliberately unavailable.
+> Current milestone: **v0.8.0 standalone Trade Company with managed Ollama, Binance Japan / Spot and continuous news intelligence**. The Whispering Tankard ships with trusted market/crypto/regulatory RSS sources, accepts custom HTTPS news sites/feeds, and can conservatively block only new risk when directly relevant critical negative news is detected. News never creates an order. Production order submission and LIVE remain deliberately unavailable.
 
 ## Why it is built this way
 
@@ -39,7 +39,10 @@ For normal Windows use, Python is not required. The Windows build bundles its ow
 
 - `CAOS-Trade-Company.exe` — graphical launcher, first-run wizard, autonomous PAPER daemon and Arcane Trading City;
 - `caos.exe` — administrative CLI using the same installed Company state;
+- `ollama\` — the official portable Ollama runtime used only by the Trade Company managed LLM service;
 - Start Menu shortcuts, with optional desktop shortcut and optional sign-in autostart.
+
+The managed Ollama server uses `http://127.0.0.1:11435`, separate from the normal Ollama default port `11434`. Its models are stored under `%LOCALAPPDATA%\CAOS\ollama-models`.
 
 Install flow:
 
@@ -72,7 +75,10 @@ The Founding Charter is only the first-run onboarding. After installation, confi
 
 **Arcane Nexus / LLM settings** supports:
 
-- `static`, `ollama`, and `openai-compatible` providers;
+- `static`, managed `ollama`, and `openai-compatible` providers;
+- Start/Stop controls for the Ollama runtime bundled with Trade Company;
+- a native Windows picker for local `.gguf` files;
+- one-click GGUF import, registration and selection inside the managed Ollama model store;
 - model and base-URL changes without resetting the Company;
 - model discovery for Ollama (`/api/tags`) and OpenAI-compatible servers (`/models`);
 - connection testing;
@@ -86,14 +92,14 @@ Broker API keys and secrets are stored in **Windows Credential Manager**, not in
 
 Changing the active broker is blocked while unresolved external execution intents exist.
 
-Installing v0.7.3 over v0.7.2 preserves:
+Installing v0.8.0 over v0.7.3 or v0.7.2 preserves:
 
 ```text
 %LOCALAPPDATA%\CAOS\caos.db
 %LOCALAPPDATA%\CAOS\launcher.json
 ```
 
-so existing Treasury, Traders, research, rollout and reliability state remain intact. Existing v0.7.2 installations without a `news_sources` field automatically receive the v0.7.3 default news catalog.
+so existing Treasury, Traders, research, rollout and reliability state remain intact. Existing installations without a `news_sources` field automatically receive the shipped default news catalog.
 
 ## Development install
 
@@ -113,13 +119,17 @@ caos --provider static demo
 
 ## Ollama
 
+The Windows Trade Company installer includes a managed Ollama runtime. In the Arcane Trading City open **⚙ Settings → Arcane Nexus · Managed Ollama**, choose a local `.gguf`, click **Apply Local Model**, then use **Start Ollama** / **Stop Ollama** as needed. No separate Ollama installation or terminal is required.
+
+For CLI/development use, an external Ollama server is still supported:
+
 ```bash
 ollama serve
 ollama pull qwen3:8b
 caos --provider ollama --model qwen3:8b chat "analise o regime de DEMOUSDT"
 ```
 
-The default Ollama endpoint is `http://127.0.0.1:11434`.
+External Ollama defaults to `http://127.0.0.1:11434`; the Trade Company managed runtime uses `http://127.0.0.1:11435`.
 
 ## OpenAI-compatible local server
 
@@ -388,7 +398,7 @@ See [`docs/COMPANY_V7_PRODUCTION_RELIABILITY.md`](docs/COMPANY_V7_PRODUCTION_REL
 
 ## Binance Japan / Spot
 
-Binance is the supported broker family in v0.7.3.
+Binance is the supported broker family in v0.8.0.
 
 - `spot-testnet` — human-gated Binance Spot Testnet order submission and durable recovery;
 - `production-readonly` — authenticate a real Binance Japan account and read safe account metadata; production order submission is blocked in code.
@@ -424,7 +434,7 @@ python -m unittest discover -s tests -v
 
 GitHub Actions executes the same suite on every push and pull request.
 
-## Safety boundaries in v0.7.3
+## Safety boundaries in v0.8.0
 
 - research, paper trading and explicitly armed Binance Spot TESTNET only;
 - configurable position cap (20% default);

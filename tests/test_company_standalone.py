@@ -77,6 +77,8 @@ class FakeSettingsService:
     def __init__(self):
         self.saved_llm = None
         self.saved_news = None
+        self.saved_ollama_import = None
+        self.ollama_running = False
 
     def get_settings(self):
         return {
@@ -86,6 +88,20 @@ class FakeSettingsService:
                 "model": "qwen3:8b",
                 "base_url": "http://127.0.0.1:11434",
                 "api_key_configured": False,
+            },
+            "ollama_runtime": {
+                "enabled": True,
+                "installed": True,
+                "running": self.ollama_running,
+                "managed_process": self.ollama_running,
+                "base_url": "http://127.0.0.1:11435",
+                "runtime_dir": "C:/CAOS/ollama",
+                "models_dir": "C:/CAOS/models",
+                "version": (
+                    "0.test"
+                    if self.ollama_running
+                    else None
+                ),
             },
             "brokers": {
                 "supported": {
@@ -126,6 +142,51 @@ class FakeSettingsService:
                 "enabled_count": 1,
                 "analyzer_active": True,
             },
+        }
+
+    def start_managed_ollama(self):
+        self.ollama_running = True
+        return self.get_settings()["ollama_runtime"]
+
+    def stop_managed_ollama(self):
+        self.ollama_running = False
+        return self.get_settings()["ollama_runtime"]
+
+    def pick_managed_ollama_model(self):
+        return {
+            "selected": True,
+            "path": "C:/models/test.gguf",
+            "suggested_name": "caos-test",
+        }
+
+    def import_managed_ollama_model(
+        self,
+        *,
+        source_path,
+        model_name="",
+    ):
+        self.saved_ollama_import = {
+            "source_path": source_path,
+            "model_name": model_name,
+        }
+        return {
+            "imported": {
+                "model": model_name or "caos-test",
+                "source_file": source_path,
+                "base_url": "http://127.0.0.1:11435",
+                "runtime": self.get_settings()[
+                    "ollama_runtime"
+                ],
+            },
+            "llm": {
+                "provider": "ollama",
+                "model": model_name or "caos-test",
+                "base_url": "http://127.0.0.1:11435",
+                "api_key_configured": False,
+            },
+            "ollama_runtime": self.get_settings()[
+                "ollama_runtime"
+            ],
         }
 
     def discover_models(self, **kwargs):
@@ -661,6 +722,60 @@ class CompanyDashboardTests(unittest.TestCase):
                     '"api_key":',
                     serialized_settings,
                 )
+                self.assertTrue(
+                    settings["ollama_runtime"]["installed"]
+                )
+                self.assertFalse(
+                    settings["ollama_runtime"]["running"]
+                )
+
+                start_ollama = urllib.request.Request(
+                    base + "/api/settings/ollama/start",
+                    data=b"{}",
+                    headers={
+                        "Content-Type": "application/json"
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(
+                    start_ollama,
+                    timeout=2,
+                ) as response:
+                    started_ollama = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertTrue(started_ollama["running"])
+
+                import_ollama = urllib.request.Request(
+                    base + "/api/settings/ollama/import",
+                    data=json.dumps(
+                        {
+                            "source_path": "C:/models/test.gguf",
+                            "model_name": "caos-test",
+                        }
+                    ).encode(),
+                    headers={
+                        "Content-Type": "application/json"
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(
+                    import_ollama,
+                    timeout=2,
+                ) as response:
+                    imported_ollama = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertEqual(
+                    imported_ollama["imported"]["model"],
+                    "caos-test",
+                )
+                self.assertEqual(
+                    settings_service.saved_ollama_import[
+                        "source_path"
+                    ],
+                    "C:/models/test.gguf",
+                )
 
                 save_llm = urllib.request.Request(
                     base + "/api/settings/llm/save",
@@ -745,6 +860,14 @@ class CompanyDashboardTests(unittest.TestCase):
                 self.assertIn("Whispering Tankard", html)
                 self.assertIn("Grand Trading Guild", html)
                 self.assertIn("Arcane Nexus", html)
+                self.assertIn(
+                    "Arcane Nexus · Managed Ollama",
+                    html,
+                )
+                self.assertIn(
+                    "pickLocalOllamaModel",
+                    html,
+                )
                 self.assertIn("Execution Reliability", html)
                 self.assertIn("settingsBtn", html)
                 self.assertIn("Broker Embassy", html)

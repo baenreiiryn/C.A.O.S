@@ -48,6 +48,28 @@ jobs:
         shell: pwsh
         run: python -m unittest discover -s tests -v
 
+      - name: Fetch managed Ollama runtime
+        shell: pwsh
+        run: |
+          $version = "v0.40.1"
+          $expected = "B394D14436D38032F23190E3F14EB2C6DAD5EBBE4E192414F74C8FDCA01703AB"
+          $zip = Join-Path $env:RUNNER_TEMP "ollama-windows-amd64.zip"
+          $url = "https://github.com/ollama/ollama/releases/download/$version/ollama-windows-amd64.zip"
+          curl.exe -L --fail --retry 3 --output $zip $url
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash
+          if ($actual -ne $expected) {
+            throw "Ollama runtime checksum mismatch. Expected $expected, got $actual"
+          }
+          Remove-Item -Recurse -Force .\ollama-runtime -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force .\ollama-runtime | Out-Null
+          Expand-Archive -Path $zip -DestinationPath .\ollama-runtime -Force
+          if (-not (Test-Path ".\ollama-runtime\ollama.exe")) {
+            throw "ollama.exe was not found in the portable runtime"
+          }
+          & .\ollama-runtime\ollama.exe --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build GUI executable
         shell: pwsh
         run: |

@@ -245,6 +245,7 @@ class RuntimeSettingsService:
     config: dict
     persist_config: Callable[[dict], dict]
     vault: CredentialVault
+    ollama_runtime: object | None = None
 
     def __post_init__(self) -> None:
         """Drop legacy unsupported broker profiles from runtime metadata.
@@ -392,6 +393,7 @@ class RuntimeSettingsService:
                     self.vault.get(self._llm_key())
                 ),
             },
+            "ollama_runtime": self.ollama_status(),
             "brokers": {
                 "supported": SUPPORTED_BROKERS,
                 "profiles": profiles,
@@ -418,6 +420,75 @@ class RuntimeSettingsService:
             },
         }
 
+    def ollama_status(self) -> dict:
+        if self.ollama_runtime is None:
+            return {
+                "enabled": False,
+                "installed": False,
+                "running": False,
+                "managed_process": False,
+                "base_url": "",
+                "runtime_dir": "",
+                "models_dir": "",
+                "version": None,
+            }
+        return {
+            "enabled": True,
+            **self.ollama_runtime.status(),
+        }
+
+    def start_managed_ollama(self) -> dict:
+        if self.ollama_runtime is None:
+            raise SettingsError(
+                "managed_ollama_unavailable"
+            )
+        return {
+            "enabled": True,
+            **self.ollama_runtime.start(),
+        }
+
+    def stop_managed_ollama(self) -> dict:
+        if self.ollama_runtime is None:
+            raise SettingsError(
+                "managed_ollama_unavailable"
+            )
+        return {
+            "enabled": True,
+            **self.ollama_runtime.stop(),
+        }
+
+    def pick_managed_ollama_model(self) -> dict:
+        if self.ollama_runtime is None:
+            raise SettingsError(
+                "managed_ollama_unavailable"
+            )
+        return self.ollama_runtime.pick_model_file()
+
+    def import_managed_ollama_model(
+        self,
+        *,
+        source_path: str,
+        model_name: str = "",
+    ) -> dict:
+        if self.ollama_runtime is None:
+            raise SettingsError(
+                "managed_ollama_unavailable"
+            )
+        imported = self.ollama_runtime.import_gguf(
+            source_path,
+            model_name=model_name,
+        )
+        llm = self.save_llm(
+            provider="ollama",
+            model=str(imported["model"]),
+            base_url=str(imported["base_url"]),
+        )
+        return {
+            "imported": imported,
+            "llm": llm,
+            "ollama_runtime": self.ollama_status(),
+        }
+
     def discover_models(
         self,
         *,
@@ -434,7 +505,11 @@ class RuntimeSettingsService:
         if provider == "ollama":
             root = (
                 base_url.strip()
-                or "http://127.0.0.1:11434"
+                or (
+                    self.ollama_runtime.base_url
+                    if self.ollama_runtime is not None
+                    else "http://127.0.0.1:11434"
+                )
             ).rstrip("/")
             result = _json_get(root + "/api/tags")
             models = []
@@ -536,11 +611,19 @@ class RuntimeSettingsService:
             )
 
         if provider == "ollama":
+            effective_base_url = (
+                base_url
+                or (
+                    self.ollama_runtime.base_url
+                    if self.ollama_runtime is not None
+                    else "http://127.0.0.1:11434"
+                )
+            )
             llm = OllamaClient(
                 model,
-                base_url
-                or "http://127.0.0.1:11434",
+                effective_base_url,
             )
+            base_url = effective_base_url
         elif provider == "openai-compatible":
             llm = OpenAICompatClient(
                 model,
