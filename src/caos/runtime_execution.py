@@ -179,6 +179,15 @@ class RuntimeExecutionService:
     def has_outstanding(self, trader_id: str) -> bool:
         return self._outstanding_for_trader(trader_id) is not None
 
+    def _open_internal_traders(self) -> set[str]:
+        return {
+            str(trader_id)
+            for trader_id in self.company.paper.accounts
+            if not self.company.paper.positions_flat(
+                trader_id
+            )
+        }
+
     def _all_positions_flat(self) -> bool:
         return all(
             self.company.paper.positions_flat(trader_id)
@@ -276,10 +285,19 @@ class RuntimeExecutionService:
             raise RuntimeExecutionError(
                 "execution_mode_change_requires_stopped_company"
             )
-        if not self._all_positions_flat():
+        open_internal = self._open_internal_traders()
+        if mode != "real-manual" and open_internal:
             raise RuntimeExecutionError(
                 "execution_mode_change_requires_flat_positions"
             )
+        if mode == "real-manual" and open_internal:
+            known_real = set(
+                self.real_open_positions().keys()
+            )
+            if not open_internal.issubset(known_real):
+                raise RuntimeExecutionError(
+                    "non_real_positions_block_real_mode_rearm"
+                )
         if any(
             self.company.paper.has_pending_order(trader_id)
             for trader_id in self.company.paper.accounts
