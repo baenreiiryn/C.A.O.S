@@ -16,6 +16,7 @@ class CompanyCheckpoint:
             "version": 1,
             "policy": company.policy.to_dict(),
             "effective_trader_limit": company.effective_trader_limit,
+            "operations_paused": company.operations_paused,
             "treasury": company.treasury.snapshot(),
             "traders": company.registry.snapshot(),
             "opportunities": company.opportunities.snapshot(),
@@ -73,6 +74,9 @@ class CompanyCheckpoint:
                 "effective_limit_below_restored_slots"
             )
         company.effective_trader_limit = effective
+        company.operations_paused = bool(
+            payload.get("operations_paused", False)
+        )
 
         risk = payload.get("risk", {})
         company.risk.state.kill_switch = bool(
