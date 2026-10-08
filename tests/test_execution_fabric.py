@@ -14,7 +14,11 @@ from caos.execution_fabric import (
 )
 from caos.llm import StaticLLM
 from caos.orchestrator import CAOS
-from caos.quant import current_decision, target_position_series
+from caos.quant import (
+    current_decision,
+    execution_plan_series,
+    target_position_series,
+)
 from caos.store import Store
 from caos.testnet import (
     BybitTestnetClient,
@@ -170,6 +174,36 @@ class ExecutionFabricDomainTests(unittest.TestCase):
             targets[-1].target_notional,
             2.0 if decision.signal == "long" else 0.0,
         )
+
+    def test_research_execution_trace_uses_same_planner(self):
+        spec = StrategySpec(
+            "mom",
+            "momentum",
+            3,
+            21,
+            threshold=0.5,
+        )
+        bars = rising_bars()
+        plans = execution_plan_series(
+            spec,
+            bars,
+            symbol="BTCUSDT",
+            requested_weight=0.2,
+            equity=10.0,
+            max_notional=2.0,
+        )
+        self.assertEqual(len(plans), len(bars))
+        self.assertTrue(
+            any(plan.action == "increase" for plan in plans)
+        )
+        self.assertTrue(
+            all(
+                plan.symbol == "BTCUSDT"
+                and plan.strategy_id == "mom"
+                for plan in plans
+            )
+        )
+
 
 
 class CompanyExecutionFabricTests(unittest.TestCase):
