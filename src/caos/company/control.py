@@ -36,6 +36,16 @@ class CompanyControlPort:
             for experiment in self.company.training.experiments.values()
         ]
 
+    def get_execution_plans(self) -> dict:
+        return {
+            "version": self.company.status()[
+                "execution_fabric"
+            ]["version"],
+            "last_plans": dict(
+                self.company.paper.last_plans
+            ),
+        }
+
     def get_recent_events(self, limit: int = 30) -> list[dict]:
         if self.company.store is None:
             return []
