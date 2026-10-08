@@ -13,6 +13,7 @@ from caos.cell_protocol import (
 )
 from caos.company import CAOSAdapter, TradeCompany, TradeCompanyCell
 from caos.company.domain import Opportunity
+from caos.company.news_intelligence import NewsContext
 from caos.company.control import CompanyControlPort
 from caos.company.daemon import CompanyDaemon, ScanTarget
 from caos.company.dashboard import serve_company
@@ -152,6 +153,10 @@ class CompanyCellProtocolTests(unittest.TestCase):
                 "set_broker_credentials",
                 manifest["commands"],
             )
+            self.assertIn(
+                "domain.trade.news_intelligence",
+                manifest["capabilities"],
+            )
             store.close()
 
     def test_generic_status_health_metrics_alerts_and_report(self):
@@ -227,6 +232,61 @@ class CompanyCellProtocolTests(unittest.TestCase):
                     "Execution reliability:" in row
                     for row in report["highlights"]
                 )
+            )
+            store.close()
+
+    def test_news_ward_surfaces_in_cell_metrics_alerts_and_report(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, _, company = make_company(d)
+            company.news_intelligence.contexts[
+                "BTCUSDT"
+            ] = NewsContext(
+                symbol="BTCUSDT",
+                relevance=1.0,
+                sentiment=-0.9,
+                severity="high",
+                block_new_risk=True,
+                score_penalty=40.0,
+            )
+            company.news_intelligence.last_errors = [
+                "example feed warning"
+            ]
+            cell = TradeCompanyCell(
+                CompanyControlPort(company)
+            )
+            metrics = cell.get_metrics()["values"]
+            alerts = cell.get_alerts()
+            report = cell.get_report()
+
+            self.assertEqual(
+                metrics["news_blocked_markets"],
+                1,
+            )
+            self.assertEqual(
+                metrics["news_feed_errors"],
+                1,
+            )
+            self.assertTrue(
+                any(
+                    row["code"] == "news_risk_ward"
+                    for row in alerts
+                )
+            )
+            self.assertTrue(
+                any(
+                    row["code"] == "news_feed_error"
+                    for row in alerts
+                )
+            )
+            self.assertTrue(
+                any(
+                    "News intelligence:" in row
+                    for row in report["highlights"]
+                )
+            )
+            self.assertEqual(
+                cell.get_health()["state"],
+                "attention",
             )
             store.close()
 
