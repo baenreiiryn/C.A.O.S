@@ -586,6 +586,10 @@ class TradeCompany:
         self,
         symbol: str,
     ) -> list[dict]:
+        if self.operations_paused:
+            raise TradeCompanyError(
+                "company_operations_paused"
+            )
         bars = self.engine.bars(symbol)
         if not bars:
             try:
