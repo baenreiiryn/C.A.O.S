@@ -76,6 +76,7 @@ def make_runtime(store):
 class FakeSettingsService:
     def __init__(self):
         self.saved_llm = None
+        self.saved_news = None
 
     def get_settings(self):
         return {
@@ -88,23 +89,42 @@ class FakeSettingsService:
             },
             "brokers": {
                 "supported": {
-                    "bybit": {
-                        "label": "Bybit",
-                        "environments": ["testnet"],
+                    "binance": {
+                        "label": "Binance Japan / Spot",
+                        "environments": [
+                            "spot-testnet",
+                            "production-readonly",
+                        ],
                         "activatable": True,
                     }
                 },
                 "profiles": [
                     {
-                        "id": "bybit-testnet",
-                        "label": "Bybit TESTNET",
-                        "provider": "bybit",
-                        "environment": "testnet",
+                        "id": "binance-testnet",
+                        "label": "Binance Spot TESTNET",
+                        "provider": "binance",
+                        "environment": "spot-testnet",
                         "api_key_configured": True,
                         "api_secret_configured": True,
                     }
                 ],
-                "active_profile_id": "bybit-testnet",
+                "active_profile_id": "binance-testnet",
+            },
+            "news": {
+                "sources": [
+                    {
+                        "id": "coindesk",
+                        "name": "CoinDesk",
+                        "category": "crypto",
+                        "url": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+                        "kind": "editorial",
+                        "enabled": True,
+                        "built_in": True,
+                    }
+                ],
+                "defaults": [],
+                "enabled_count": 1,
+                "analyzer_active": True,
             },
         }
 
@@ -132,10 +152,60 @@ class FakeSettingsService:
             ),
         }
 
+    def save_news_sources(self, sources):
+        self.saved_news = list(sources)
+        return {
+            "sources": list(sources),
+            "defaults": [],
+            "enabled_count": sum(
+                bool(row.get("enabled", True))
+                for row in sources
+            ),
+            "analyzer_active": any(
+                bool(row.get("enabled", True))
+                for row in sources
+            ),
+        }
+
+    def discover_news_feed(self, url):
+        return {
+            "ok": True,
+            "site_url": url,
+            "feed_url": "https://example.com/rss.xml",
+            "method": "discovered",
+            "sample": [],
+        }
+
+    def test_news_source(self, url):
+        return {
+            "ok": True,
+            "url": url,
+            "count": 2,
+            "sample": [],
+            "error": None,
+        }
+
+    def restore_default_news_sources(self):
+        return self.get_settings()["news"]
+
+    def preview_news(self, *, limit=20, query=None):
+        del query
+        return {
+            "items": [
+                {
+                    "title": "Test headline",
+                    "source": "https://example.com/rss.xml",
+                }
+            ][:limit],
+            "count": 1,
+            "aggregate_sentiment": None,
+            "errors": [],
+        }
+
     def save_broker_profile(self, **kwargs):
         return {
             "id": kwargs.get("profile_id")
-            or "bybit-testnet",
+            or "binance-testnet",
             "label": kwargs["label"],
             "provider": kwargs["provider"],
             "environment": kwargs["environment"],
@@ -352,7 +422,7 @@ class FantasyCityPresentationTests(unittest.TestCase):
             )
             self.assertEqual(
                 city["locations"]["tavern"]["technical_name"],
-                "News / Sentiment",
+                "News / Sentiment / NewsIntelligence",
             )
             self.assertEqual(
                 city["locations"]["risk"]["technical_name"],
@@ -621,6 +691,44 @@ class CompanyDashboardTests(unittest.TestCase):
                     settings_service.saved_llm["model"],
                     "static",
                 )
+
+                save_news = urllib.request.Request(
+                    base + "/api/settings/news/save",
+                    data=json.dumps(
+                        {
+                            "sources": [
+                                {
+                                    "id": "custom",
+                                    "name": "Custom",
+                                    "category": "crypto",
+                                    "url": "https://example.com/rss.xml",
+                                    "kind": "custom",
+                                    "enabled": True,
+                                    "built_in": False,
+                                }
+                            ]
+                        }
+                    ).encode(),
+                    headers={
+                        "Content-Type": "application/json"
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(
+                    save_news,
+                    timeout=2,
+                ) as response:
+                    saved_news = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertEqual(
+                    saved_news["enabled_count"],
+                    1,
+                )
+                self.assertEqual(
+                    settings_service.saved_news[0]["id"],
+                    "custom",
+                )
                 self.assertEqual(
                     len(city["locations"]),
                     12,
@@ -640,6 +748,14 @@ class CompanyDashboardTests(unittest.TestCase):
                 self.assertIn("Execution Reliability", html)
                 self.assertIn("settingsBtn", html)
                 self.assertIn("Broker Embassy", html)
+                self.assertIn(
+                    "Whispering Tankard · News Sources",
+                    html,
+                )
+                self.assertIn(
+                    "discoverAndAddNewsSource",
+                    html,
+                )
                 self.assertIn("guildAdventurers", html)
                 self.assertNotIn('data-tab="overview"', html)
                 self.assertNotIn("King Drizzt", html)

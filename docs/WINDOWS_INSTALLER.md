@@ -1,6 +1,6 @@
 # Windows Installer
 
-C.A.O.S v0.7.2 ships a self-contained Windows installer for the standalone Trade Company.
+C.A.O.S v0.7.3 ships a self-contained Windows installer for the standalone Trade Company.
 
 ## What gets installed
 
@@ -82,6 +82,25 @@ The default city address is:
 ```text
 http://127.0.0.1:5191
 ```
+
+## Default news intelligence
+
+Fresh v0.7.3 installations start with the Whispering Tankard news catalog already configured in `launcher.json`.
+
+Enabled defaults include crypto/market/editorial sources plus official SEC, Federal Reserve and Bank of Japan feeds. The Arcane Trading City **Settings → Whispering Tankard** page lets the user:
+
+- enable/disable or remove sources;
+- restore the shipped defaults;
+- test RSS/Atom URLs;
+- paste a normal HTTPS news-site URL and discover its feed;
+- add custom sources;
+- preview the latest headlines.
+
+News source settings contain no secrets.
+
+Upgrading an existing v0.7.2 installation preserves the existing database and launcher config. If `news_sources` is absent, v0.7.3 adds the built-in catalog automatically.
+
+News is context/risk evidence only. It cannot create orders, and a custom feed cannot independently trigger the critical hard block on new risk.
 
 ## AI provider
 

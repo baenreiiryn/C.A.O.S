@@ -13,6 +13,12 @@ from uuid import uuid4
 
 from .llm import OllamaClient, OpenAICompatClient, StaticLLM
 from .execution_reliability import DurableExecutionJournal
+from .news import (
+    NewsAnalyzer,
+    RSSNewsClient,
+    default_news_sources,
+    normalize_news_sources,
+)
 from .testnet import BinanceSpotClient
 
 
@@ -303,6 +309,38 @@ class RuntimeSettingsService:
             )
         ]
 
+    def _news_sources(self) -> list[dict]:
+        raw = self.config.get(
+            "news_sources",
+            default_news_sources(),
+        )
+        try:
+            return normalize_news_sources(raw)
+        except ValueError:
+            return default_news_sources()
+
+    def _apply_news_sources(
+        self,
+        sources: list[dict],
+    ) -> None:
+        enabled = [
+            row["url"]
+            for row in sources
+            if row.get("enabled", True)
+        ]
+        self.caos.news_analyzer = (
+            NewsAnalyzer(
+                RSSNewsClient(enabled),
+                sentiment_expert=getattr(
+                    self.caos,
+                    "sentiment_expert",
+                    None,
+                ),
+            )
+            if enabled
+            else None
+        )
+
     def _save_config(self, updates: dict) -> dict:
         proposal = {**self.config, **updates}
         saved = self.persist_config(proposal)
@@ -359,6 +397,23 @@ class RuntimeSettingsService:
                 "profiles": profiles,
                 "active_profile_id": self.config.get(
                     "active_broker_profile"
+                ),
+            },
+            "news": {
+                "sources": self._news_sources(),
+                "defaults": default_news_sources(),
+                "enabled_count": sum(
+                    1
+                    for row in self._news_sources()
+                    if row.get("enabled", True)
+                ),
+                "analyzer_active": (
+                    getattr(
+                        self.caos,
+                        "news_analyzer",
+                        None,
+                    )
+                    is not None
                 ),
             },
         }
@@ -506,6 +561,73 @@ class RuntimeSettingsService:
             }
         )
         return self.get_settings()["llm"]
+
+    def save_news_sources(
+        self,
+        sources,
+    ) -> dict:
+        try:
+            normalized = normalize_news_sources(
+                list(sources or [])
+            )
+        except ValueError as exc:
+            raise SettingsError(str(exc)) from exc
+        self._apply_news_sources(normalized)
+        self._save_config(
+            {"news_sources": normalized}
+        )
+        return self.get_settings()["news"]
+
+    def restore_default_news_sources(self) -> dict:
+        return self.save_news_sources(
+            default_news_sources()
+        )
+
+    def discover_news_feed(
+        self,
+        url: str,
+    ) -> dict:
+        try:
+            return RSSNewsClient([]).discover_feed(
+                str(url)
+            )
+        except ValueError as exc:
+            raise SettingsError(str(exc)) from exc
+
+    def test_news_source(
+        self,
+        url: str,
+    ) -> dict:
+        try:
+            return RSSNewsClient([]).test_feed(
+                str(url)
+            )
+        except ValueError as exc:
+            raise SettingsError(str(exc)) from exc
+
+    def preview_news(
+        self,
+        *,
+        limit: int = 20,
+        query: str | None = None,
+    ) -> dict:
+        analyzer = getattr(
+            self.caos,
+            "news_analyzer",
+            None,
+        )
+        if analyzer is None:
+            return {
+                "items": [],
+                "count": 0,
+                "aggregate_sentiment": None,
+                "errors": [],
+            }
+        return analyzer.latest(
+            limit=max(1, min(int(limit), 100)),
+            query=query,
+            with_sentiment=True,
+        )
 
     def save_broker_profile(
         self,
@@ -737,7 +859,7 @@ class RuntimeSettingsService:
                 DurableExecutionJournal(
                     store,
                     venue="binance",
-                    environment=environment,
+                    environment=profile["environment"],
                 )
             )
         return self.get_settings()["brokers"]

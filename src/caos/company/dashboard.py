@@ -296,7 +296,7 @@ function settingsSelect(label,id,value,options){
  return '<label for="'+esc(id)+'">'+esc(label)+'</label><select id="'+esc(id)+'">'+options.map(function(o){const v=(typeof o==='string'?o:o.value),t=(typeof o==='string'?o:o.label);return '<option value="'+esc(v)+'"'+(String(v)===String(value)?' selected':'')+'>'+esc(t)+'</option>'}).join('')+'</select>';
 }
 function renderSettings(){
- const st=settingsCache||{},llm=st.llm||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{};
+ const st=settingsCache||{},llm=st.llm||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
  const providerOpts=['static','ollama','openai-compatible'];
  let html='<div class="story">Settings remain available after the Founding Charter. Saving the LLM swaps only the runtime provider; Treasury, Traders, PAPER state and research remain intact.</div>';
  html+=section('🔮 Arcane Nexus · LLM Configuration',
@@ -309,6 +309,21 @@ function renderSettings(){
    '<div class="settings-note">Stored LLM API keys use Windows Credential Manager. Leaving the API-key field blank keeps the existing key. Ollama usually does not need one.</div>'+
    '<div class="control-row"><button class="btn" onclick="discoverModels()">Refresh Models</button><button class="btn" onclick="testLLMSettings()">Test Connection</button><button class="btn" onclick="saveLLMSettings()">Save LLM</button></div>'+
    '<div id="settingsLlmStatus" class="settings-status">'+(llm.api_key_configured?'API key configured in credential vault.':'No LLM API key stored.')+'</div>'
+ );
+ const newsCards=newsSources.length?newsSources.map(function(src,i){
+   return '<div class="broker-card"><div class="list-title"><label><input id="newsEnabled_'+i+'" type="checkbox" '+(src.enabled!==false?'checked':'')+'> '+esc(src.name||src.url)+'</label>'+(src.built_in?' · BUILT-IN':' · CUSTOM')+'</div><div class="list-sub">'+esc(src.category||'custom')+' · '+esc(src.kind||'custom')+' · '+esc(src.url)+'</div><div class="control-row"><button class="btn" onclick="testNewsSource('+i+')">Test</button><button class="btn danger" onclick="removeNewsSource('+i+')">Remove</button></div></div>';
+ }).join(''):'<div class="empty">No news sources configured.</div>';
+ html+=section('🍺 Whispering Tankard · News Sources',
+   '<div class="settings-note">Trusted defaults are installed automatically. You can paste either a direct RSS/Atom feed or a normal HTTPS news-site URL; Discover & Add will try to locate its feed. News is context/risk evidence only and never creates an order by itself.</div>'+
+   newsCards+
+   '<h3>Add news source</h3>'+
+   '<div class="settings-grid">'+
+   settingsField('Name','newsName','')+
+   settingsField('Category','newsCategory','custom')+
+   settingsField('Site or RSS URL','newsUrl','')+
+   '</div>'+
+   '<div class="control-row"><button class="btn" onclick="discoverAndAddNewsSource()">Discover & Add</button><button class="btn" onclick="testNewsUrl()">Test URL</button><button class="btn" onclick="saveNewsSources()">Save Sources</button><button class="btn" onclick="restoreNewsDefaults()">Restore Defaults</button><button class="btn" onclick="previewNews()">Preview Latest</button></div>'+
+   '<div id="newsStatus" class="settings-status">'+esc((news.enabled_count||0)+' enabled source(s).')+'</div>'
  );
  const cards=profiles.length?profiles.map(function(p){
    const active=brokers.active_profile_id===p.id;
@@ -370,6 +385,67 @@ async function saveLLMSettings(){
   await api('/api/settings/llm/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   settingsCache=await api('/api/settings');renderSettings();
  }catch(e){alert(e.message)}
+}
+function collectNewsSources(){
+ const rows=(settingsCache&&settingsCache.news&&settingsCache.news.sources)||[];
+ return rows.map(function(src,i){
+   const box=byId('newsEnabled_'+i);
+   return Object.assign({},src,{enabled:box?box.checked:(src.enabled!==false)});
+ });
+}
+function removeNewsSource(index){
+ const rows=collectNewsSources();
+ rows.splice(index,1);
+ settingsCache.news=settingsCache.news||{};
+ settingsCache.news.sources=rows;
+ renderSettings();
+}
+async function saveNewsSources(){
+ try{
+  const r=await api('/api/settings/news/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sources:collectNewsSources()})});
+  settingsCache=await api('/api/settings');renderSettings();
+ }catch(e){const el=byId('newsStatus');if(el)el.textContent='Error: '+e.message}
+}
+async function discoverAndAddNewsSource(){
+ const url=byId('newsUrl').value.trim();
+ if(!url)return;
+ try{
+  const d=await api('/api/settings/news/discover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})});
+  if(!d.ok)throw new Error(d.error||'RSS/Atom feed not found');
+  const rows=collectNewsSources();
+  if(rows.some(function(x){return x.url===d.feed_url}))throw new Error('Feed already configured');
+  rows.push({id:'custom-'+Date.now(),name:byId('newsName').value.trim()||new URL(d.site_url).hostname,category:byId('newsCategory').value.trim()||'custom',url:d.feed_url,kind:'custom',enabled:true,built_in:false});
+  settingsCache.news=settingsCache.news||{};settingsCache.news.sources=rows;
+  renderSettings();
+  const el=byId('newsStatus');if(el)el.textContent='Discovered '+d.feed_url+'. Click Save Sources to persist.';
+ }catch(e){const el=byId('newsStatus');if(el)el.textContent='Error: '+e.message}
+}
+async function testNewsUrl(){
+ const url=byId('newsUrl').value.trim();
+ if(!url)return;
+ try{
+  const r=await api('/api/settings/news/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})});
+  byId('newsStatus').textContent=(r.ok?'✓ ':'⚠ ')+(r.ok?('Feed works · '+r.count+' item(s)'):(r.error||'Feed failed'));
+ }catch(e){byId('newsStatus').textContent='Error: '+e.message}
+}
+async function testNewsSource(index){
+ const src=collectNewsSources()[index];if(!src)return;
+ try{
+  const r=await api('/api/settings/news/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:src.url})});
+  alert((r.ok?'News source OK: ':'News source failed: ')+(r.ok?(r.count+' item(s)'):(r.error||src.url)));
+ }catch(e){alert(e.message)}
+}
+async function restoreNewsDefaults(){
+ if(!confirm('Restore the built-in news source list? Custom sources will be replaced.'))return;
+ try{await api('/api/settings/news/defaults',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});settingsCache=await api('/api/settings');renderSettings()}catch(e){alert(e.message)}
+}
+async function previewNews(){
+ try{
+  await saveNewsSources();
+  const r=await api('/api/settings/news/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:10})});
+  const lines=(r.items||[]).slice(0,10).map(function(x){return '• '+x.title}).join('\n');
+  const el=byId('newsStatus');if(el)el.textContent=(r.count||0)+' latest item(s)\n'+lines+(r.errors&&r.errors.length?'\nErrors: '+r.errors.length:'');
+ }catch(e){const el=byId('newsStatus');if(el)el.textContent='Error: '+e.message}
 }
 function newBrokerProfile(){editingBrokerId=null;renderSettings()}
 function editBrokerProfile(id){editingBrokerId=id;renderSettings()}
@@ -509,9 +585,14 @@ function locationDetails(id){
    body+=section('Market instruments','<div class="list">'+Object.entries(caos.execution_cost_bps||{}).map(function(row){return listItem(row[0],String(row[1])+' bps estimated cost')}).join('')+'</div>');
  }
  if(id==='tavern'){
-   const news=(s.caos&&s.caos.news)||{}, sentiment=(s.caos&&s.caos.experts&&s.caos.experts.sentiment)||null;
-   body+=section('Bard\'s Table','<div class="metric-grid">'+metric('News configured',news.configured?'YES':'NO')+metric('Messenger feeds',news.feeds||0)+metric('Sentiment oracle',sentiment||'none')+'</div>');
-   body+='<div class="story">'+(news.configured?'Messengers are configured. News evidence remains advisory and never bypasses deterministic risk gates.':'No news messengers are configured. The Bard will not invent rumors.')+'</div>';
+   const news=(s.caos&&s.caos.news)||{}, sentiment=(s.caos&&s.caos.experts&&s.caos.experts.sentiment)||null, intel=c.news_intelligence||s.news_intelligence||{}, contexts=intel.contexts||{}, latest=intel.latest_items||[], newsErrors=intel.errors||[];
+   const blocked=Object.values(contexts).filter(function(x){return x&&x.block_new_risk}).length;
+   body+=section('Bard\'s Table','<div class="metric-grid">'+metric('News configured',news.configured?'YES':'NO')+metric('Messenger feeds',news.feeds||0)+metric('Sentiment oracle',sentiment||'heuristic fallback')+metric('Markets under ward',blocked)+metric('Feed errors',newsErrors.length)+metric('Last refresh',intel.last_refresh_ms?new Date(intel.last_refresh_ms).toLocaleString():'—')+'</div>');
+   body+='<div class="story">'+(news.configured?'The Bard reads configured messengers and turns their reports into context. News never creates an order. Critical negative news may block only NEW risk; reductions and exits remain allowed. Positive headlines never raise exposure above the technical strategy and risk limits.':'No news messengers are configured. The Bard will not invent rumors.')+'</div>';
+   const contextRows=Object.entries(contexts);
+   body+=section('Market News Wards',contextRows.length?'<div class="list">'+contextRows.map(function(row){const x=row[1]||{};const status=x.block_new_risk?'NEW RISK BLOCKED':(Number(x.score_penalty||0)>0?'CAUTION':'CLEAR');return listItem(row[0]+' · '+status,'severity '+esc(x.severity||'none')+' · sentiment '+Number(x.sentiment||0).toFixed(2)+' · score penalty '+Number(x.score_penalty||0).toFixed(1)+' · '+String((x.headlines||[]).length)+' relevant headline(s)')}).join('')+'</div>':'<div class="empty">No market-specific news context has been calculated yet.</div>');
+   body+=section('Latest Dispatches',latest.length?'<div class="list">'+latest.slice(0,20).map(function(x){const sent=x.sentiment&&x.sentiment.signed_score!==undefined?' · sentiment '+Number(x.sentiment.signed_score).toFixed(2):'';return listItem(x.title||'Untitled dispatch',(x.published||'undated')+' · '+(x.source||'unknown source')+sent)}).join('')+'</div>':'<div class="empty">No dispatches have been collected yet.</div>');
+   if(newsErrors.length)body+=section('Messenger Errors','<div class="list">'+newsErrors.slice(0,20).map(function(e){return listItem('Feed warning',e)}).join('')+'</div>');
  }
  if(id==='arena'){
    const experiments=Object.values(s.training||{}), rollout=c.rollout||{}, rsummary=c.rollout_summary||{}, releases=Object.values(rollout.releases||{});
@@ -890,6 +971,45 @@ def serve_company(
                                         False,
                                     )
                                 ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/news/save":
+                        self._json(
+                            200,
+                            settings_service.save_news_sources(
+                                payload.get("sources", [])
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/news/discover":
+                        self._json(
+                            200,
+                            settings_service.discover_news_feed(
+                                str(payload.get("url", ""))
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/news/test":
+                        self._json(
+                            200,
+                            settings_service.test_news_source(
+                                str(payload.get("url", ""))
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/news/defaults":
+                        self._json(
+                            200,
+                            settings_service.restore_default_news_sources(),
+                        )
+                        return
+                    if path == "/api/settings/news/preview":
+                        self._json(
+                            200,
+                            settings_service.preview_news(
+                                limit=int(payload.get("limit", 20)),
+                                query=payload.get("query"),
                             ),
                         )
                         return

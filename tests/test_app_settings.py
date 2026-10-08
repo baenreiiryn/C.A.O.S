@@ -13,6 +13,7 @@ from caos.app_settings import (
     WindowsCredentialVault,
 )
 from caos.llm import OllamaClient, OpenAICompatClient, StaticLLM
+from caos.news import default_news_sources
 
 
 class FakeReliability:
@@ -140,6 +141,94 @@ class RuntimeLLMSettingsTests(unittest.TestCase):
         self.assertEqual(
             kwargs["headers"]["Authorization"],
             "Bearer vault-key",
+        )
+
+
+class NewsSettingsTests(unittest.TestCase):
+    def test_defaults_are_visible_when_config_has_no_news_sources(self):
+        service, *_ = make_service()
+        news = service.get_settings()["news"]
+        self.assertEqual(
+            news["sources"],
+            default_news_sources(),
+        )
+        self.assertGreater(news["enabled_count"], 0)
+
+    def test_saving_sources_rebuilds_live_analyzer_and_persists(self):
+        service, caos, config, persisted, _ = make_service()
+        result = service.save_news_sources(
+            [
+                {
+                    "id": "custom",
+                    "name": "Custom",
+                    "category": "crypto",
+                    "url": "https://example.com/rss.xml",
+                    "enabled": True,
+                    "built_in": False,
+                }
+            ]
+        )
+        self.assertEqual(result["enabled_count"], 1)
+        self.assertIsNotNone(caos.news_analyzer)
+        self.assertEqual(
+            caos.news_analyzer.client.feed_urls,
+            ["https://example.com/rss.xml"],
+        )
+        self.assertEqual(
+            config["news_sources"][0]["name"],
+            "Custom",
+        )
+        self.assertEqual(
+            persisted[-1]["news_sources"][0]["url"],
+            "https://example.com/rss.xml",
+        )
+
+    def test_disabling_all_sources_disables_runtime_analyzer(self):
+        service, caos, *_ = make_service()
+        source = {
+            **default_news_sources()[0],
+            "enabled": False,
+        }
+        result = service.save_news_sources([source])
+        self.assertEqual(result["enabled_count"], 0)
+        self.assertIsNone(caos.news_analyzer)
+
+    @patch("caos.app_settings.RSSNewsClient.discover_feed")
+    def test_site_discovery_is_exposed_safely(self, discover):
+        discover.return_value = {
+            "ok": True,
+            "site_url": "https://example.com",
+            "feed_url": "https://example.com/rss.xml",
+            "method": "discovered",
+            "sample": [],
+        }
+        service, *_ = make_service()
+        result = service.discover_news_feed(
+            "https://example.com"
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            result["feed_url"],
+            "https://example.com/rss.xml",
+        )
+
+    def test_restore_defaults_replaces_custom_sources(self):
+        service, *_ = make_service()
+        service.save_news_sources(
+            [
+                {
+                    "id": "custom",
+                    "name": "Custom",
+                    "category": "custom",
+                    "url": "https://example.com/feed",
+                    "enabled": True,
+                }
+            ]
+        )
+        news = service.restore_default_news_sources()
+        self.assertEqual(
+            news["sources"],
+            default_news_sources(),
         )
 
 

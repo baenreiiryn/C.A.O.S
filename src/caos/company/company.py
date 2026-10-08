@@ -11,6 +11,7 @@ from .diversity import StrategyDiversity
 from .domain import CompanyPolicy, Opportunity, TraderMode, TraderStatus
 from .improvement import ImprovementManager
 from .market import MarketAllocator, MarketAllocationError, OpportunityRegistry
+from .news_intelligence import CompanyNewsIntelligence
 from .paper import CompanyPaperBook, CompanyPaperError
 from .registry import TraderRegistry
 from .research import ResearchFactory
@@ -74,6 +75,7 @@ class TradeCompany:
         )
         self.diversity = StrategyDiversity(self.registry)
         self.scout = MarketScout(self.engine, self.opportunities)
+        self.news_intelligence = CompanyNewsIntelligence(self.engine.caos)
         self.training = TrainingArena()
         self.research = ResearchFactory(
             self.strategies,
@@ -728,6 +730,7 @@ class TradeCompany:
             "research_summary": self.research.summary(),
             "rollout": self.rollout.snapshot(),
             "rollout_summary": self.rollout.summary(),
+            "news_intelligence": self.news_intelligence.snapshot(),
             "audit": audit.to_dict(),
             "caos": self.engine.health(),
         }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from .domain import Opportunity, TraderMode, TraderStatus
@@ -34,6 +34,9 @@ class CompanyDaemonCycle:
     exposure: dict
     rollout_events: list[dict]
     paused: bool = False
+    news_intelligence: dict = field(
+        default_factory=dict
+    )
 
     def to_dict(self) -> dict:
         return {
@@ -49,6 +52,9 @@ class CompanyDaemonCycle:
             "exposure": dict(self.exposure),
             "rollout_events": list(self.rollout_events),
             "paused": self.paused,
+            "news_intelligence": dict(
+                self.news_intelligence
+            ),
         }
 
 
@@ -153,6 +159,12 @@ class CompanyDaemon:
                 f"{now}:{index}"
             )
             try:
+                news_context = (
+                    self.company.news_intelligence
+                    .context_for(symbol)
+                )
+                if news_context.get("block_new_risk"):
+                    continue
                 opportunity = self.company.scout.discover_and_publish(
                     symbol,
                     direction=target.direction,
@@ -165,6 +177,19 @@ class CompanyDaemon:
                         )
                     ),
                 )
+                penalty = float(
+                    news_context.get(
+                        "score_penalty",
+                        0.0,
+                    )
+                )
+                opportunity.score = max(
+                    0.0,
+                    opportunity.score - penalty,
+                )
+                opportunity.metadata[
+                    "news_context"
+                ] = news_context
                 created.append(opportunity.id)
             except Exception as exc:
                 errors[f"scan:{symbol}:{target.direction}"] = (
@@ -232,11 +257,19 @@ class CompanyDaemon:
                         trader.strategy_id,
                     )
                 )
+                news_context = (
+                    self.company.news_intelligence
+                    .context_for(trader.market)
+                )
                 result = self.company.paper.cycle_trader(
                     trader.id,
                     allow_new_risk=(
                         allow_new_risk
                         and strategy_assignable
+                        and not news_context.get(
+                            "block_new_risk",
+                            False,
+                        )
                     ),
                 )
                 actions.append(result.to_dict())
@@ -402,6 +435,21 @@ class CompanyDaemon:
                     f"{type(exc).__name__}: {exc}"
                 )
 
+        try:
+            news_snapshot = (
+                self.company.news_intelligence.refresh(
+                    self._symbols_to_refresh(),
+                    now=now,
+                )
+            )
+        except Exception as exc:
+            errors["news:intelligence"] = (
+                f"{type(exc).__name__}: {exc}"
+            )
+            news_snapshot = (
+                self.company.news_intelligence.snapshot()
+            )
+
         rollout_events: list[dict] = []
         if not self.company.operations_paused:
             for symbol in refreshed:
@@ -465,6 +513,24 @@ class CompanyDaemon:
                     "gross_exposure": exposure["gross_notional"],
                     "operations_paused": self.company.operations_paused,
                     "rollout_events": len(rollout_events),
+                    "news_blocked_symbols": [
+                        symbol
+                        for symbol, context in (
+                            news_snapshot.get(
+                                "contexts",
+                                {},
+                            ).items()
+                        )
+                        if context.get(
+                            "block_new_risk"
+                        )
+                    ],
+                    "news_errors": len(
+                        news_snapshot.get(
+                            "errors",
+                            [],
+                        )
+                    ),
                 },
             )
 
@@ -481,6 +547,7 @@ class CompanyDaemon:
             exposure=exposure,
             rollout_events=rollout_events,
             paused=self.company.operations_paused,
+            news_intelligence=news_snapshot,
         )
 
     def serve(
