@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.8.7 standalone Trade Company with autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. Windows installations default to **AUTO** market selection: the Scout Lodge pre-filters liquid Binance Spot USDT markets, compares multiple timeframes against every registered assignable strategy, and publishes the strongest market/timeframe/strategy combinations for Traders. The old configured targets remain only as a MANUAL/debug fallback. Production market exclusivity still prevents two Traders from occupying the same symbol.
+> Current milestone: **v0.8.8 standalone Trade Company with GitHub self-update, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. The new **Update Center** checks stable GitHub Releases, downloads a lightweight executable-only update package, verifies its SHA-256, applies it after the Trade Company exits, and relaunches automatically. Persistent Company state, launcher settings, Windows credentials, managed Ollama runtime and local models are not replaced by an in-place update.
 
 ## Why it is built this way
 
