@@ -88,6 +88,14 @@ class FakeSettingsService:
     def get_settings(self):
         return {
             "version": "settings/v1",
+            "company": {
+                "trader_initial_bucket": 10.0,
+                "trader_stop_floor": 3.0,
+                "default_trader_max_exposure_pct": 20.0,
+                "company_max_drawdown_pct": 30.0,
+                "operational_state": "stopped",
+                "note": "test",
+            },
             "llm": {
                 "provider": "ollama",
                 "model": "qwen3:8b",
@@ -216,6 +224,12 @@ class FakeSettingsService:
             "api_key_configured": bool(
                 kwargs.get("api_key")
             ),
+        }
+
+    def save_company_policy(self, **kwargs):
+        return {
+            **kwargs,
+            "operational_state": "stopped",
         }
 
     def save_news_sources(self, sources):
@@ -364,6 +378,49 @@ class StandaloneConfigTests(unittest.TestCase):
             initialize_company(company, targets)
             saved_policy = load_saved_policy(store)
             self.assertEqual(saved_policy, policy)
+            store.close()
+
+    def test_company_policy_can_be_edited_only_while_stopped(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "company.db")
+            caos = make_runtime(store)
+            company = TradeCompany(
+                CAOSAdapter(caos),
+                build_policy(
+                    initial_company_capital=10,
+                    trader_initial_bucket=10,
+                    trader_stop_floor=3,
+                    default_trader_max_exposure_pct=20,
+                    operational_trader_cap=6,
+                    company_max_drawdown_pct=30,
+                ),
+                store=store,
+            )
+            initialize_company(
+                company,
+                parse_scan_targets("BTCUSDT:long:momentum"),
+            )
+            company.stop_operations()
+            updated = company.update_policy(
+                trader_initial_bucket=8,
+                trader_stop_floor=2,
+                default_trader_max_exposure_pct=15,
+                company_max_drawdown_pct=25,
+            )
+            self.assertEqual(updated["trader_initial_bucket"], 8.0)
+            self.assertIs(company.capital.policy, company.policy)
+            self.assertIs(company.market.policy, company.policy)
+            self.assertIs(company.risk.policy, company.policy)
+            self.assertIs(company.paper.policy, company.policy)
+            self.assertIs(company.supervisor.policy, company.policy)
+            company.start_operations()
+            with self.assertRaises(Exception):
+                company.update_policy(
+                    trader_initial_bucket=7,
+                    trader_stop_floor=2,
+                    default_trader_max_exposure_pct=12,
+                    company_max_drawdown_pct=20,
+                )
             store.close()
 
     def test_cli_parser_exposes_company_commands(self):
@@ -689,7 +746,7 @@ class PaperTraderChartTests(unittest.TestCase):
             )
             self.assertEqual(
                 pending_chart["version"],
-                "paper-trader-chart/v2",
+                "paper-trader-chart/v3",
             )
             self.assertEqual(
                 pending_chart["phase"],
@@ -818,6 +875,35 @@ class PaperTraderChartTests(unittest.TestCase):
                 persisted["order_events"],
                 chart["order_events"],
             )
+            store.close()
+
+    def test_control_uses_cached_live_one_minute_chart(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "company.db")
+            caos, _policy, company, bars = (
+                self._build_assigned_company(store)
+            )
+
+            class FakeMarket:
+                def __init__(self):
+                    self.calls = 0
+
+                def klines(self, symbol, interval, limit):
+                    self.calls += 1
+                    self.last = (symbol, interval, limit)
+                    return bars[-limit:]
+
+            fake = FakeMarket()
+            caos.market_client = fake
+            control = CompanyControlPort(company)
+            first = control.get_trader_chart("A", limit=30)
+            second = control.get_trader_chart("A", limit=30)
+
+            self.assertEqual(first["version"], "paper-trader-chart/v3")
+            self.assertTrue(first["live"])
+            self.assertEqual(first["chart_interval"], "1m")
+            self.assertEqual(fake.calls, 1)
+            self.assertEqual(second["bars"], first["bars"])
             store.close()
 
     def test_new_risk_block_cancels_pending_entry(self):
@@ -1049,7 +1135,7 @@ class CompanyDashboardTests(unittest.TestCase):
                     )
                 self.assertEqual(
                     chart["version"],
-                    "paper-trader-chart/v2",
+                    "paper-trader-chart/v3",
                 )
                 self.assertEqual(
                     chart["phase"],

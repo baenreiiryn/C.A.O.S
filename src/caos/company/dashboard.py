@@ -63,6 +63,20 @@ font-family:system-ui,sans-serif;font-size:11px}
 .execution-proposal .proposal-meta{color:var(--muted);line-height:1.45}
 .settings-btn{border:1px solid var(--line);background:rgba(45,34,64,.82);color:var(--gold2);border-radius:999px;padding:6px 11px;cursor:pointer;font:11px system-ui,sans-serif}
 .settings-btn:hover{background:#3a2d50}
+.chat-btn{border:1px solid rgba(121,199,255,.4);background:rgba(22,39,58,.9);color:#cbe9ff;border-radius:999px;padding:6px 11px;cursor:pointer;font:11px system-ui,sans-serif}
+.chat-btn:hover{background:#213d58}
+.chat-panel{position:fixed;right:0;top:0;bottom:0;width:min(420px,96vw);z-index:70;background:linear-gradient(165deg,#0c1723,#151126);border-left:1px solid rgba(121,199,255,.28);box-shadow:-22px 0 70px rgba(0,0,0,.5);transform:translateX(104%);transition:transform .24s ease;display:flex;flex-direction:column}
+.chat-panel.open{transform:translateX(0)}
+.chat-head{padding:15px 16px;border-bottom:1px solid var(--line);background:rgba(10,17,27,.95);position:relative}
+.chat-head b{display:block;color:#d8edff;font:800 17px system-ui,sans-serif}.chat-head small{color:var(--muted);font:10px system-ui,sans-serif}
+.chat-close{position:absolute;right:12px;top:12px;border:1px solid var(--line);background:#1a2635;border-radius:7px;padding:6px 9px;cursor:pointer}
+.chat-messages{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:9px}
+.chat-msg{max-width:92%;padding:9px 11px;border-radius:11px;font:12px/1.45 system-ui,sans-serif;white-space:pre-wrap;word-break:break-word}
+.chat-msg.user{align-self:flex-end;background:#263b52;color:#eef8ff}.chat-msg.assistant{align-self:flex-start;background:#241d34;border:1px solid rgba(233,189,99,.2);color:#f2e7cf}
+.chat-empty{margin:auto;color:var(--muted);font:12px system-ui,sans-serif;text-align:center;max-width:270px}
+.chat-compose{border-top:1px solid var(--line);padding:10px;background:rgba(9,15,24,.96)}
+.chat-compose textarea{width:100%;min-height:76px;max-height:180px;resize:vertical;background:#0b1420;border:1px solid rgba(121,199,255,.3);border-radius:9px;color:#fff;padding:9px;font:12px system-ui,sans-serif}
+.chat-actions{display:flex;justify-content:space-between;align-items:center;margin-top:7px}.chat-actions small{color:var(--muted);font:9px system-ui,sans-serif}
 .op-btn{border:1px solid var(--line);border-radius:999px;padding:6px 11px;cursor:pointer;font:700 11px system-ui,sans-serif;background:#192431}
 .op-btn.start{color:var(--green);border-color:rgba(107,226,161,.45)}
 .op-btn.stop{color:var(--amber);border-color:rgba(255,200,102,.45)}
@@ -254,6 +268,7 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
     <button id="startOpsBtn" class="op-btn start" type="button">▶ Start</button>
     <button id="stopOpsBtn" class="op-btn stop" type="button">■ Stop</button>
     <button id="emergencyOpsBtn" class="op-btn emergency" type="button">⚠ Emergency</button>
+    <button id="chatBtn" class="chat-btn" type="button">💬 Chat</button>
     <button id="settingsBtn" class="settings-btn" type="button">⚙ Settings</button>
   </div>
 </header>
@@ -302,6 +317,19 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
   <div id="drawerBody" class="drawer-body"></div>
 </aside>
 
+<aside id="chatPanel" class="chat-panel" aria-hidden="true">
+  <div class="chat-head">
+    <button id="chatClose" class="chat-close">✕</button>
+    <b>🔮 Arcane Nexus Chat</b>
+    <small>Read-only natural language · uses the configured LLM</small>
+  </div>
+  <div id="chatMessages" class="chat-messages"><div class="chat-empty">Ask about the Company, Traders, risk, strategies, news context or what the agents are doing.</div></div>
+  <div class="chat-compose">
+    <textarea id="chatInput" placeholder="Fale com o LLM em linguagem natural…"></textarea>
+    <div class="chat-actions"><small>Enter sends · Shift+Enter creates a new line</small><div><button id="chatClear" class="btn">Clear</button><button id="chatSend" class="btn">Send</button></div></div>
+  </div>
+</aside>
+
 <script>
 let currentStatus=null;
 let currentCity=null;
@@ -316,6 +344,7 @@ const hudEquity=byId('hudEquity'),hudReserve=byId('hudReserve'),hudTraders=byId(
 const healthRune=byId('healthRune'),modeRune=byId('modeRune'),operationRune=byId('operationRune'),alertRune=byId('alertRune'),cityWorld=byId('cityWorld');
 const cityMoodTitle=byId('cityMoodTitle'),cityMoodText=byId('cityMoodText'),alertText=byId('alertText'),guildAdventurers=byId('guildAdventurers');
 const drawer=byId('drawer'),drawerBackdrop=byId('drawerBackdrop'),drawerTitle=byId('drawerTitle'),drawerTech=byId('drawerTech'),drawerBody=byId('drawerBody'),drawerClose=byId('drawerClose'),settingsBtn=byId('settingsBtn');
+const chatBtn=byId('chatBtn'),chatPanel=byId('chatPanel'),chatClose=byId('chatClose'),chatMessages=byId('chatMessages'),chatInput=byId('chatInput'),chatSend=byId('chatSend'),chatClear=byId('chatClear');
 const startOpsBtn=byId('startOpsBtn'),stopOpsBtn=byId('stopOpsBtn'),emergencyOpsBtn=byId('emergencyOpsBtn');
 
 const money=function(v){return '$'+Number(v||0).toFixed(4)};
@@ -342,9 +371,20 @@ function settingsSelect(label,id,value,options){
  return '<label for="'+esc(id)+'">'+esc(label)+'</label><select id="'+esc(id)+'">'+options.map(function(o){const v=(typeof o==='string'?o:o.value),t=(typeof o==='string'?o:o.label);return '<option value="'+esc(v)+'"'+(String(v)===String(value)?' selected':'')+'>'+esc(t)+'</option>'}).join('')+'</select>';
 }
 function renderSettings(){
- const st=settingsCache||{},llm=st.llm||{},managed=st.ollama_runtime||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
+ const st=settingsCache||{},companyCfg=st.company||{},llm=st.llm||{},managed=st.ollama_runtime||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
  const providerOpts=['static','ollama','openai-compatible'];
  let html='<div class="story">Settings remain available after the Founding Charter. Saving the LLM swaps only the runtime provider; Treasury, Traders, PAPER state and research remain intact.</div>';
+ html+=section('🏰 Company Charter · Runtime Policy',
+   '<div class="settings-grid">'+
+   settingsField('Initial Trader bucket','companyInitialBucket',companyCfg.trader_initial_bucket||10,'number')+
+   settingsField('Trader stop floor','companyStopFloor',companyCfg.trader_stop_floor||3,'number')+
+   settingsField('Default max exposure %','companyDefaultExposure',companyCfg.default_trader_max_exposure_pct||20,'number')+
+   settingsField('Company max drawdown %','companyMaxDrawdown',companyCfg.company_max_drawdown_pct||30,'number')+
+   '</div>'+
+   '<div class="settings-note">'+esc(companyCfg.note||'')+' Changes require the Company to be STOPPED. Existing Trader balances are not resized when the initial bucket changes; existing Trader exposure limits remain individually configurable in each Trader drawer.</div>'+
+   '<div class="control-row"><button class="btn" onclick="saveCompanyPolicySettings()">Save Company Policy</button></div>'+
+   '<div id="companyPolicyStatus" class="settings-status">Operational state: '+esc(companyCfg.operational_state||'unknown')+'</div>'
+ );
  html+=section('🔮 Arcane Nexus · LLM Configuration',
    '<div class="settings-grid">'+
    settingsSelect('Provider','settingsProvider',llm.provider||'static',providerOpts)+
@@ -445,6 +485,21 @@ async function saveLLMSettings(){
   await api('/api/settings/llm/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   settingsCache=await api('/api/settings');renderSettings();
  }catch(e){alert(e.message)}
+}
+async function saveCompanyPolicySettings(){
+ const status=byId('companyPolicyStatus');
+ try{
+  const payload={
+   trader_initial_bucket:Number(byId('companyInitialBucket').value),
+   trader_stop_floor:Number(byId('companyStopFloor').value),
+   default_trader_max_exposure_pct:Number(byId('companyDefaultExposure').value),
+   company_max_drawdown_pct:Number(byId('companyMaxDrawdown').value)
+  };
+  const r=await api('/api/settings/company/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  settingsCache=await api('/api/settings');
+  renderSettings();
+  const el=byId('companyPolicyStatus');if(el)el.textContent='✓ Company policy saved · state '+String(r.operational_state||'stopped');
+ }catch(e){if(status)status.textContent='Error: '+e.message;else alert(e.message)}
 }
 async function refreshManagedOllama(){
  try{
@@ -891,7 +946,9 @@ function renderTraderChart(chart){
  const pendingCard=pending?'<div class="pending-order-card"><strong>🟠 OPEN PAPER ORDER · '+esc(String(pending.side||'').toUpperCase())+' '+esc(String(pending.order_type||'').toUpperCase())+'</strong>Trigger <b>'+esc(price(pending.trigger_price))+'</b> · notional <b>'+esc(money(pending.notional))+'</b> · waiting <b>'+esc(String(pending.age_bars||0))+' candle(s)</b><br>Strategy '+esc(pending.strategy||'—')+' · plan <code>'+esc(String(pending.plan_id||'').slice(0,24))+'</code></div>':'';
  const orderHistory=orderEvents.length?'<div class="order-history">'+orderEvents.slice(-6).reverse().map(function(o){const icon=o.kind==='opened'?'🟠':(o.kind==='filled'?'✅':'✕');return '<div class="order-history-row"><b>'+icon+' '+esc(String(o.kind||'order').toUpperCase())+' '+esc(String(o.side||'').toUpperCase())+'</b> · '+esc(price(o.trigger_price))+' · '+esc(new Date(Number(o.ts)).toLocaleString())+(o.reason?' · '+esc(o.reason):'')+'</div>'}).join('')+'</div>':'';
  const headOrder=pending?'<br>Open '+esc(String(pending.side||'').toUpperCase())+' @ '+esc(price(pending.trigger_price)):'';
- return '<div class="trader-chart-shell"><div class="trader-chart-head"><div><div class="trader-chart-title">'+title+' · PAPER</div>'+phaseHtml+'</div><div class="trader-chart-meta">Last '+bars.length+' candles<br>Price '+esc(price(position.current_price))+(position.avg_price?'<br>Avg entry '+esc(price(position.avg_price))+' · PnL '+esc(pnl):'')+headOrder+'</div></div><svg class="trader-chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="PAPER candlestick chart for '+title+'">'+svg+'</svg>'+pendingCard+'<div class="chart-legend"><span><b>MA7</b> gold</span><span><b>MA25</b> violet</span><span><b>MA99</b> cyan</span><span><b style="color:#ffae42">OPEN</b> pending limit order</span><span><b>B</b> PAPER buy</span><span><b>S</b> PAPER sell/reduce</span>'+(position.avg_price?'<span><b>AVG</b> active position average</span>':'')+'</div>'+(events?'<div class="chart-events">'+events+'</div>':'')+orderHistory+'</div>';
+ const liveLabel=chart&&chart.live?('LIVE '+String(chart.chart_interval||'1m')):'STRATEGY FEED';
+ const liveWarning=chart&&chart.live_error?'<div class="pending-order-card"><strong>⚠ LIVE FEED FALLBACK</strong>'+esc(chart.live_error)+'</div>':'';
+ return '<div class="trader-chart-shell"><div class="trader-chart-head"><div><div class="trader-chart-title">'+title+' · '+esc(liveLabel)+'</div>'+phaseHtml+'</div><div class="trader-chart-meta">Last '+bars.length+' candles · refresh '+esc(String(chart.live_refresh_seconds||'—'))+'s<br>Price '+esc(price(position.current_price))+(position.avg_price?'<br>Avg entry '+esc(price(position.avg_price))+' · PnL '+esc(pnl):'')+headOrder+'</div></div><svg class="trader-chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="PAPER candlestick chart for '+title+'">'+svg+'</svg>'+liveWarning+pendingCard+'<div class="chart-legend"><span><b>MA7</b> gold</span><span><b>MA25</b> violet</span><span><b>MA99</b> cyan</span><span><b style="color:#79c7ff">LIVE 1m</b> visual market feed</span><span><b style="color:#ffae42">OPEN</b> pending limit order</span><span><b>B</b> PAPER buy</span><span><b>S</b> PAPER sell/reduce</span>'+(position.avg_price?'<span><b>AVG</b> active position average</span>':'')+'</div>'+(events?'<div class="chart-events">'+events+'</div>':'')+orderHistory+'</div>';
 }
 async function refreshTraderChart(id){
  const slot=byId('traderLiveChart');
@@ -921,7 +978,7 @@ async function openTrader(id){
  if(t.status==='active')actions='<button class="btn" onclick="pauseTrader(\''+esc(id)+'\')">Pause Adventurer</button>';
  if(t.status==='paused')actions='<button class="btn" onclick="resumeTrader(\''+esc(id)+'\')">Resume Adventurer</button>';
  const exposureControls='<div class="control-row"><label>Chosen size % <input id="traderSizeInput" type="number" min="0.01" step="0.01" value="'+esc(requested)+'"></label><label>Max seal % <input id="traderMaxInput" type="number" min="0.01" max="100" step="0.01" value="'+esc(t.max_trade_exposure_pct)+'"></label><button class="btn" onclick="setTraderExposure(\''+esc(id)+'\')">Apply</button></div>';
- drawerBody.innerHTML='<div class="story">'+traderAvatar(t.status)+' This adventurer is '+esc(t.status)+'. The chart below uses the same live market candles and PAPER fills used by the Company.</div>'+
+ drawerBody.innerHTML='<div class="story">'+traderAvatar(t.status)+' This adventurer is '+esc(t.status)+'. The chart uses a dedicated LIVE 1-minute Binance visual feed while strategy decisions continue to use the Company\'s configured strategy timeframe.</div>'+
  section('Live PAPER Chart','<div id="traderLiveChart"><div class="trader-chart-shell"><div class="empty" style="padding:20px">Loading market chart…</div></div></div>')+
  section('Current Quest','<div class="metric-grid">'+metric('Market',t.market||'none')+metric('Direction',t.direction||'—')+metric('Strategy',t.strategy_id||'—')+metric('Mode',t.mode)+'</div>')+
  section('Capital & Risk Seal','<div class="metric-grid">'+metric('Realized capital',money(bal))+metric('Open exposure',money(exp))+metric('Chosen sizing',pct(requested))+metric('Maximum exposure',pct(t.max_trade_exposure_pct))+metric('Requested notional',money(requestedNotional))+metric('Maximum notional',money(maxNotional))+'</div>')+
@@ -987,6 +1044,36 @@ async function setTraderExposure(id){
  }catch(e){alert(e.message)}
 }
 
+function renderChatMessages(rows){
+ rows=rows||[];
+ if(!rows.length){chatMessages.innerHTML='<div class="chat-empty">Ask about the Company, Traders, risk, strategies, news context or what the agents are doing.</div>';return}
+ chatMessages.innerHTML=rows.map(function(m){return '<div class="chat-msg '+(m.role==='user'?'user':'assistant')+'">'+esc(m.content)+'</div>'}).join('');
+ chatMessages.scrollTop=chatMessages.scrollHeight;
+}
+async function openChat(){
+ closeDrawer();
+ chatPanel.classList.add('open');chatPanel.setAttribute('aria-hidden','false');
+ try{const r=await api('/api/chat/history');renderChatMessages(r.messages||[])}catch(e){renderChatMessages([{role:'assistant',content:'Chat unavailable: '+e.message}])}
+ setTimeout(function(){chatInput.focus()},80);
+}
+function closeChat(){chatPanel.classList.remove('open');chatPanel.setAttribute('aria-hidden','true')}
+async function sendChatMessage(){
+ const message=chatInput.value.trim();if(!message)return;
+ chatInput.value='';chatSend.disabled=true;
+ try{
+  const history=(await api('/api/chat/history')).messages||[];
+  renderChatMessages(history.concat([{role:'user',content:message},{role:'assistant',content:'Thinking…'}]));
+  const r=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:message})});
+  renderChatMessages(r.history||[]);
+ }catch(e){
+  const history=(await api('/api/chat/history').catch(function(){return {messages:[]}})).messages||[];
+  renderChatMessages(history.concat([{role:'assistant',content:'Error: '+e.message}]));
+ }finally{chatSend.disabled=false;chatInput.focus()}
+}
+async function clearChatMessages(){
+ try{await api('/api/chat/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});renderChatMessages([])}catch(e){alert(e.message)}
+}
+
 async function tick(){
  try{
   const pair=await Promise.all([api('/api/company/status'),api('/api/company/city'),api('/api/execution/status')]);
@@ -1001,12 +1088,17 @@ async function tick(){
 
 document.querySelectorAll('.place').forEach(function(el){el.addEventListener('click',function(){openLocation(el.dataset.location)})});
 settingsBtn.addEventListener('click',openSettings);
+chatBtn.addEventListener('click',openChat);
+chatClose.addEventListener('click',closeChat);
+chatSend.addEventListener('click',sendChatMessage);
+chatClear.addEventListener('click',clearChatMessages);
+chatInput.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChatMessage()}});
 modeRune.addEventListener('click',openExecution);
 startOpsBtn.addEventListener('click',startOperations);
 stopOpsBtn.addEventListener('click',stopOperations);
 emergencyOpsBtn.addEventListener('click',emergencyStopOperations);
 drawerClose.addEventListener('click',closeDrawer);drawerBackdrop.addEventListener('click',closeDrawer);
-document.addEventListener('keydown',function(e){if(e.key==='Escape')closeDrawer()});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'){closeDrawer();closeChat()}});
 tick();setInterval(tick,2000);
 </script>
 </body>
@@ -1021,6 +1113,7 @@ def serve_company(
     open_browser: bool = True,
     settings_service=None,
     execution_service=None,
+    chat_service=None,
 ) -> ThreadingHTTPServer:
     mapper = CityPresentationMapper()
     cell = TradeCompanyCell(control)
@@ -1157,6 +1250,24 @@ def serve_company(
                         execution_service.list_proposals(),
                     )
                 return
+            if path == "/api/chat/history":
+                if chat_service is None:
+                    self._json(
+                        200,
+                        {
+                            "enabled": False,
+                            "messages": [],
+                        },
+                    )
+                else:
+                    self._json(
+                        200,
+                        {
+                            "enabled": True,
+                            "messages": chat_service.messages(),
+                        },
+                    )
+                return
             if path == "/api/settings":
                 if settings_service is None:
                     self._json(
@@ -1278,6 +1389,26 @@ def serve_company(
                         ),
                     )
                     return
+                if path == "/api/chat":
+                    if chat_service is None:
+                        raise RuntimeError(
+                            "company_chat_unavailable"
+                        )
+                    payload = self._read_json()
+                    self._json(
+                        200,
+                        chat_service.ask(
+                            str(payload.get("message", ""))
+                        ),
+                    )
+                    return
+                if path == "/api/chat/clear":
+                    if chat_service is None:
+                        raise RuntimeError(
+                            "company_chat_unavailable"
+                        )
+                    self._json(200, chat_service.clear())
+                    return
                 if path.startswith("/api/settings/"):
                     if settings_service is None:
                         raise RuntimeError(
@@ -1317,6 +1448,33 @@ def serve_company(
                                         "model_name",
                                         "",
                                     )
+                                ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/company/save":
+                        self._json(
+                            200,
+                            settings_service.save_company_policy(
+                                trader_initial_bucket=float(
+                                    payload[
+                                        "trader_initial_bucket"
+                                    ]
+                                ),
+                                trader_stop_floor=float(
+                                    payload[
+                                        "trader_stop_floor"
+                                    ]
+                                ),
+                                default_trader_max_exposure_pct=float(
+                                    payload[
+                                        "default_trader_max_exposure_pct"
+                                    ]
+                                ),
+                                company_max_drawdown_pct=float(
+                                    payload[
+                                        "company_max_drawdown_pct"
+                                    ]
                                 ),
                             ),
                         )

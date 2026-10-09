@@ -115,6 +115,92 @@ class TradeCompany:
     def set_resume_guard(self, guard) -> None:
         self._resume_guard = guard
 
+    def update_policy(
+        self,
+        *,
+        trader_initial_bucket: float,
+        trader_stop_floor: float,
+        default_trader_max_exposure_pct: float,
+        company_max_drawdown_pct: float,
+    ) -> dict:
+        if self.operational_state() != "stopped":
+            raise TradeCompanyError(
+                "company_policy_change_requires_stopped_company"
+            )
+        if float(trader_stop_floor) > float(
+            trader_initial_bucket
+        ):
+            raise TradeCompanyError(
+                "trader_stop_floor_cannot_exceed_initial_bucket"
+            )
+
+        current = self.policy.to_dict()
+        updated = CompanyPolicy(
+            initial_company_capital=float(
+                current["initial_company_capital"]
+            ),
+            trader_initial_bucket=float(
+                trader_initial_bucket
+            ),
+            trader_stop_floor=float(
+                trader_stop_floor
+            ),
+            default_trader_max_exposure_pct=float(
+                default_trader_max_exposure_pct
+            ),
+            operational_trader_cap=int(
+                current["operational_trader_cap"]
+            ),
+            company_max_drawdown_pct=float(
+                company_max_drawdown_pct
+            ),
+            production_market_exclusivity=bool(
+                current["production_market_exclusivity"]
+            ),
+            training_market_overlap=bool(
+                current["training_market_overlap"]
+            ),
+            allow_paper=bool(current["allow_paper"]),
+            allow_testnet=bool(current["allow_testnet"]),
+            allow_live=bool(current["allow_live"]),
+            paper_pending_orders=bool(
+                current["paper_pending_orders"]
+            ),
+        )
+
+        self.policy = updated
+        self.capital.policy = updated
+        self.market.policy = updated
+        self.risk.policy = updated
+        self.paper.policy = updated
+        self.supervisor.policy = updated
+
+        for account in self.paper.accounts.values():
+            account.risk.mandate.max_drawdown_pct = (
+                updated.company_max_drawdown_pct
+            )
+
+        self.checkpoint()
+        if self.store is not None:
+            self.store.event(
+                "trade_company_policy_updated",
+                {
+                    "trader_initial_bucket": (
+                        updated.trader_initial_bucket
+                    ),
+                    "trader_stop_floor": (
+                        updated.trader_stop_floor
+                    ),
+                    "default_trader_max_exposure_pct": (
+                        updated.default_trader_max_exposure_pct
+                    ),
+                    "company_max_drawdown_pct": (
+                        updated.company_max_drawdown_pct
+                    ),
+                },
+            )
+        return updated.to_dict()
+
     def _persistent_external_resume_block_reason(
         self,
     ) -> str | None:

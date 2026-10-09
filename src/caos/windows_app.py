@@ -21,6 +21,7 @@ from .news import default_news_sources, normalize_news_sources
 from .ollama_runtime import ManagedOllamaRuntime
 from .runtime_execution import RuntimeExecutionService
 from .company.control import CompanyControlPort
+from .company.chat import CompanyChatService
 from .company.dashboard import serve_company
 from .company.domain import TraderMode
 from .company.standalone import (
@@ -488,6 +489,11 @@ class CompanyRuntimeHost:
             self.vault,
             self.ollama_runtime,
         )
+        self.chat = CompanyChatService(
+            self.caos,
+            self.company,
+            execution_service=self.execution,
+        )
         self.daemon = build_daemon(
             self.company,
             self.targets,
@@ -528,6 +534,7 @@ class CompanyRuntimeHost:
             open_browser=False,
             settings_service=self.settings,
             execution_service=self.execution,
+            chat_service=self.chat,
         )
         self.daemon_thread = threading.Thread(
             target=self.daemon.serve,

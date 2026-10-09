@@ -401,8 +401,67 @@ class RuntimeSettingsService:
                     ),
                 }
             )
+        policy_obj = getattr(
+            self.company,
+            "policy",
+            None,
+        )
+        policy = (
+            policy_obj.to_dict()
+            if policy_obj is not None
+            and hasattr(policy_obj, "to_dict")
+            else {
+                "trader_initial_bucket": self.config.get(
+                    "trader_bucket",
+                    10.0,
+                ),
+                "trader_stop_floor": self.config.get(
+                    "stop_floor",
+                    3.0,
+                ),
+                "default_trader_max_exposure_pct": (
+                    self.config.get(
+                        "default_max_exposure",
+                        20.0,
+                    )
+                ),
+                "company_max_drawdown_pct": self.config.get(
+                    "company_max_dd",
+                    30.0,
+                ),
+            }
+        )
+        operational_state_fn = getattr(
+            self.company,
+            "operational_state",
+            None,
+        )
         return {
             "version": SETTINGS_API_VERSION,
+            "company": {
+                "trader_initial_bucket": policy[
+                    "trader_initial_bucket"
+                ],
+                "trader_stop_floor": policy[
+                    "trader_stop_floor"
+                ],
+                "default_trader_max_exposure_pct": policy[
+                    "default_trader_max_exposure_pct"
+                ],
+                "company_max_drawdown_pct": policy[
+                    "company_max_drawdown_pct"
+                ],
+                "operational_state": (
+                    operational_state_fn()
+                    if callable(operational_state_fn)
+                    else "unknown"
+                ),
+                "note": (
+                    "Initial bucket and default exposure apply "
+                    "to newly funded Traders; stop floor and "
+                    "Company drawdown apply immediately after save."
+                ),
+            },
             "llm": {
                 "provider": self.config.get(
                     "provider",
@@ -693,6 +752,46 @@ class RuntimeSettingsService:
             }
         )
         return self.get_settings()["llm"]
+
+    def save_company_policy(
+        self,
+        *,
+        trader_initial_bucket: float,
+        trader_stop_floor: float,
+        default_trader_max_exposure_pct: float,
+        company_max_drawdown_pct: float,
+    ) -> dict:
+        updated = self.company.update_policy(
+            trader_initial_bucket=float(
+                trader_initial_bucket
+            ),
+            trader_stop_floor=float(
+                trader_stop_floor
+            ),
+            default_trader_max_exposure_pct=float(
+                default_trader_max_exposure_pct
+            ),
+            company_max_drawdown_pct=float(
+                company_max_drawdown_pct
+            ),
+        )
+        self._save_config(
+            {
+                "trader_bucket": updated[
+                    "trader_initial_bucket"
+                ],
+                "stop_floor": updated[
+                    "trader_stop_floor"
+                ],
+                "default_max_exposure": updated[
+                    "default_trader_max_exposure_pct"
+                ],
+                "company_max_dd": updated[
+                    "company_max_drawdown_pct"
+                ],
+            }
+        )
+        return self.get_settings()["company"]
 
     def save_news_sources(
         self,
