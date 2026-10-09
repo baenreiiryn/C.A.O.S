@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.8.6 standalone Trade Company with live 1-minute Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. Trader drawers now use a dedicated cached Binance 1m visual feed so candles keep moving independently of the strategy timeframe. Initial Trader bucket, stop floor, default maximum exposure and Company maximum drawdown can be changed from Settings while the Company is STOPPED. The new Arcane Nexus chat is read-only: it can explain current Company state in natural language but cannot change execution mode, confirm REAL orders, change credentials or mutate trading state.
+> Current milestone: **v0.8.7 standalone Trade Company with autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. Windows installations default to **AUTO** market selection: the Scout Lodge pre-filters liquid Binance Spot USDT markets, compares multiple timeframes against every registered assignable strategy, and publishes the strongest market/timeframe/strategy combinations for Traders. The old configured targets remain only as a MANUAL/debug fallback. Production market exclusivity still prevents two Traders from occupying the same symbol.
 
 ## Why it is built this way
 
