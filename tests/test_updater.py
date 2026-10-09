@@ -138,6 +138,23 @@ class GitHubUpdateServiceTests(unittest.TestCase):
             (1, 2, 0),
         )
 
+    def test_manifest_rejects_non_stable_or_path_like_version(self):
+        with tempfile.TemporaryDirectory() as d:
+            payload = b"update"
+            sha = hashlib.sha256(payload).hexdigest()
+            release, manifest = release_payload(
+                "0.8.9",
+                sha,
+            )
+            manifest["version"] = "0.8.9-../../escape"
+            service = self.make_service(d)
+            with patch(
+                "caos.updater._json_request",
+                side_effect=[release, manifest],
+            ):
+                with self.assertRaises(UpdateError):
+                    service.check()
+
     def test_check_detects_new_stable_release(self):
         with tempfile.TemporaryDirectory() as d:
             payload = b"verified update payload"
