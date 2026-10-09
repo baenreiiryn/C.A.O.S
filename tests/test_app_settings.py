@@ -208,6 +208,56 @@ class RuntimeLLMSettingsTests(unittest.TestCase):
         )
 
     @patch("caos.app_settings._json_get")
+    def test_ollama_latest_alias_matches_untagged_model(
+        self,
+        get_json,
+    ):
+        get_json.return_value = {
+            "models": [
+                {
+                    "name": (
+                        "caos-huihui-qwen3-14b-"
+                        "abliterated-v2.q4_k_m:latest"
+                    )
+                }
+            ]
+        }
+        service, *_ = make_service()
+        result = service.test_llm(
+            provider="ollama",
+            model=(
+                "caos-huihui-qwen3-14b-"
+                "abliterated-v2.q4_k_m"
+            ),
+            base_url="http://127.0.0.1:11435",
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            result["matched_model"],
+            (
+                "caos-huihui-qwen3-14b-"
+                "abliterated-v2.q4_k_m:latest"
+            ),
+        )
+
+    @patch("caos.app_settings._json_get")
+    def test_ollama_latest_alias_still_rejects_other_model(
+        self,
+        get_json,
+    ):
+        get_json.return_value = {
+            "models": [{"name": "other-model:latest"}]
+        }
+        service, *_ = make_service()
+        result = service.test_llm(
+            provider="ollama",
+            model="my-model",
+            base_url="http://127.0.0.1:11435",
+        )
+        self.assertFalse(result["ok"])
+        self.assertIsNone(result["matched_model"])
+
+    @patch("caos.app_settings._json_get")
     def test_openai_model_discovery_uses_vault_key(
         self,
         get_json,
