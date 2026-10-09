@@ -202,8 +202,6 @@ class AutonomousMarketScannerTests(unittest.TestCase):
                 ),
                 now=1_800_000_000_001,
             )
-            trader = company.registry.get("A")
-            trader.metadata.clear()
             daemon = build_daemon(
                 company,
                 parse_scan_targets(
@@ -249,6 +247,8 @@ class AutonomousMarketScannerTests(unittest.TestCase):
                 ),
                 now=1_800_000_000_001,
             )
+            trader = company.registry.get("A")
+            trader.metadata.clear()
             daemon = build_daemon(
                 company,
                 parse_scan_targets(
