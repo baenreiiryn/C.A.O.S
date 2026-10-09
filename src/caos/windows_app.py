@@ -701,6 +701,10 @@ class CompanyRuntimeHost:
             self.ollama_runtime.stop()
         except Exception:
             pass
+        try:
+            self.expert_runtime.stop()
+        except Exception:
+            pass
         if self.server is not None:
             self.server.shutdown()
             self.server.server_close()
