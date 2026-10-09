@@ -629,14 +629,22 @@ class CompanyPaperBook:
         trader_id: str,
         *,
         limit: int = 160,
+        bars_override=None,
+        chart_interval: str | None = None,
+        live: bool = False,
     ) -> dict:
         trader = self.registry.get(trader_id)
         limit = max(30, min(int(limit), 500))
         symbol = trader.market
-        bars = (
+        strategy_bars = (
             self.engine.bars(symbol)[-limit:]
             if symbol
             else []
+        )
+        bars = (
+            list(bars_override)[-limit:]
+            if bars_override is not None
+            else strategy_bars
         )
         account = self.accounts.get(trader_id)
         position = (
@@ -741,10 +749,21 @@ class CompanyPaperBook:
         ][-30:]
 
         return {
-            "version": "paper-trader-chart/v2",
+            "version": "paper-trader-chart/v3",
             "trader_id": trader_id,
             "symbol": symbol,
             "phase": phase,
+            "chart_interval": (
+                chart_interval
+                if chart_interval is not None
+                else "strategy"
+            ),
+            "live": bool(live),
+            "strategy_last_ts": (
+                int(strategy_bars[-1].ts)
+                if strategy_bars
+                else None
+            ),
             "bars": [
                 {
                     "ts": int(bar.ts),
