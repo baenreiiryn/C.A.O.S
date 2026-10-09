@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..quant import backtest, current_signal, market_regime
-from .domain import Opportunity
+from .domain import Opportunity, OpportunityStatus
 
 
 DEFAULT_AUTO_TIMEFRAMES = ("1m", "5m", "15m", "1h")
@@ -85,6 +85,23 @@ class AutonomousMarketScanner:
         now: int,
         opportunity_ttl_ms: int,
     ) -> list[str]:
+        for opportunity in (
+            self.company.opportunities.opportunities.values()
+        ):
+            if (
+                opportunity.metadata.get("selection_mode")
+                == "auto"
+                and opportunity.status
+                not in {
+                    OpportunityStatus.ACTIVE,
+                    OpportunityStatus.EXPIRED,
+                }
+            ):
+                opportunity.status = (
+                    OpportunityStatus.EXPIRED
+                )
+                opportunity.reserved_by = None
+
         client = self.company.engine.caos.market_client
         markets = client.liquid_usdt_candidates(
             limit=self.candidate_limit,
