@@ -188,7 +188,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: CAOS-Windows-Build
+          name: CAOS-Windows-Installer
           path: release-assets
 
       - name: Read release version
