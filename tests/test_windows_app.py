@@ -42,6 +42,14 @@ class WindowsLauncherConfigTests(unittest.TestCase):
                 "BTCUSDT:long:momentum",
             )
             self.assertEqual(saved["dashboard_port"], 5191)
+            self.assertEqual(
+                saved["market_selection_mode"],
+                "auto",
+            )
+            self.assertEqual(
+                saved["auto_candidate_limit"],
+                10,
+            )
 
     def test_validation_rejects_unsafe_or_invalid_values(self):
         with tempfile.TemporaryDirectory() as d:
