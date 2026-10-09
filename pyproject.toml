@@ -14,7 +14,7 @@ keywords = ["local-llm", "ollama", "quant", "paper-trading", "orchestration"]
 
 [project.optional-dependencies]
 sentiment = [
-  "transformers>=4.48",
+  "transformers>=4.48,<5",
   "torch>=2.0",
   "accelerate>=1.0",
 ]
