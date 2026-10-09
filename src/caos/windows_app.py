@@ -558,6 +558,16 @@ class CompanyRuntimeHost:
                 ]
             ),
         )
+        self.stop_event = threading.Event()
+        self.shutdown_requested = threading.Event()
+        self.updater = GitHubUpdateService(
+            current_version=__version__,
+            data_dir=app_data_dir(),
+            install_dir=application_install_dir(),
+            company=self.company,
+            execution_service=self.execution,
+            shutdown_callback=self.request_shutdown,
+        )
         self.settings = RuntimeSettingsService(
             self.caos,
             self.company,
@@ -572,16 +582,6 @@ class CompanyRuntimeHost:
             self.caos,
             self.company,
             execution_service=self.execution,
-        )
-        self.stop_event = threading.Event()
-        self.shutdown_requested = threading.Event()
-        self.updater = GitHubUpdateService(
-            current_version=__version__,
-            data_dir=app_data_dir(),
-            install_dir=application_install_dir(),
-            company=self.company,
-            execution_service=self.execution,
-            shutdown_callback=self.request_shutdown,
         )
         self.server = None
         self.daemon_thread = None
