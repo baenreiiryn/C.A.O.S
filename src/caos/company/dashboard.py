@@ -1021,6 +1021,7 @@ def serve_company(
     open_browser: bool = True,
     settings_service=None,
     execution_service=None,
+    chat_service=None,
 ) -> ThreadingHTTPServer:
     mapper = CityPresentationMapper()
     cell = TradeCompanyCell(control)
@@ -1157,6 +1158,24 @@ def serve_company(
                         execution_service.list_proposals(),
                     )
                 return
+            if path == "/api/chat/history":
+                if chat_service is None:
+                    self._json(
+                        200,
+                        {
+                            "enabled": False,
+                            "messages": [],
+                        },
+                    )
+                else:
+                    self._json(
+                        200,
+                        {
+                            "enabled": True,
+                            "messages": chat_service.messages(),
+                        },
+                    )
+                return
             if path == "/api/settings":
                 if settings_service is None:
                     self._json(
@@ -1278,6 +1297,26 @@ def serve_company(
                         ),
                     )
                     return
+                if path == "/api/chat":
+                    if chat_service is None:
+                        raise RuntimeError(
+                            "company_chat_unavailable"
+                        )
+                    payload = self._read_json()
+                    self._json(
+                        200,
+                        chat_service.ask(
+                            str(payload.get("message", ""))
+                        ),
+                    )
+                    return
+                if path == "/api/chat/clear":
+                    if chat_service is None:
+                        raise RuntimeError(
+                            "company_chat_unavailable"
+                        )
+                    self._json(200, chat_service.clear())
+                    return
                 if path.startswith("/api/settings/"):
                     if settings_service is None:
                         raise RuntimeError(
@@ -1317,6 +1356,33 @@ def serve_company(
                                         "model_name",
                                         "",
                                     )
+                                ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/company/save":
+                        self._json(
+                            200,
+                            settings_service.save_company_policy(
+                                trader_initial_bucket=float(
+                                    payload[
+                                        "trader_initial_bucket"
+                                    ]
+                                ),
+                                trader_stop_floor=float(
+                                    payload[
+                                        "trader_stop_floor"
+                                    ]
+                                ),
+                                default_trader_max_exposure_pct=float(
+                                    payload[
+                                        "default_trader_max_exposure_pct"
+                                    ]
+                                ),
+                                company_max_drawdown_pct=float(
+                                    payload[
+                                        "company_max_drawdown_pct"
+                                    ]
                                 ),
                             ),
                         )
