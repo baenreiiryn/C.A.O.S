@@ -83,6 +83,7 @@ class FakeSettingsService:
         self.saved_llm = None
         self.saved_news = None
         self.saved_ollama_import = None
+        self.saved_market_selection = None
         self.ollama_running = False
 
     def get_settings(self):
@@ -101,6 +102,26 @@ class FakeSettingsService:
                 "model": "qwen3:8b",
                 "base_url": "http://127.0.0.1:11434",
                 "api_key_configured": False,
+            },
+            "market_selection": {
+                "mode": (
+                    self.saved_market_selection
+                    or "auto"
+                ),
+                "auto_scan_every_seconds": 300.0,
+                "manual_targets": [],
+                "autonomy": {
+                    "timeframes": [
+                        "1m",
+                        "5m",
+                        "15m",
+                        "1h",
+                    ],
+                    "candidate_limit": 10,
+                    "publish_limit": 6,
+                    "min_quote_volume": 5_000_000.0,
+                    "latest_rankings": [],
+                },
             },
             "ollama_runtime": {
                 "enabled": True,
@@ -224,6 +245,26 @@ class FakeSettingsService:
             "api_key_configured": bool(
                 kwargs.get("api_key")
             ),
+        }
+
+    def save_market_selection(self, *, mode):
+        self.saved_market_selection = mode
+        return {
+            "mode": mode,
+            "auto_scan_every_seconds": 300.0,
+            "manual_targets": [],
+            "autonomy": {
+                "timeframes": [
+                    "1m",
+                    "5m",
+                    "15m",
+                    "1h",
+                ],
+                "candidate_limit": 10,
+                "publish_limit": 6,
+                "min_quote_volume": 5_000_000.0,
+                "latest_rankings": [],
+            },
         }
 
     def save_company_policy(self, **kwargs):
@@ -1188,6 +1229,32 @@ class CompanyDashboardTests(unittest.TestCase):
                     settings["ollama_runtime"]["running"]
                 )
 
+                save_market_selection = urllib.request.Request(
+                    base + "/api/settings/market-selection/save",
+                    data=json.dumps(
+                        {"mode": "manual"}
+                    ).encode(),
+                    headers={
+                        "Content-Type": "application/json"
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(
+                    save_market_selection,
+                    timeout=2,
+                ) as response:
+                    market_selection = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertEqual(
+                    market_selection["mode"],
+                    "manual",
+                )
+                self.assertEqual(
+                    settings_service.saved_market_selection,
+                    "manual",
+                )
+
                 start_ollama = urllib.request.Request(
                     base + "/api/settings/ollama/start",
                     data=b"{}",
@@ -1336,6 +1403,14 @@ class CompanyDashboardTests(unittest.TestCase):
                 )
                 self.assertIn(
                     "discoverAndAddNewsSource",
+                    html,
+                )
+                self.assertIn(
+                    "Market & Timeframe Selection",
+                    html,
+                )
+                self.assertIn(
+                    "AUTO · Company chooses market + timeframe + strategy",
                     html,
                 )
                 self.assertIn("guildAdventurers", html)
