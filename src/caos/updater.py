@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -19,6 +20,20 @@ UPDATE_MANIFEST_ASSET = "CAOS-Update.json"
 
 class UpdateError(RuntimeError):
     pass
+
+
+def _stable_release_version(value: str) -> str:
+    text = str(value).strip().lower()
+    if text.startswith("v"):
+        text = text[1:]
+    if not re.fullmatch(
+        r"\d+\.\d+\.\d+",
+        text,
+    ):
+        raise UpdateError(
+            f"invalid_stable_release_version:{value}"
+        )
+    return text
 
 
 def _version_tuple(value: str) -> tuple[int, int, int]:
@@ -140,10 +155,11 @@ class GitHubUpdateService:
         platform_name: str | None = None,
         frozen: bool | None = None,
     ):
-        self.current_version = str(
-            current_version
-        ).lstrip("v")
-        _version_tuple(self.current_version)
+        self.current_version = (
+            _stable_release_version(
+                current_version
+            )
+        )
         self.data_dir = Path(data_dir)
         self.install_dir = Path(install_dir)
         self.company = company
@@ -216,14 +232,23 @@ class GitHubUpdateService:
             raise UpdateError(
                 "unsupported_update_manifest"
             )
-        version = str(
-            manifest.get("version", "")
-        ).lstrip("v")
-        _version_tuple(version)
-        tag = str(
-            release.get("tag_name", "")
-        ).lstrip("v")
-        if tag and version != tag:
+        version = _stable_release_version(
+            str(
+                manifest.get(
+                    "version",
+                    "",
+                )
+            )
+        )
+        tag = _stable_release_version(
+            str(
+                release.get(
+                    "tag_name",
+                    "",
+                )
+            )
+        )
+        if version != tag:
             raise UpdateError(
                 "release_manifest_version_mismatch"
             )
