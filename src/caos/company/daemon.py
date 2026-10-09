@@ -133,6 +133,10 @@ class CompanyDaemon:
             for release in self.company.rollout.releases.values()
             if release.stage in {"shadow", "paper_canary"}
         )
+        return sorted(symbols)
+
+    def _symbols_for_news(self) -> list[str]:
+        symbols = set(self._symbols_to_refresh())
         if self.market_selection_mode == "auto":
             symbols.update(
                 str(row.get("symbol", "")).upper()
@@ -290,6 +294,114 @@ class CompanyDaemon:
                     f"{type(exc).__name__}: {exc}"
                 )
         return created
+
+    def _reallocate_flat_auto_traders(
+        self,
+        *,
+        now: int,
+        errors: dict[str, str],
+    ) -> list[dict]:
+        if (
+            self.market_selection_mode != "auto"
+            or not self.auto_scanner.latest_rankings
+        ):
+            return []
+        rows: list[dict] = []
+        latest = {
+            (
+                str(row.get("symbol", "")).upper(),
+                str(row.get("timeframe", "")),
+                str(row.get("strategy_id", "")),
+            )
+            for row in self.auto_scanner.latest_rankings
+        }
+        for trader in list(
+            self.company.registry.traders.values()
+        ):
+            if trader.status != TraderStatus.ACTIVE:
+                continue
+            if (
+                trader.metadata.get("selection_mode")
+                != "auto"
+            ):
+                continue
+            if not self.company.paper.positions_flat(
+                trader.id
+            ):
+                continue
+            if self.company.paper.has_pending_order(
+                trader.id
+            ):
+                continue
+            if (
+                self.execution_service is not None
+                and self.execution_service.has_outstanding(
+                    trader.id
+                )
+            ):
+                continue
+
+            current = (
+                str(trader.market or "").upper(),
+                str(
+                    trader.metadata.get(
+                        "timeframe",
+                        "",
+                    )
+                ),
+                str(trader.strategy_id or ""),
+            )
+            if current in latest:
+                continue
+            assignment = (
+                self.company.market.assignments.get(
+                    trader.id
+                )
+            )
+            if assignment is None:
+                continue
+            try:
+                opportunity = (
+                    self.company.opportunities.get(
+                        assignment.opportunity_id
+                    )
+                )
+                if (
+                    opportunity.metadata.get(
+                        "selection_mode"
+                    )
+                    == "auto"
+                ):
+                    opportunity.status = (
+                        opportunity.status.__class__(
+                            "expired"
+                        )
+                    )
+                    opportunity.reserved_by = None
+                released = self.company.market.release(
+                    trader.id
+                )
+                rows.append(
+                    {
+                        "trader_id": trader.id,
+                        "reason": (
+                            "better_auto_opportunity_available"
+                        ),
+                        "previous": (
+                            released.to_dict()
+                            if released is not None
+                            else None
+                        ),
+                        "at": int(now),
+                    }
+                )
+            except Exception as exc:
+                errors[
+                    f"auto_reallocate:{trader.id}"
+                ] = (
+                    f"{type(exc).__name__}: {exc}"
+                )
+        return rows
 
     def _assign_waiting(
         self,
@@ -589,7 +701,7 @@ class CompanyDaemon:
         try:
             news_snapshot = (
                 self.company.news_intelligence.refresh(
-                    self._symbols_to_refresh(),
+                    self._symbols_for_news(),
                     now=now,
                 )
             )
@@ -635,9 +747,20 @@ class CompanyDaemon:
                     errors=errors,
                 )
             )
+            reallocations = (
+                self._reallocate_flat_auto_traders(
+                    now=now,
+                    errors=errors,
+                )
+                if auto_opportunities
+                else []
+            )
             assignments = self._assign_waiting(
                 now=now,
                 errors=errors,
+            )
+            assignments = (
+                reallocations + assignments
             )
             paper_actions, retirements = self._paper_cycles(
                 refreshed=refreshed,
