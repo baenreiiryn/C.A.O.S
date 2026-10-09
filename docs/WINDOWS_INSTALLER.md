@@ -57,7 +57,8 @@ The wizard configures:
 - default maximum Trader exposure;
 - operational Trader concurrency cap;
 - maximum Company drawdown;
-- market/strategy targets;
+- market selection mode (**AUTO** by default);
+- manual market/strategy targets used only as fallback/debug when MANUAL is selected;
 - daemon cycle interval;
 - Arcane Trading City port;
 - local AI provider;
@@ -70,6 +71,9 @@ Example targets:
 BTCUSDT:long:momentum
 BTCUSDT:long:momentum,ETHUSDT:long:trend
 ```
+
+
+In **AUTO** mode those examples do not constrain the Traders. The autonomous Scout discovers liquid Binance Spot USDT markets, evaluates the supported timeframes against every registered strategy that is allowed for production, and assigns the highest-ranked available combination. The configured target list is consulted only in MANUAL mode.
 
 After the charter is accepted:
 
