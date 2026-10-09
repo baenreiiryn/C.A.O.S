@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import threading
+import time
+
 from .company import TradeCompany
 
 
@@ -11,6 +14,11 @@ class CompanyControlPort:
 
     def __init__(self, company: TradeCompany):
         self.company = company
+        self._live_chart_cache: dict[
+            tuple[str, int],
+            tuple[float, list],
+        ] = {}
+        self._live_chart_lock = threading.RLock()
 
     def get_company_status(self) -> dict:
         return self.company.status()
@@ -153,10 +161,56 @@ class CompanyControlPort:
         *,
         limit: int = 160,
     ) -> dict:
-        return self.company.paper.chart_snapshot(
+        trader = self.company.registry.get(trader_id)
+        symbol = trader.market
+        if not symbol:
+            return self.company.paper.chart_snapshot(
+                trader_id,
+                limit=limit,
+                chart_interval="1m",
+                live=True,
+            )
+
+        limit = max(30, min(int(limit), 500))
+        key = (symbol.upper(), limit)
+        now = time.monotonic()
+        bars = None
+        with self._live_chart_lock:
+            cached = self._live_chart_cache.get(key)
+            if cached and now - cached[0] < 5.0:
+                bars = cached[1]
+
+        live_error = None
+        if bars is None:
+            try:
+                bars = (
+                    self.company.engine.caos.market_client.klines(
+                        symbol,
+                        "1m",
+                        limit,
+                    )
+                )
+                with self._live_chart_lock:
+                    self._live_chart_cache[key] = (
+                        now,
+                        list(bars),
+                    )
+            except Exception as exc:
+                live_error = (
+                    f"{type(exc).__name__}: {exc}"
+                )
+
+        snapshot = self.company.paper.chart_snapshot(
             trader_id,
             limit=limit,
+            bars_override=bars,
+            chart_interval="1m",
+            live=bars is not None,
         )
+        if live_error:
+            snapshot["live_error"] = live_error
+        snapshot["live_refresh_seconds"] = 5
+        return snapshot
 
     def get_recent_events(self, limit: int = 30) -> list[dict]:
         if self.company.store is None:
