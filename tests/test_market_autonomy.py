@@ -5,6 +5,7 @@ from pathlib import Path
 from caos.company import CAOSAdapter, TradeCompany
 from caos.company.autonomy import AutonomousMarketScanner
 from caos.company.standalone import (
+    build_daemon,
     build_policy,
     initialize_company,
     parse_scan_targets,
@@ -173,6 +174,51 @@ class AutonomousMarketScannerTests(unittest.TestCase):
             self.assertEqual(
                 trader.metadata["timeframe"],
                 "5m",
+            )
+            store.close()
+
+    def test_trader_cycle_refreshes_its_selected_timeframe(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, client, company = self.build_company(d)
+            scanner = AutonomousMarketScanner(
+                company,
+                timeframes=("5m",),
+                candidate_limit=1,
+                publish_limit=1,
+                bars_limit=120,
+            )
+            created = scanner.scan(
+                now=1_800_000_000_000,
+                opportunity_ttl_ms=300_000,
+            )
+            opportunity = company.opportunities.get(
+                created[0]
+            )
+            company.market.assign(
+                "A",
+                opportunity.id,
+                strategy_id=(
+                    opportunity.strategy_candidates[0]
+                ),
+                now=1_800_000_000_001,
+            )
+            daemon = build_daemon(
+                company,
+                parse_scan_targets(
+                    "BTCUSDT:long:momentum"
+                ),
+                market_selection_mode="auto",
+            )
+            errors = {}
+            actions, _retirements = daemon._paper_cycles(
+                refreshed={},
+                errors=errors,
+            )
+            self.assertFalse(errors)
+            self.assertTrue(actions)
+            self.assertIn(
+                ("BTCUSDT", "5m", 500),
+                client.calls,
             )
             store.close()
 
