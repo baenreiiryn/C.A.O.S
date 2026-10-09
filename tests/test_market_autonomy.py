@@ -12,6 +12,7 @@ from caos.company.standalone import (
     register_all_builtin_strategies,
 )
 from caos.domain import Mandate, MarketBar
+from caos.experts.base import ForecastResult
 from caos.llm import StaticLLM
 from caos.orchestrator import CAOS
 from caos.store import Store
@@ -70,6 +71,28 @@ class FakeAutoMarketClient:
         self.calls.append((symbol, interval, limit))
         multiplier = 1.0 if symbol == "BTCUSDT" else 0.5
         return rising_bars(multiplier, count=limit)
+
+
+class BearishOracle:
+    name = "kronos-small"
+
+    def forecast(self, symbol, bars, horizon):
+        last = float(bars[-1].close)
+        return ForecastResult(
+            model=self.name,
+            symbol=symbol,
+            horizon=horizon,
+            last_close=last,
+            forecast_close=last * 0.98,
+            expected_return_pct=-2.0,
+        )
+
+
+class LoadedOracleRuntime:
+    def status(self):
+        return {
+            "loaded": ["kronos"],
+        }
 
 
 class AutonomousMarketScannerTests(unittest.TestCase):
@@ -138,6 +161,49 @@ class AutonomousMarketScannerTests(unittest.TestCase):
             self.assertEqual(
                 first.strategy_candidates,
                 (first.metadata["strategy_id"],),
+            )
+            store.close()
+
+    def test_loaded_bearish_oracle_only_penalizes_auto_candidate(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, _client, company = self.build_company(d)
+            company.engine.caos.forecast_experts = {
+                "kronos": BearishOracle()
+            }
+            company.engine.caos.expert_runtime = (
+                LoadedOracleRuntime()
+            )
+            scanner = AutonomousMarketScanner(
+                company,
+                timeframes=("5m",),
+                candidate_limit=1,
+                publish_limit=1,
+                bars_limit=120,
+            )
+            created = scanner.scan(
+                now=1_800_000_000_000,
+                opportunity_ttl_ms=300_000,
+            )
+            opportunity = company.opportunities.get(
+                created[0]
+            )
+            self.assertEqual(
+                opportunity.metadata[
+                    "oracle_evidence"
+                ]["direction"],
+                "bearish",
+            )
+            self.assertGreater(
+                opportunity.metadata[
+                    "oracle_penalty"
+                ],
+                0.0,
+            )
+            self.assertIn(
+                "forecast_is_evidence_not_an_order",
+                opportunity.metadata[
+                    "oracle_evidence"
+                ]["notes"],
             )
             store.close()
 
