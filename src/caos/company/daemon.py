@@ -327,11 +327,6 @@ class CompanyDaemon:
         ):
             if trader.status != TraderStatus.ACTIVE:
                 continue
-            if (
-                trader.metadata.get("selection_mode")
-                != "auto"
-            ):
-                continue
             if not self.company.paper.positions_flat(
                 trader.id
             ):
