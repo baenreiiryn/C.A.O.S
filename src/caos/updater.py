@@ -562,6 +562,8 @@ class GitHubUpdateService:
                 ) + "'"
             )
 
+        backup = update_dir / "backup"
+        error_log = update_dir / "apply-error.txt"
         body = "\n".join(
             [
                 "$ErrorActionPreference = 'Stop'",
@@ -569,18 +571,38 @@ class GitHubUpdateService:
                 "try { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue } catch {}",
                 f"$package = {ps(package)}",
                 f"$staging = {ps(staging)}",
+                f"$backup = {ps(backup)}",
+                f"$errorLog = {ps(error_log)}",
                 f"$app = {ps(app_exe)}",
                 f"$cli = {ps(cli_exe)}",
                 "Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue",
+                "Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue",
+                "Remove-Item -LiteralPath $errorLog -Force -ErrorAction SilentlyContinue",
                 "Expand-Archive -LiteralPath $package -DestinationPath $staging -Force",
                 "$newApp = Join-Path $staging 'CAOS-Trade-Company.exe'",
                 "$newCli = Join-Path $staging 'caos.exe'",
                 "if (-not (Test-Path -LiteralPath $newApp)) { throw 'CAOS-Trade-Company.exe missing from update package' }",
                 "if (-not (Test-Path -LiteralPath $newCli)) { throw 'caos.exe missing from update package' }",
-                "Copy-Item -LiteralPath $newApp -Destination $app -Force",
-                "Copy-Item -LiteralPath $newCli -Destination $cli -Force",
-                f"Set-Content -LiteralPath {ps(update_dir / 'installed-version.txt')} -Value {ps(version)} -Encoding ASCII",
+                "if ((Get-Item -LiteralPath $newApp).Length -le 0) { throw 'CAOS-Trade-Company.exe is empty' }",
+                "if ((Get-Item -LiteralPath $newCli).Length -le 0) { throw 'caos.exe is empty' }",
+                "New-Item -ItemType Directory -Force $backup | Out-Null",
+                "$oldApp = Join-Path $backup 'CAOS-Trade-Company.exe'",
+                "$oldCli = Join-Path $backup 'caos.exe'",
+                "if (Test-Path -LiteralPath $app) { Copy-Item -LiteralPath $app -Destination $oldApp -Force }",
+                "if (Test-Path -LiteralPath $cli) { Copy-Item -LiteralPath $cli -Destination $oldCli -Force }",
+                "try {",
+                "  Copy-Item -LiteralPath $newApp -Destination $app -Force",
+                "  Copy-Item -LiteralPath $newCli -Destination $cli -Force",
+                f"  Set-Content -LiteralPath {ps(update_dir / 'installed-version.txt')} -Value {ps(version)} -Encoding ASCII",
+                "} catch {",
+                "  $_ | Out-String | Set-Content -LiteralPath $errorLog -Encoding UTF8",
+                "  if (Test-Path -LiteralPath $oldApp) { Copy-Item -LiteralPath $oldApp -Destination $app -Force }",
+                "  if (Test-Path -LiteralPath $oldCli) { Copy-Item -LiteralPath $oldCli -Destination $cli -Force }",
+                "  Start-Process -FilePath $app",
+                "  exit 1",
+                "}",
                 "Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue",
+                "Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue",
                 "Start-Process -FilePath $app",
             ]
         )
