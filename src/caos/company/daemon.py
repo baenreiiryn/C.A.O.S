@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
+from .autonomy import AutonomousMarketScanner
 from .domain import Opportunity, TraderMode, TraderStatus
 
 
@@ -74,6 +75,15 @@ class CompanyDaemon:
         candle_limit: int = 500,
         opportunity_ttl_ms: int = 3_600_000,
         execution_service=None,
+        market_selection_mode: str = "manual",
+        auto_timeframes: tuple[str, ...] = (
+            "1m",
+            "5m",
+            "15m",
+            "1h",
+        ),
+        auto_candidate_limit: int = 10,
+        auto_scan_every_seconds: float = 300.0,
     ):
         if candle_limit <= 0:
             raise ValueError("candle_limit must be positive")
@@ -85,6 +95,25 @@ class CompanyDaemon:
         self.candle_limit = int(candle_limit)
         self.opportunity_ttl_ms = int(opportunity_ttl_ms)
         self.execution_service = execution_service
+        mode = str(market_selection_mode).strip().lower()
+        if mode not in {"manual", "auto"}:
+            raise ValueError(
+                "market_selection_mode_must_be_manual_or_auto"
+            )
+        self.market_selection_mode = mode
+        self.auto_scan_every_seconds = max(
+            30.0,
+            float(auto_scan_every_seconds),
+        )
+        self._last_auto_scan_ms: int | None = None
+        self.auto_scanner = AutonomousMarketScanner(
+            company,
+            timeframes=tuple(auto_timeframes),
+            candidate_limit=max(
+                1,
+                int(auto_candidate_limit),
+            ),
+        )
 
     def _symbols_to_refresh(self) -> list[str]:
         symbols = {target.symbol.upper() for target in self.targets}
@@ -97,6 +126,12 @@ class CompanyDaemon:
             for release in self.company.rollout.releases.values()
             if release.stage in {"shadow", "paper_canary"}
         )
+        if self.market_selection_mode == "auto":
+            symbols.update(
+                str(row.get("symbol", "")).upper()
+                for row in self.auto_scanner.latest_rankings
+                if row.get("symbol")
+            )
         return sorted(symbols)
 
     def _registered_strategy(
@@ -143,6 +178,53 @@ class CompanyDaemon:
             if strategy_id is not None:
                 return opportunity, strategy_id
         return None
+
+    def configure_market_selection(
+        self,
+        *,
+        mode: str,
+    ) -> dict:
+        normalized = str(mode).strip().lower()
+        if normalized not in {"manual", "auto"}:
+            raise ValueError(
+                "market_selection_mode_must_be_manual_or_auto"
+            )
+        if not self.company.operations_paused:
+            raise RuntimeError(
+                "market_selection_change_requires_stopped_company"
+            )
+        self.market_selection_mode = normalized
+        self._last_auto_scan_ms = None
+        return self.market_selection_status()
+
+    def market_selection_status(self) -> dict:
+        return {
+            "mode": self.market_selection_mode,
+            "auto_scan_every_seconds": (
+                self.auto_scan_every_seconds
+            ),
+            "manual_targets": [
+                {
+                    "symbol": target.symbol,
+                    "direction": target.direction,
+                    "strategy_candidates": list(
+                        target.strategy_candidates
+                    ),
+                }
+                for target in self.targets
+            ],
+            "autonomy": self.auto_scanner.status(),
+        }
+
+    def _auto_scan_due(self, now: int) -> bool:
+        if self.market_selection_mode != "auto":
+            return False
+        if self._last_auto_scan_ms is None:
+            return True
+        return (
+            int(now) - int(self._last_auto_scan_ms)
+            >= int(self.auto_scan_every_seconds * 1000)
+        )
 
     def _scan(
         self,
@@ -243,7 +325,7 @@ class CompanyDaemon:
         for trader in list(self.company.registry.traders.values()):
             if trader.status != TraderStatus.ACTIVE:
                 continue
-            if not trader.market or trader.market not in refreshed:
+            if not trader.market:
                 errors.setdefault(
                     f"paper:{trader.id}",
                     "market_refresh_required",
@@ -251,6 +333,20 @@ class CompanyDaemon:
                 continue
 
             try:
+                timeframe = str(
+                    trader.metadata.get(
+                        "timeframe",
+                        self.interval,
+                    )
+                )
+                market_result = self.company.engine.fetch_market(
+                    trader.market,
+                    interval=timeframe,
+                    limit=self.candle_limit,
+                )
+                refreshed[trader.market] = int(
+                    market_result["bars"]
+                )
                 strategy_assignable = (
                     True
                     if not trader.strategy_id
@@ -447,6 +543,25 @@ class CompanyDaemon:
                     ] = str(row["error"])
 
         expired = self.company.opportunities.expire_due(now)
+        auto_opportunities: list[str] = []
+        if (
+            not self.company.operations_paused
+            and self._auto_scan_due(now)
+        ):
+            try:
+                auto_opportunities = (
+                    self.auto_scanner.scan(
+                        now=now,
+                        opportunity_ttl_ms=(
+                            self.opportunity_ttl_ms
+                        ),
+                    )
+                )
+                self._last_auto_scan_ms = int(now)
+            except Exception as exc:
+                errors["auto_market_scan"] = (
+                    f"{type(exc).__name__}: {exc}"
+                )
 
         for symbol in self._symbols_to_refresh():
             try:
@@ -501,10 +616,14 @@ class CompanyDaemon:
             )
             expansions: list[dict] = []
         else:
-            opportunities = self._scan(
-                now=now,
-                refreshed=refreshed,
-                errors=errors,
+            opportunities = (
+                list(auto_opportunities)
+                if self.market_selection_mode == "auto"
+                else self._scan(
+                    now=now,
+                    refreshed=refreshed,
+                    errors=errors,
+                )
             )
             assignments = self._assign_waiting(
                 now=now,
