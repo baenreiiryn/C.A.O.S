@@ -116,7 +116,14 @@ class CompanyDaemon:
         )
 
     def _symbols_to_refresh(self) -> list[str]:
-        symbols = {target.symbol.upper() for target in self.targets}
+        symbols = (
+            {
+                target.symbol.upper()
+                for target in self.targets
+            }
+            if self.market_selection_mode == "manual"
+            else set()
+        )
         symbols.update(
             assignment.symbol
             for assignment in self.company.market.assignments.values()
@@ -189,7 +196,10 @@ class CompanyDaemon:
             raise ValueError(
                 "market_selection_mode_must_be_manual_or_auto"
             )
-        if not self.company.operations_paused:
+        if (
+            self.company.operational_state()
+            != "stopped"
+        ):
             raise RuntimeError(
                 "market_selection_change_requires_stopped_company"
             )
