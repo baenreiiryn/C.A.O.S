@@ -34,7 +34,7 @@ kronos-runtime = [
   "safetensors>=0.6.2",
 ]
 experts = [
-  "transformers>=4.48",
+  "transformers>=4.48,<5",
   "accelerate>=1.0",
   "chronos-forecasting>=2.0",
   "pandas>=2.2",
