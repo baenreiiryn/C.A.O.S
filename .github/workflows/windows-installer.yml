@@ -28,6 +28,8 @@ permissions:
 
 jobs:
   build-windows-installer:
+    permissions:
+      contents: read
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -111,8 +113,103 @@ jobs:
             throw "CAOS-Setup.exe was not created"
           }
 
+      - name: Build lightweight update package
+        shell: pwsh
+        run: |
+          $versionLine = Select-String -Path ".\pyproject.toml" -Pattern '^version = "([^"]+)"'
+          if (-not $versionLine) { throw "Project version was not found" }
+          $version = $versionLine.Matches[0].Groups[1].Value
+
+          $payload = ".\installer-output\update-payload"
+          Remove-Item -Recurse -Force $payload -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $payload | Out-Null
+          Copy-Item ".\dist\CAOS-Trade-Company.exe" "$payload\CAOS-Trade-Company.exe"
+          Copy-Item ".\dist\caos.exe" "$payload\caos.exe"
+
+          $zip = ".\installer-output\CAOS-Update.zip"
+          Remove-Item -Force $zip -ErrorAction SilentlyContinue
+          Compress-Archive -Path "$payload\*" -DestinationPath $zip -CompressionLevel Optimal
+          if (-not (Test-Path $zip)) { throw "CAOS-Update.zip was not created" }
+
+          $sha = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          $manifest = [ordered]@{
+            schema = 1
+            version = $version
+            asset = "CAOS-Update.zip"
+            sha256 = $sha
+            payload = @(
+              "CAOS-Trade-Company.exe",
+              "caos.exe"
+            )
+            preserves = @(
+              "%LOCALAPPDATA%\CAOS\caos.db",
+              "%LOCALAPPDATA%\CAOS\launcher.json",
+              "%LOCALAPPDATA%\CAOS\ollama-models",
+              "Windows Credential Manager"
+            )
+          }
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content ".\installer-output\CAOS-Update.json" -Encoding UTF8
+          Remove-Item -Recurse -Force $payload
+
+      - name: Verify update manifest hash
+        shell: pwsh
+        run: |
+          $manifest = Get-Content ".\installer-output\CAOS-Update.json" -Raw | ConvertFrom-Json
+          $actual = (Get-FileHash -Algorithm SHA256 ".\installer-output\CAOS-Update.zip").Hash.ToLowerInvariant()
+          if ($actual -ne $manifest.sha256) {
+            throw "Update package checksum mismatch"
+          }
+
       - uses: actions/upload-artifact@v4
         with:
-          name: CAOS-Windows-Installer
-          path: installer-output/CAOS-Setup.exe
+          name: CAOS-Windows-Build
+          path: |
+            installer-output/CAOS-Setup.exe
+            installer-output/CAOS-Update.zip
+            installer-output/CAOS-Update.json
           if-no-files-found: error
+
+  publish-release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-windows-installer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CAOS-Windows-Build
+          path: release-assets
+
+      - name: Read release version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(python -c 'import json; print(json.load(open("release-assets/CAOS-Update.json", encoding="utf-8-sig"))["version"])')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Publish stable GitHub Release
+        env:
+          GH_TOKEN: \${{ github.token }}
+          TAG: \${{ steps.version.outputs.tag }}
+          VERSION: \${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              release-assets/CAOS-Setup.exe \
+              release-assets/CAOS-Update.zip \
+              release-assets/CAOS-Update.json \
+              --clobber \
+              --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" \
+              release-assets/CAOS-Setup.exe \
+              release-assets/CAOS-Update.zip \
+              release-assets/CAOS-Update.json \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "C.A.O.S v$VERSION" \
+              --generate-notes
+          fi
