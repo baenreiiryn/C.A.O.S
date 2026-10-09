@@ -5,7 +5,12 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .autonomy import AutonomousMarketScanner
-from .domain import Opportunity, TraderMode, TraderStatus
+from .domain import (
+    Opportunity,
+    OpportunityStatus,
+    TraderMode,
+    TraderStatus,
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -313,7 +318,9 @@ class CompanyDaemon:
                 str(row.get("timeframe", "")),
                 str(row.get("strategy_id", "")),
             )
-            for row in self.auto_scanner.latest_rankings
+            for row in self.auto_scanner.latest_rankings[
+                : self.auto_scanner.publish_limit
+            ]
         }
         for trader in list(
             self.company.registry.traders.values()
@@ -373,9 +380,7 @@ class CompanyDaemon:
                     == "auto"
                 ):
                     opportunity.status = (
-                        opportunity.status.__class__(
-                            "expired"
-                        )
+                        OpportunityStatus.EXPIRED
                     )
                     opportunity.reserved_by = None
                 released = self.company.market.release(
