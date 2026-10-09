@@ -20,6 +20,8 @@ from .cli import build_caos
 from .news import default_news_sources, normalize_news_sources
 from .ollama_runtime import ManagedOllamaRuntime
 from .runtime_execution import RuntimeExecutionService
+from .updater import GitHubUpdateService
+from .version import __version__
 from .company.control import CompanyControlPort
 from .company.chat import CompanyChatService
 from .company.dashboard import serve_company
@@ -564,6 +566,7 @@ class CompanyRuntimeHost:
             self.vault,
             self.ollama_runtime,
             self.daemon,
+            self.updater,
         )
         self.chat = CompanyChatService(
             self.caos,
@@ -571,6 +574,15 @@ class CompanyRuntimeHost:
             execution_service=self.execution,
         )
         self.stop_event = threading.Event()
+        self.shutdown_requested = threading.Event()
+        self.updater = GitHubUpdateService(
+            current_version=__version__,
+            data_dir=app_data_dir(),
+            install_dir=application_install_dir(),
+            company=self.company,
+            execution_service=self.execution,
+            shutdown_callback=self.request_shutdown,
+        )
         self.server = None
         self.daemon_thread = None
         self.server_thread = None
@@ -596,6 +608,7 @@ class CompanyRuntimeHost:
             settings_service=self.settings,
             execution_service=self.execution,
             chat_service=self.chat,
+            update_service=self.updater,
         )
         self.daemon_thread = threading.Thread(
             target=self.daemon.serve,
@@ -618,6 +631,10 @@ class CompanyRuntimeHost:
         )
         self.daemon_thread.start()
         self.server_thread.start()
+        self.updater.check_in_background()
+
+    def request_shutdown(self) -> None:
+        self.shutdown_requested.set()
 
     def open_city(self) -> None:
         webbrowser.open(self.city_url)
@@ -975,8 +992,15 @@ def _control_window(host: CompanyRuntimeHost) -> None:
         text="Stop Trade Company",
         command=stop,
     ).pack(fill="x", pady=3)
+    def poll_shutdown() -> None:
+        if host.shutdown_requested.is_set():
+            root.destroy()
+            return
+        root.after(250, poll_shutdown)
+
     root.protocol("WM_DELETE_WINDOW", stop)
     root.after(250, host.open_city)
+    root.after(250, poll_shutdown)
     root.mainloop()
 
 
