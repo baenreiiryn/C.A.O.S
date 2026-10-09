@@ -263,6 +263,18 @@ class MarketAllocator:
             direction=opportunity.direction,
             strategy_id=strategy_id,
         )
+        trader.metadata["selection_mode"] = str(
+            opportunity.metadata.get(
+                "selection_mode",
+                "manual",
+            )
+        )
+        if opportunity.metadata.get("timeframe"):
+            trader.metadata["timeframe"] = str(
+                opportunity.metadata["timeframe"]
+            )
+        else:
+            trader.metadata.pop("timeframe", None)
         assignment = MarketAssignment(
             trader_id=trader_id,
             opportunity_id=opportunity.id,
@@ -310,6 +322,8 @@ class MarketAllocator:
         trader.market = None
         trader.direction = None
         trader.strategy_id = None
+        trader.metadata.pop("timeframe", None)
+        trader.metadata.pop("selection_mode", None)
         if trader.status == TraderStatus.ACTIVE:
             trader.status = TraderStatus.WAITING_ASSIGNMENT
         return assignment

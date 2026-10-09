@@ -273,6 +273,7 @@ class RuntimeSettingsService:
     persist_config: Callable[[dict], dict]
     vault: CredentialVault
     ollama_runtime: object | None = None
+    market_runtime: object | None = None
 
     def __post_init__(self) -> None:
         """Drop legacy unsupported broker profiles from runtime metadata.
@@ -480,6 +481,33 @@ class RuntimeSettingsService:
                 ),
             },
             "ollama_runtime": self.ollama_status(),
+            "market_selection": (
+                self.market_runtime.market_selection_status()
+                if self.market_runtime is not None
+                else {
+                    "mode": self.config.get(
+                        "market_selection_mode",
+                        "manual",
+                    ),
+                    "auto_scan_every_seconds": self.config.get(
+                        "auto_scan_every_seconds",
+                        300.0,
+                    ),
+                    "autonomy": {
+                        "timeframes": [
+                            "1m",
+                            "5m",
+                            "15m",
+                            "1h",
+                        ],
+                        "candidate_limit": self.config.get(
+                            "auto_candidate_limit",
+                            10,
+                        ),
+                        "latest_rankings": [],
+                    },
+                }
+            ),
             "brokers": {
                 "supported": SUPPORTED_BROKERS,
                 "profiles": profiles,
@@ -752,6 +780,35 @@ class RuntimeSettingsService:
             }
         )
         return self.get_settings()["llm"]
+
+    def save_market_selection(
+        self,
+        *,
+        mode: str,
+    ) -> dict:
+        normalized = str(mode).strip().lower()
+        if normalized not in {"auto", "manual"}:
+            raise SettingsError(
+                "market_selection_mode_must_be_auto_or_manual"
+            )
+        if self.market_runtime is None:
+            raise SettingsError(
+                "market_runtime_unavailable"
+            )
+        try:
+            status = (
+                self.market_runtime.configure_market_selection(
+                    mode=normalized
+                )
+            )
+        except Exception as exc:
+            raise SettingsError(str(exc)) from exc
+        self._save_config(
+            {
+                "market_selection_mode": normalized,
+            }
+        )
+        return status
 
     def save_company_policy(
         self,

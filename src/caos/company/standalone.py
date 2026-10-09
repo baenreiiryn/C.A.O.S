@@ -138,6 +138,21 @@ def build_policy(
     )
 
 
+def register_all_builtin_strategies(
+    company: TradeCompany,
+) -> list[str]:
+    registered = []
+    for strategy_id, spec in sorted(
+        BUILTIN_STRATEGIES.items()
+    ):
+        company.strategies.register(
+            spec,
+            strategy_id=strategy_id,
+        )
+        registered.append(strategy_id)
+    return registered
+
+
 def build_standalone_company(
     caos,
     policy: CompanyPolicy,
@@ -202,6 +217,15 @@ def build_daemon(
     candle_limit: int = 500,
     opportunity_ttl_ms: int = 3_600_000,
     execution_service=None,
+    market_selection_mode: str = "manual",
+    auto_timeframes: tuple[str, ...] = (
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+    ),
+    auto_candidate_limit: int = 10,
+    auto_scan_every_seconds: float = 300.0,
 ) -> CompanyDaemon:
     return CompanyDaemon(
         company,
@@ -210,6 +234,14 @@ def build_daemon(
         candle_limit=int(candle_limit),
         opportunity_ttl_ms=int(opportunity_ttl_ms),
         execution_service=execution_service,
+        market_selection_mode=market_selection_mode,
+        auto_timeframes=tuple(auto_timeframes),
+        auto_candidate_limit=int(
+            auto_candidate_limit
+        ),
+        auto_scan_every_seconds=float(
+            auto_scan_every_seconds
+        ),
     )
 
 

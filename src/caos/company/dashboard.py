@@ -371,7 +371,7 @@ function settingsSelect(label,id,value,options){
  return '<label for="'+esc(id)+'">'+esc(label)+'</label><select id="'+esc(id)+'">'+options.map(function(o){const v=(typeof o==='string'?o:o.value),t=(typeof o==='string'?o:o.label);return '<option value="'+esc(v)+'"'+(String(v)===String(value)?' selected':'')+'>'+esc(t)+'</option>'}).join('')+'</select>';
 }
 function renderSettings(){
- const st=settingsCache||{},companyCfg=st.company||{},llm=st.llm||{},managed=st.ollama_runtime||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
+ const st=settingsCache||{},companyCfg=st.company||{},marketSel=st.market_selection||{},autoSel=marketSel.autonomy||{},llm=st.llm||{},managed=st.ollama_runtime||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
  const providerOpts=['static','ollama','openai-compatible'];
  let html='<div class="story">Settings remain available after the Founding Charter. Saving the LLM swaps only the runtime provider; Treasury, Traders, PAPER state and research remain intact.</div>';
  html+=section('🏰 Company Charter · Runtime Policy',
@@ -384,6 +384,16 @@ function renderSettings(){
    '<div class="settings-note">'+esc(companyCfg.note||'')+' Changes require the Company to be STOPPED. Existing Trader balances are not resized when the initial bucket changes; existing Trader exposure limits remain individually configurable in each Trader drawer.</div>'+
    '<div class="control-row"><button class="btn" onclick="saveCompanyPolicySettings()">Save Company Policy</button></div>'+
    '<div id="companyPolicyStatus" class="settings-status">Operational state: '+esc(companyCfg.operational_state||'unknown')+'</div>'
+ );
+ const rankingRows=(autoSel.latest_rankings||[]).slice(0,8);
+ html+=section('🧭 Scout Lodge · Market & Timeframe Selection',
+   '<div class="settings-grid">'+
+   settingsSelect('Selection mode','marketSelectionMode',marketSel.mode||'auto',[{value:'auto',label:'AUTO · Company chooses market + timeframe + strategy'},{value:'manual',label:'MANUAL · configured targets (debug/fallback)'}])+
+   '</div>'+
+   '<div class="settings-note">AUTO does not lock Traders to BTC, a fixed timeframe, or one strategy. The Scout pre-filters liquid Binance Spot USDT pairs, compares '+esc(String((autoSel.timeframes||[]).join(', ')||'1m, 5m, 15m, 1h'))+' across every registered assignable strategy, then publishes the best combinations. Production market exclusivity still prevents two Traders from occupying the same symbol.</div>'+
+   '<div class="control-row"><button class="btn" onclick="saveMarketSelectionSettings()">Save Selection Mode</button></div>'+
+   '<div id="marketSelectionStatus" class="settings-status">Current: '+esc(String(marketSel.mode||'auto').toUpperCase())+' · scan every '+esc(String(marketSel.auto_scan_every_seconds||300))+'s · pre-filter '+esc(String(autoSel.candidate_limit||10))+' liquid markets</div>'+
+   (rankingRows.length?'<div class="list" style="margin-top:8px">'+rankingRows.map(function(r){return listItem((r.symbol||'—')+' · '+(r.timeframe||'—')+' · '+(r.strategy_id||'—'),'score '+Number(r.score||0).toFixed(1)+' · signal '+String(r.signal||'—')+' · 24h '+Number(r.price_change_pct||0).toFixed(2)+'%')}).join('')+'</div>':'<div class="empty">AUTO rankings appear here after the first autonomous scan.</div>')
  );
  html+=section('🔮 Arcane Nexus · LLM Configuration',
    '<div class="settings-grid">'+
@@ -499,6 +509,16 @@ async function saveCompanyPolicySettings(){
   settingsCache=await api('/api/settings');
   renderSettings();
   const el=byId('companyPolicyStatus');if(el)el.textContent='✓ Company policy saved · state '+String(r.operational_state||'stopped');
+ }catch(e){if(status)status.textContent='Error: '+e.message;else alert(e.message)}
+}
+async function saveMarketSelectionSettings(){
+ const status=byId('marketSelectionStatus');
+ try{
+  const mode=byId('marketSelectionMode').value;
+  const r=await api('/api/settings/market-selection/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:mode})});
+  settingsCache=await api('/api/settings');
+  renderSettings();
+  const el=byId('marketSelectionStatus');if(el)el.textContent='✓ Selection mode saved · '+String(r.mode||mode).toUpperCase();
  }catch(e){if(status)status.textContent='Error: '+e.message;else alert(e.message)}
 }
 async function refreshManagedOllama(){
@@ -980,7 +1000,7 @@ async function openTrader(id){
  const exposureControls='<div class="control-row"><label>Chosen size % <input id="traderSizeInput" type="number" min="0.01" step="0.01" value="'+esc(requested)+'"></label><label>Max seal % <input id="traderMaxInput" type="number" min="0.01" max="100" step="0.01" value="'+esc(t.max_trade_exposure_pct)+'"></label><button class="btn" onclick="setTraderExposure(\''+esc(id)+'\')">Apply</button></div>';
  drawerBody.innerHTML='<div class="story">'+traderAvatar(t.status)+' This adventurer is '+esc(t.status)+'. The chart uses a dedicated LIVE 1-minute Binance visual feed while strategy decisions continue to use the Company\'s configured strategy timeframe.</div>'+
  section('Live PAPER Chart','<div id="traderLiveChart"><div class="trader-chart-shell"><div class="empty" style="padding:20px">Loading market chart…</div></div></div>')+
- section('Current Quest','<div class="metric-grid">'+metric('Market',t.market||'none')+metric('Direction',t.direction||'—')+metric('Strategy',t.strategy_id||'—')+metric('Mode',t.mode)+'</div>')+
+ section('Current Quest','<div class="metric-grid">'+metric('Market',t.market||'none')+metric('Direction',t.direction||'—')+metric('Strategy',t.strategy_id||'—')+metric('Timeframe',(t.metadata&&t.metadata.timeframe)||'strategy default')+metric('Selection',(t.metadata&&t.metadata.selection_mode)||'manual')+metric('Mode',t.mode)+'</div>')+
  section('Capital & Risk Seal','<div class="metric-grid">'+metric('Realized capital',money(bal))+metric('Open exposure',money(exp))+metric('Chosen sizing',pct(requested))+metric('Maximum exposure',pct(t.max_trade_exposure_pct))+metric('Requested notional',money(requestedNotional))+metric('Maximum notional',money(maxNotional))+'</div>')+
  section('Execution Fabric',lastPlan?'<div class="metric-grid">'+metric('Fabric',fabric.version||'—')+metric('Plan action',lastPlan.action||'—')+metric('Desired target',money(lastPlan.desired_target_notional))+metric('Effective target',money(lastPlan.effective_target_notional))+metric('Order delta',money(lastPlan.order_notional))+metric('Risk reducing',lastPlan.risk_reducing?'YES':'NO')+'</div><div class="list-sub">Plan '+esc(lastPlan.plan_id||'')+'</div>':'<div class="empty">No execution plan has been produced for this Trader yet.</div>')+
  section('Guild Controls',actions+exposureControls)+
@@ -1449,6 +1469,19 @@ def serve_company(
                                         "",
                                     )
                                 ),
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/market-selection/save":
+                        self._json(
+                            200,
+                            settings_service.save_market_selection(
+                                mode=str(
+                                    payload.get(
+                                        "mode",
+                                        "auto",
+                                    )
+                                )
                             ),
                         )
                         return

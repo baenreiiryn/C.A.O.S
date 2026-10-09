@@ -32,6 +32,7 @@ from .company.standalone import (
     load_runtime_config,
     load_saved_policy,
     parse_scan_targets,
+    register_all_builtin_strategies,
     require_initialized,
     save_runtime_config,
     targets_from_runtime_config,
@@ -85,6 +86,9 @@ def default_launcher_config(
         "default_max_exposure": 20.0,
         "operational_cap": 6,
         "company_max_dd": 30.0,
+        "market_selection_mode": "auto",
+        "auto_candidate_limit": 10,
+        "auto_scan_every_seconds": 300.0,
         "targets": DEFAULT_TARGETS,
         "interval": "60",
         "candle_limit": 500,
@@ -258,6 +262,20 @@ def validate_launcher_config(
             active_broker_profile
         ).strip() or None
 
+    market_selection_mode = str(
+        merged.get(
+            "market_selection_mode",
+            "auto",
+        )
+    ).strip().lower()
+    if market_selection_mode not in {
+        "auto",
+        "manual",
+    }:
+        raise WindowsAppError(
+            "market_selection_mode_must_be_auto_or_manual"
+        )
+
     validated = {
         "version": WINDOWS_APP_VERSION,
         "provider": provider,
@@ -301,6 +319,27 @@ def validate_launcher_config(
             name="company_max_dd",
             minimum=0.01,
             maximum=100.0,
+        ),
+        "market_selection_mode": (
+            market_selection_mode
+        ),
+        "auto_candidate_limit": _int_between(
+            merged.get(
+                "auto_candidate_limit",
+                10,
+            ),
+            name="auto_candidate_limit",
+            minimum=3,
+            maximum=30,
+        ),
+        "auto_scan_every_seconds": _float_between(
+            merged.get(
+                "auto_scan_every_seconds",
+                300.0,
+            ),
+            name="auto_scan_every_seconds",
+            minimum=30.0,
+            maximum=3600.0,
         ),
         "targets": targets,
         "interval": str(merged["interval"]).strip() or "60",
@@ -392,6 +431,11 @@ def initialize_or_restore(config: dict):
             targets,
             mode=TraderMode.PRODUCTION,
         )
+        if config["market_selection_mode"] == "auto":
+            register_all_builtin_strategies(
+                company
+            )
+            company.checkpoint()
         runtime = save_runtime_config(
             caos.store,
             targets,
@@ -413,6 +457,9 @@ def initialize_or_restore(config: dict):
             "company_checkpoint_missing"
         )
     require_initialized(company)
+    if config["market_selection_mode"] == "auto":
+        register_all_builtin_strategies(company)
+        company.checkpoint()
     runtime = load_runtime_config(caos.store)
     if runtime is None:
         targets = parse_scan_targets(config["targets"])
@@ -481,19 +528,6 @@ class CompanyRuntimeHost:
         self.company.set_resume_guard(
             self.execution.resume_guard_reason
         )
-        self.settings = RuntimeSettingsService(
-            self.caos,
-            self.company,
-            self.config,
-            persist_runtime_config,
-            self.vault,
-            self.ollama_runtime,
-        )
-        self.chat = CompanyChatService(
-            self.caos,
-            self.company,
-            execution_service=self.execution,
-        )
         self.daemon = build_daemon(
             self.company,
             self.targets,
@@ -507,6 +541,33 @@ class CompanyRuntimeHost:
                     3_600_000,
                 )
             ),
+            execution_service=self.execution,
+            market_selection_mode=self.config[
+                "market_selection_mode"
+            ],
+            auto_candidate_limit=int(
+                self.config[
+                    "auto_candidate_limit"
+                ]
+            ),
+            auto_scan_every_seconds=float(
+                self.config[
+                    "auto_scan_every_seconds"
+                ]
+            ),
+        )
+        self.settings = RuntimeSettingsService(
+            self.caos,
+            self.company,
+            self.config,
+            persist_runtime_config,
+            self.vault,
+            self.ollama_runtime,
+            self.daemon,
+        )
+        self.chat = CompanyChatService(
+            self.caos,
+            self.company,
             execution_service=self.execution,
         )
         self.stop_event = threading.Event()

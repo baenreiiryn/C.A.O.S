@@ -26,6 +26,34 @@ class FakeReliability:
         }
 
 
+class FakeMarketRuntime:
+    def __init__(self):
+        self.mode = "auto"
+
+    def market_selection_status(self):
+        return {
+            "mode": self.mode,
+            "auto_scan_every_seconds": 300.0,
+            "manual_targets": [],
+            "autonomy": {
+                "timeframes": [
+                    "1m",
+                    "5m",
+                    "15m",
+                    "1h",
+                ],
+                "candidate_limit": 10,
+                "publish_limit": 6,
+                "min_quote_volume": 5_000_000.0,
+                "latest_rankings": [],
+            },
+        }
+
+    def configure_market_selection(self, *, mode):
+        self.mode = mode
+        return self.market_selection_status()
+
+
 class FakeManagedOllama:
     base_url = "http://127.0.0.1:11435"
 
@@ -68,7 +96,12 @@ class FakeManagedOllama:
         }
 
 
-def make_service(*, recovery_required=0, ollama_runtime=None):
+def make_service(
+    *,
+    recovery_required=0,
+    ollama_runtime=None,
+    market_runtime=None,
+):
     config = {
         "version": 1,
         "provider": "static",
@@ -100,6 +133,7 @@ def make_service(*, recovery_required=0, ollama_runtime=None):
         persist,
         vault,
         ollama_runtime,
+        market_runtime,
     )
     return service, caos, config, persisted, vault
 
@@ -279,6 +313,35 @@ class RuntimeLLMSettingsTests(unittest.TestCase):
         self.assertEqual(
             kwargs["headers"]["Authorization"],
             "Bearer vault-key",
+        )
+
+
+class MarketSelectionSettingsTests(unittest.TestCase):
+    def test_auto_market_selection_is_exposed_and_persisted(self):
+        runtime = FakeMarketRuntime()
+        service, _caos, config, persisted, _vault = (
+            make_service(market_runtime=runtime)
+        )
+        status = service.get_settings()[
+            "market_selection"
+        ]
+        self.assertEqual(status["mode"], "auto")
+        self.assertIn(
+            "15m",
+            status["autonomy"]["timeframes"],
+        )
+
+        saved = service.save_market_selection(
+            mode="manual"
+        )
+        self.assertEqual(saved["mode"], "manual")
+        self.assertEqual(
+            config["market_selection_mode"],
+            "manual",
+        )
+        self.assertEqual(
+            persisted[-1]["market_selection_mode"],
+            "manual",
         )
 
 

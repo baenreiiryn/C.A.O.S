@@ -101,6 +101,109 @@ class BinancePublicClient:
             f"unsupported Binance interval: {interval}"
         )
 
+    def ticker_24h(self) -> list[dict]:
+        payload = self._get_json(
+            "/api/v3/ticker/24hr",
+            {},
+        )
+        if not isinstance(payload, list):
+            raise MarketDataError(
+                "unexpected_binance_ticker_response"
+            )
+        rows: list[dict] = []
+        for row in payload:
+            if not isinstance(row, dict):
+                continue
+            try:
+                rows.append(
+                    {
+                        "symbol": str(
+                            row.get("symbol", "")
+                        ).upper(),
+                        "last_price": float(
+                            row.get("lastPrice", 0.0)
+                            or 0.0
+                        ),
+                        "price_change_pct": float(
+                            row.get(
+                                "priceChangePercent",
+                                0.0,
+                            )
+                            or 0.0
+                        ),
+                        "quote_volume": float(
+                            row.get(
+                                "quoteVolume",
+                                0.0,
+                            )
+                            or 0.0
+                        ),
+                        "count": int(
+                            row.get("count", 0)
+                            or 0
+                        ),
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+        return rows
+
+    def liquid_usdt_candidates(
+        self,
+        *,
+        limit: int = 12,
+        min_quote_volume: float = 5_000_000.0,
+    ) -> list[dict]:
+        limit = max(1, min(int(limit), 50))
+        stable_bases = {
+            "USDC",
+            "FDUSD",
+            "TUSD",
+            "USDP",
+            "DAI",
+            "EUR",
+            "TRY",
+            "JPY",
+            "BRL",
+        }
+        leveraged_suffixes = (
+            "UP",
+            "DOWN",
+            "BULL",
+            "BEAR",
+        )
+        rows = []
+        for row in self.ticker_24h():
+            symbol = row["symbol"]
+            if not symbol.endswith("USDT"):
+                continue
+            base = symbol[:-4]
+            if not base:
+                continue
+            if base in stable_bases:
+                continue
+            if any(
+                base.endswith(suffix)
+                for suffix in leveraged_suffixes
+            ):
+                continue
+            if (
+                row["last_price"] <= 0
+                or row["quote_volume"]
+                < float(min_quote_volume)
+            ):
+                continue
+            rows.append(row)
+        rows.sort(
+            key=lambda row: (
+                row["quote_volume"],
+                abs(row["price_change_pct"]),
+                row["count"],
+            ),
+            reverse=True,
+        )
+        return rows[:limit]
+
     def orderbook(
         self,
         symbol: str,

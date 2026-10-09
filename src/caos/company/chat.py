@@ -48,6 +48,14 @@ class CompanyChatService:
                     "trade_exposure_pct": row.get(
                         "trade_exposure_pct"
                     ),
+                    "timeframe": (
+                        row.get("metadata", {})
+                        .get("timeframe")
+                    ),
+                    "selection_mode": (
+                        row.get("metadata", {})
+                        .get("selection_mode")
+                    ),
                 }
             )
         execution = (
