@@ -69,6 +69,32 @@ Broker credentials are intentionally **not stored by the installer or first-run 
 
 The current installer is unsigned, so Windows SmartScreen may show a warning until code signing is added.
 
+### GitHub self-update
+
+Starting with **v0.8.8**, the installed Windows application has **⚙ Settings → Update Center · GitHub Releases**.
+
+The updater:
+
+- checks the stable `latest` release of `baenreiiryn/C.A.O.S`;
+- downloads `CAOS-Update.zip`, not the full Ollama-bearing installer;
+- verifies the package against the SHA-256 in `CAOS-Update.json`;
+- refuses to install while the Company is not **STOPPED**, while a PAPER order/position is open, or while external/REAL execution is unresolved;
+- closes the Trade Company, backs up the currently installed executables, replaces `CAOS-Trade-Company.exe` and `caos.exe`, and relaunches;
+- rolls the two executables back if the replacement step fails.
+
+The update package deliberately does **not** replace:
+
+```text
+%LOCALAPPDATA%\CAOS\caos.db
+%LOCALAPPDATA%\CAOS\launcher.json
+%LOCALAPPDATA%\CAOS\ollama-models
+Windows Credential Manager
+```
+
+The portable Ollama runtime under the program directory is also left untouched by normal lightweight updates. The full `CAOS-Setup.exe` remains attached to every GitHub Release for cases where the bundled runtime itself must be refreshed.
+
+**v0.8.8 is the one-time bridge release:** installations older than v0.8.8 must install v0.8.8 normally once. Future releases can then be pulled from GitHub by the application itself.
+
 ### Persistent settings after onboarding
 
 The Founding Charter is only the first-run onboarding. After installation, configuration remains available from the **⚙ Settings** button in the Arcane Trading City.
