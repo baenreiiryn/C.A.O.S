@@ -222,6 +222,66 @@ class AutonomousMarketScannerTests(unittest.TestCase):
             )
             store.close()
 
+    def test_flat_auto_trader_can_return_to_scout_for_better_route(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, _client, company = self.build_company(d)
+            scanner = AutonomousMarketScanner(
+                company,
+                timeframes=("5m",),
+                candidate_limit=1,
+                publish_limit=1,
+                bars_limit=120,
+            )
+            created = scanner.scan(
+                now=1_800_000_000_000,
+                opportunity_ttl_ms=300_000,
+            )
+            opportunity = company.opportunities.get(
+                created[0]
+            )
+            company.market.assign(
+                "A",
+                opportunity.id,
+                strategy_id=(
+                    opportunity.strategy_candidates[0]
+                ),
+                now=1_800_000_000_001,
+            )
+            daemon = build_daemon(
+                company,
+                parse_scan_targets(
+                    "BTCUSDT:long:momentum"
+                ),
+                market_selection_mode="auto",
+            )
+            daemon.auto_scanner.publish_limit = 1
+            daemon.auto_scanner.latest_rankings = [
+                {
+                    "symbol": "ETHUSDT",
+                    "timeframe": "15m",
+                    "strategy_id": "trend",
+                    "score": 99.0,
+                }
+            ]
+            errors = {}
+            rows = daemon._reallocate_flat_auto_traders(
+                now=1_800_000_300_000,
+                errors=errors,
+            )
+            self.assertFalse(errors)
+            self.assertEqual(len(rows), 1)
+            trader = company.registry.get("A")
+            self.assertEqual(
+                trader.status.value,
+                "waiting_assignment",
+            )
+            self.assertIsNone(trader.market)
+            self.assertNotIn(
+                "timeframe",
+                trader.metadata,
+            )
+            store.close()
+
     def test_rescan_expires_stale_unclaimed_auto_opportunities(self):
         with tempfile.TemporaryDirectory() as d:
             store, _client, company = self.build_company(d)
