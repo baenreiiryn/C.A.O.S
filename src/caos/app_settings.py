@@ -401,7 +401,41 @@ class RuntimeSettingsService:
                     ),
                 }
             )
-        policy = self.company.policy.to_dict()
+        policy_obj = getattr(
+            self.company,
+            "policy",
+            None,
+        )
+        policy = (
+            policy_obj.to_dict()
+            if policy_obj is not None
+            and hasattr(policy_obj, "to_dict")
+            else {
+                "trader_initial_bucket": self.config.get(
+                    "trader_bucket",
+                    10.0,
+                ),
+                "trader_stop_floor": self.config.get(
+                    "stop_floor",
+                    3.0,
+                ),
+                "default_trader_max_exposure_pct": (
+                    self.config.get(
+                        "default_max_exposure",
+                        20.0,
+                    )
+                ),
+                "company_max_drawdown_pct": self.config.get(
+                    "company_max_dd",
+                    30.0,
+                ),
+            }
+        )
+        operational_state_fn = getattr(
+            self.company,
+            "operational_state",
+            None,
+        )
         return {
             "version": SETTINGS_API_VERSION,
             "company": {
@@ -418,7 +452,9 @@ class RuntimeSettingsService:
                     "company_max_drawdown_pct"
                 ],
                 "operational_state": (
-                    self.company.operational_state()
+                    operational_state_fn()
+                    if callable(operational_state_fn)
+                    else "unknown"
                 ),
                 "note": (
                     "Initial bucket and default exposure apply "
