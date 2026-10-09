@@ -231,6 +231,31 @@ def _json_get(
         ) from exc
 
 
+def _ollama_model_alias(value: str) -> str:
+    name = str(value).strip()
+    return (
+        name[:-7]
+        if name.lower().endswith(":latest")
+        else name
+    )
+
+
+def _match_ollama_model(
+    requested: str,
+    discovered: list[str],
+) -> str | None:
+    requested = str(requested).strip()
+    if not requested:
+        return None
+    if requested in discovered:
+        return requested
+    requested_alias = _ollama_model_alias(requested)
+    for model in discovered:
+        if _ollama_model_alias(model) == requested_alias:
+            return model
+    return None
+
+
 def _clean_profile_id(value: str) -> str:
     cleaned = re.sub(
         r"[^a-zA-Z0-9_.-]+",
@@ -563,7 +588,27 @@ class RuntimeSettingsService:
             api_key=api_key,
         )
         requested = str(model).strip()
+        matched_model = requested
         if (
+            provider == "ollama"
+            and requested
+            and discovered["models"]
+        ):
+            matched_model = _match_ollama_model(
+                requested,
+                discovered["models"],
+            )
+            if matched_model is None:
+                return {
+                    **discovered,
+                    "ok": False,
+                    "matched_model": None,
+                    "message": (
+                        f"Model {requested!r} was not returned "
+                        "by the provider."
+                    ),
+                }
+        elif (
             provider != "static"
             and requested
             and discovered["models"]
@@ -572,6 +617,7 @@ class RuntimeSettingsService:
             return {
                 **discovered,
                 "ok": False,
+                "matched_model": None,
                 "message": (
                     f"Model {requested!r} was not returned "
                     "by the provider."
@@ -580,6 +626,7 @@ class RuntimeSettingsService:
         return {
             **discovered,
             "ok": True,
+            "matched_model": matched_model or requested,
             "message": "Connection succeeded.",
         }
 

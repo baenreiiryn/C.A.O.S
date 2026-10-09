@@ -435,7 +435,8 @@ async function testLLMSettings(){
  try{
   const payload={provider:byId('settingsProvider').value,model:byId('settingsModel').value,base_url:byId('settingsBaseUrl').value,api_key:byId('settingsLlmKey').value||null};
   const r=await api('/api/settings/llm/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  byId('settingsLlmStatus').textContent=(r.ok?'✓ ':'⚠ ')+(r.message||'Test complete')+(r.models&&r.models.length?' · '+r.models.length+' model(s) discovered':'');
+  if(r.ok&&r.matched_model&&byId('settingsModel'))byId('settingsModel').value=r.matched_model;
+  byId('settingsLlmStatus').textContent=(r.ok?'✓ ':'⚠ ')+(r.message||'Test complete')+(r.matched_model&&r.matched_model!==payload.model?' · matched '+r.matched_model:'')+(r.models&&r.models.length?' · '+r.models.length+' model(s) discovered':'');
  }catch(e){byId('settingsLlmStatus').textContent='Error: '+e.message}
 }
 async function saveLLMSettings(){
