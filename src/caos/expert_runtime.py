@@ -494,6 +494,7 @@ class ManagedExpertRuntime:
         )
         self.caos.forecast_experts = forecasts
         self.caos.sentiment_expert = sentiment
+        self.caos.expert_runtime = self
         if getattr(
             self.caos,
             "news_analyzer",
