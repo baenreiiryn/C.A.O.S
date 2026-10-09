@@ -371,7 +371,7 @@ function settingsSelect(label,id,value,options){
  return '<label for="'+esc(id)+'">'+esc(label)+'</label><select id="'+esc(id)+'">'+options.map(function(o){const v=(typeof o==='string'?o:o.value),t=(typeof o==='string'?o:o.label);return '<option value="'+esc(v)+'"'+(String(v)===String(value)?' selected':'')+'>'+esc(t)+'</option>'}).join('')+'</select>';
 }
 function renderSettings(){
- const st=settingsCache||{},companyCfg=st.company||{},updates=st.updates||{},marketSel=st.market_selection||{},autoSel=marketSel.autonomy||{},llm=st.llm||{},managed=st.ollama_runtime||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
+ const st=settingsCache||{},companyCfg=st.company||{},updates=st.updates||{},marketSel=st.market_selection||{},autoSel=marketSel.autonomy||{},llm=st.llm||{},managed=st.ollama_runtime||{},experts=st.experts||{},expertCatalog=experts.catalog||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
  const providerOpts=['static','ollama','openai-compatible'];
  let html='<div class="story">Settings remain available after the Founding Charter. Saving the LLM swaps only the runtime provider; Treasury, Traders, PAPER state and research remain intact.</div>';
  const updateBlockers=(updates.install_blockers||[]);
@@ -420,6 +420,32 @@ function renderSettings(){
    '<div class="settings-note">Stored LLM API keys use Windows Credential Manager. Leaving the API-key field blank keeps the existing key. Ollama usually does not need one.</div>'+
    '<div class="control-row"><button class="btn" onclick="discoverModels()">Refresh Models</button><button class="btn" onclick="testLLMSettings()">Test Connection</button><button class="btn" onclick="saveLLMSettings()">Save LLM</button></div>'+
    '<div id="settingsLlmStatus" class="settings-status">'+(llm.api_key_configured?'API key configured in credential vault.':'No LLM API key stored.')+'</div>'
+ );
+ const configuredExperts=experts.configured||[],loadedExperts=experts.loaded||[],expertErrors=experts.errors||{};
+ const expertRows=['kronos','chronos2','finbert'].map(function(key){
+   const meta=expertCatalog[key]||{},checked=configuredExperts.indexOf(key)>=0,loaded=loadedExperts.indexOf(key)>=0,error=expertErrors[key];
+   return '<div class="broker-card"><div class="list-title"><label><input id="expert_'+key+'" type="checkbox" '+(checked?'checked':'')+'> '+esc(meta.label||key)+'</label> · '+(loaded?'LOADED':(checked?'ENABLED':'OFF'))+'</div><div class="list-sub">'+esc(meta.role||'specialist evidence')+(meta.recommended?' · recommended':'')+(error?' · ERROR '+esc(error):'')+'</div></div>';
+ }).join('');
+ html+=section('🔭 Arcane Nexus · Oracles',
+   '<div class="settings-note">Forecast and sentiment specialists are evidence only. They cannot create orders, bypass risk, switch PAPER/REAL or confirm production trades. The expert runtime is separate from the main app so normal C.A.O.S updates remain small. Model weights are cached locally and downloaded only when first loaded.</div>'+
+   '<div class="metric-grid">'+
+   metric('Runtime',experts.running?'RUNNING':(experts.installed?'STOPPED':'NOT INSTALLED'))+
+   metric('Device',experts.device||'—')+
+   metric('Configured',configuredExperts.length)+
+   metric('Loaded',loadedExperts.length)+
+   '</div>'+
+   expertRows+
+   '<div class="settings-note">Recommended starting stack: Kronos-small + ModernFinBERT. Chronos-2 is an optional independent baseline. First load may take several minutes while model weights are downloaded.</div>'+
+   '<div class="control-row">'+
+   (!experts.installed?'<button class="btn" onclick="installExpertRuntime()">Install Expert Runtime</button>':'')+
+   '<button class="btn" onclick="saveExperts()">Save Oracles</button>'+
+   (experts.installed&&!experts.running?'<button class="btn" onclick="startExpertRuntime()">Start Runtime</button>':'')+
+   (experts.installed?'<button class="btn" onclick="loadExperts()">Download / Load Enabled</button>':'')+
+   (experts.running?'<button class="btn" onclick="unloadExperts()">Unload Models</button><button class="btn danger" onclick="stopExpertRuntime()">Stop Runtime</button>':'')+
+   '</div>'+
+   '<div id="expertRuntimeStatus" class="settings-status">'+
+   (experts.installed?(experts.running?'Expert runtime ready on '+esc(experts.base_url||'localhost')+'.':'Expert runtime installed but stopped.'):'Expert runtime is not installed yet.')+
+   '</div>'
  );
  html+=section('🜂 Arcane Nexus · Managed Ollama',
    '<div class="settings-note">This is the Ollama runtime carried by Trade Company itself. It uses its own localhost port and model store, so it does not depend on a separate Ollama installation. Choose a local GGUF file, apply it once, then start or stop Ollama here whenever needed.</div>'+
@@ -555,6 +581,40 @@ async function installUpdate(){
   if(el)el.textContent=r.message||'Update scheduled. Trade Company is closing...';
  }catch(e){if(el)el.textContent='Error: '+e.message}
 }
+function selectedExperts(){
+ return ['kronos','chronos2','finbert'].filter(function(key){const el=byId('expert_'+key);return !!(el&&el.checked)});
+}
+async function refreshExpertSettings(){
+ settingsCache=await api('/api/settings');renderSettings();
+}
+async function installExpertRuntime(){
+ const el=byId('expertRuntimeStatus');if(el)el.textContent='Downloading and verifying the expert runtime...';
+ try{await api('/api/settings/experts/install',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await refreshExpertSettings()}catch(e){if(el)el.textContent='Error: '+e.message}
+}
+async function saveExperts(){
+ const el=byId('expertRuntimeStatus');
+ try{
+  await api('/api/settings/experts/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:selectedExperts()})});
+  await refreshExpertSettings();
+ }catch(e){if(el)el.textContent='Error: '+e.message}
+}
+async function startExpertRuntime(){
+ const el=byId('expertRuntimeStatus');if(el)el.textContent='Starting expert runtime...';
+ try{await api('/api/settings/experts/start',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await refreshExpertSettings()}catch(e){if(el)el.textContent='Error: '+e.message}
+}
+async function stopExpertRuntime(){
+ const el=byId('expertRuntimeStatus');if(el)el.textContent='Stopping expert runtime...';
+ try{await api('/api/settings/experts/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await refreshExpertSettings()}catch(e){if(el)el.textContent='Error: '+e.message}
+}
+async function loadExperts(){
+ const el=byId('expertRuntimeStatus');if(el)el.textContent='Loading enabled specialists. First load may download model weights...';
+ try{await api('/api/settings/experts/load',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await refreshExpertSettings()}catch(e){if(el)el.textContent='Error: '+e.message}
+}
+async function unloadExperts(){
+ const el=byId('expertRuntimeStatus');if(el)el.textContent='Unloading specialist models...';
+ try{await api('/api/settings/experts/unload',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await refreshExpertSettings()}catch(e){if(el)el.textContent='Error: '+e.message}
+}
+
 async function refreshManagedOllama(){
  try{
   settingsCache=await api('/api/settings');
@@ -1512,6 +1572,47 @@ def serve_company(
                             "runtime_settings_unavailable"
                         )
                     payload = self._read_json()
+                    if path == "/api/settings/experts/install":
+                        self._json(
+                            200,
+                            settings_service.install_expert_runtime(),
+                        )
+                        return
+                    if path == "/api/settings/experts/start":
+                        self._json(
+                            200,
+                            settings_service.start_expert_runtime(),
+                        )
+                        return
+                    if path == "/api/settings/experts/stop":
+                        self._json(
+                            200,
+                            settings_service.stop_expert_runtime(),
+                        )
+                        return
+                    if path == "/api/settings/experts/load":
+                        self._json(
+                            200,
+                            settings_service.load_enabled_experts(),
+                        )
+                        return
+                    if path == "/api/settings/experts/unload":
+                        self._json(
+                            200,
+                            settings_service.unload_experts(),
+                        )
+                        return
+                    if path == "/api/settings/experts/save":
+                        self._json(
+                            200,
+                            settings_service.save_experts(
+                                payload.get(
+                                    "enabled",
+                                    [],
+                                )
+                            ),
+                        )
+                        return
                     if path == "/api/settings/ollama/start":
                         self._json(
                             200,
