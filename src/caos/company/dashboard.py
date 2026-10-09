@@ -969,8 +969,8 @@ function locationDetails(id){
    body+=section('Improvement Proposals',imp.length?'<div class="list">'+imp.map(function(p){return listItem(p.kind,(p.target?'target '+p.target+' · ':'')+p.reason+(p.requires_human?' · human action required':''))}).join('')+'</div>':'<div class="empty">No improvement proposals right now.</div>');
  }
  if(id==='nexus'){
-   const caos=s.caos||{}, experts=caos.experts||{};
-   body+=section('Arcane Engine','<div class="metric-grid">'+metric('C.A.O.S kill',caos.kill_switch?'ACTIVE':'OFF')+metric('Orchestrator',caos.orchestrator||'—')+metric('Forecast oracles',(experts.forecast||[]).join(', ')||'none')+metric('Sentiment oracle',experts.sentiment||'none')+'</div>');
+   const caos=s.caos||{}, experts=caos.experts||{}, expertRuntime=experts.runtime||{}, loadedOracles=expertRuntime.loaded||[];
+   body+=section('Arcane Engine','<div class="metric-grid">'+metric('C.A.O.S kill',caos.kill_switch?'ACTIVE':'OFF')+metric('Orchestrator',caos.orchestrator||'—')+metric('Forecast oracles',(experts.forecast||[]).join(', ')||'none')+metric('Sentiment oracle',experts.sentiment||'none')+metric('Oracle runtime',expertRuntime.running?'RUNNING':(expertRuntime.installed?'STOPPED':'NOT INSTALLED'))+metric('Loaded oracles',loadedOracles.join(', ')||'none')+'</div>');
    body+=section('Specialist qualifications',Object.keys(caos.expert_qualifications||{}).length?json(caos.expert_qualifications):'<div class="empty">No specialist qualification records.</div>');
    body+=section('Technical diagnostics','<button class="btn" onclick="window.open(\'http://127.0.0.1:5190\',\'_blank\')">Open technical C.A.O.S dashboard</button>');
  }
