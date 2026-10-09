@@ -50,6 +50,10 @@ class WindowsLauncherConfigTests(unittest.TestCase):
                 saved["auto_candidate_limit"],
                 10,
             )
+            self.assertEqual(
+                saved["experts_enabled"],
+                ["kronos", "finbert"],
+            )
 
     def test_validation_rejects_unsafe_or_invalid_values(self):
         with tempfile.TemporaryDirectory() as d:
@@ -104,6 +108,38 @@ class WindowsLauncherConfigTests(unittest.TestCase):
                     ]
                 )
             )
+
+    def test_legacy_launcher_config_gains_expert_defaults(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            legacy = default_launcher_config(
+                data_dir=root
+            )
+            legacy.pop("experts_enabled", None)
+            validated = validate_launcher_config(
+                legacy,
+                data_dir=root,
+            )
+            self.assertEqual(
+                validated["experts_enabled"],
+                ["kronos", "finbert"],
+            )
+
+    def test_invalid_expert_is_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            config = default_launcher_config(
+                data_dir=root
+            )
+            config["experts_enabled"] = [
+                "kronos",
+                "unknown",
+            ]
+            with self.assertRaises(WindowsAppError):
+                validate_launcher_config(
+                    config,
+                    data_dir=root,
+                )
 
     def test_legacy_launcher_config_gains_broker_defaults(self):
         with tempfile.TemporaryDirectory() as d:
