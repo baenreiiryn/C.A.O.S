@@ -274,6 +274,7 @@ class RuntimeSettingsService:
     vault: CredentialVault
     ollama_runtime: object | None = None
     market_runtime: object | None = None
+    update_runtime: object | None = None
 
     def __post_init__(self) -> None:
         """Drop legacy unsupported broker profiles from runtime metadata.
@@ -481,6 +482,21 @@ class RuntimeSettingsService:
                 ),
             },
             "ollama_runtime": self.ollama_status(),
+            "updates": (
+                self.update_runtime.status()
+                if self.update_runtime is not None
+                else {
+                    "enabled": False,
+                    "current_version": None,
+                    "update_available": False,
+                    "checking": False,
+                    "downloaded": False,
+                    "install_supported": False,
+                    "install_blockers": [],
+                    "can_install": False,
+                    "last_error": None,
+                }
+            ),
             "market_selection": (
                 self.market_runtime.market_selection_status()
                 if self.market_runtime is not None
