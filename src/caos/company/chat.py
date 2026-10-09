@@ -115,8 +115,7 @@ class CompanyChatService:
             previous = list(self.history)[-8:]
 
         context = self._context()
-        conversation = "
-".join(
+        conversation = "\n".join(
             f"{row['role']}: {row['content']}"
             for row in previous
         )
@@ -131,22 +130,15 @@ class CompanyChatService:
             "was performed. Distinguish facts from suggestions."
         )
         user = (
-            "CURRENT TRADE COMPANY SNAPSHOT:
-"
+            "CURRENT TRADE COMPANY SNAPSHOT:\n"
             + json.dumps(
                 context,
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
-            + "
-
-RECENT CHAT:
-"
+            + "\n\nRECENT CHAT:\n"
             + (conversation or "(none)")
-            + "
-
-USER:
-"
+            + "\n\nUSER:\n"
             + message
         )
 
