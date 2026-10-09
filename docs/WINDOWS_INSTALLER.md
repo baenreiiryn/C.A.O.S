@@ -1,6 +1,6 @@
 # Windows Installer
 
-C.A.O.S v0.8.7 ships a self-contained Windows installer for the standalone Trade Company with managed Ollama, autonomous market/timeframe/strategy selection, live 1-minute Trader charts, editable post-onboarding Company policy, a read-only lateral LLM chat, explicit Start / graceful Stop / Emergency Stop controls, and a local execution gate for PAPER, Binance Spot TESTNET, and human-confirmed Binance production orders.
+C.A.O.S v0.8.8 ships a self-contained Windows installer for the standalone Trade Company with managed Ollama, GitHub self-update, autonomous market/timeframe/strategy selection, live 1-minute Trader charts, editable post-onboarding Company policy, a read-only lateral LLM chat, explicit Start / graceful Stop / Emergency Stop controls, and a local execution gate for PAPER, Binance Spot TESTNET, and human-confirmed Binance production orders.
 
 ## What gets installed
 
@@ -93,6 +93,32 @@ The default city address is:
 http://127.0.0.1:5191
 ```
 
+
+## GitHub self-update
+
+From **v0.8.8** onward, normal application upgrades no longer require uninstalling or running the full setup manually.
+
+Open:
+
+```text
+Arcane Trading City
+  → ⚙ Settings
+  → Update Center · GitHub Releases
+```
+
+The updater checks the repository's latest stable GitHub Release. Each release publishes:
+
+```text
+CAOS-Setup.exe       full installer
+CAOS-Update.zip      lightweight in-place application update
+CAOS-Update.json     version + SHA-256 manifest
+```
+
+The program downloads and verifies `CAOS-Update.zip`. Installation is allowed only when the Company is fully **STOPPED**, all PAPER positions/orders are flat, and no external/REAL execution remains unresolved. The update is then scheduled for process exit. A detached PowerShell helper waits for the running application to terminate, backs up both installed executables, replaces them, and relaunches the Trade Company. If replacement fails, the previous executables are restored.
+
+Persistent data and secrets remain outside the update payload. Normal updates preserve `caos.db`, `launcher.json`, the managed Ollama model store, Windows Credential Manager entries, and the installed portable Ollama runtime.
+
+The first version that contains the updater is **v0.8.8**, so older installations need one final manual installation of v0.8.8. After that, later releases can be installed from inside the application.
 
 ### Execution Gate
 

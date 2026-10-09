@@ -371,9 +371,24 @@ function settingsSelect(label,id,value,options){
  return '<label for="'+esc(id)+'">'+esc(label)+'</label><select id="'+esc(id)+'">'+options.map(function(o){const v=(typeof o==='string'?o:o.value),t=(typeof o==='string'?o:o.label);return '<option value="'+esc(v)+'"'+(String(v)===String(value)?' selected':'')+'>'+esc(t)+'</option>'}).join('')+'</select>';
 }
 function renderSettings(){
- const st=settingsCache||{},companyCfg=st.company||{},marketSel=st.market_selection||{},autoSel=marketSel.autonomy||{},llm=st.llm||{},managed=st.ollama_runtime||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
+ const st=settingsCache||{},companyCfg=st.company||{},updates=st.updates||{},marketSel=st.market_selection||{},autoSel=marketSel.autonomy||{},llm=st.llm||{},managed=st.ollama_runtime||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
  const providerOpts=['static','ollama','openai-compatible'];
  let html='<div class="story">Settings remain available after the Founding Charter. Saving the LLM swaps only the runtime provider; Treasury, Traders, PAPER state and research remain intact.</div>';
+ const updateBlockers=(updates.install_blockers||[]);
+ const updateState=updates.checking?'Checking GitHub…':(updates.update_available?('Update v'+String(updates.latest_version||'')+' available'):'Current v'+String(updates.current_version||'—'));
+ html+=section('⬆ Update Center · GitHub Releases',
+   '<div class="metric-grid">'+
+   metric('Installed',updates.current_version?('v'+updates.current_version):'—')+
+   metric('Latest',updates.latest_version?('v'+updates.latest_version):'not checked')+
+   metric('Package',updates.downloaded?'VERIFIED':'not downloaded')+
+   metric('Install',updates.can_install?'READY':(updateBlockers.length?'BLOCKED':'waiting'))+
+   '</div>'+
+   '<div class="settings-note">Updates come from the official GitHub Release for '+esc(updates.repository||'baenreiiryn/C.A.O.S')+'. The package contains only the C.A.O.S executables, so your database, launcher settings, Windows credentials, Ollama runtime and local models are preserved. Installation is blocked while the Company is not STOPPED or any PAPER/REAL execution is still open.</div>'+
+   (updateBlockers.length?'<div class="execution-warning"><b>UPDATE BLOCKED</b><br>'+updateBlockers.map(esc).join('<br>')+'</div>':'')+
+   (updates.last_error?'<div class="execution-warning"><b>LAST UPDATE ERROR</b><br>'+esc(updates.last_error)+'</div>':'')+
+   '<div class="control-row"><button class="btn" onclick="checkForUpdates()">Check GitHub</button>'+(updates.update_available?'<button class="btn" onclick="downloadUpdate()">Download & Verify</button>':'')+(updates.downloaded?'<button class="btn'+(updates.can_install?'':' danger')+'" '+(updates.can_install?'':'disabled')+' onclick="installUpdate()">Install Update</button>':'')+'</div>'+
+   '<div id="updateStatus" class="settings-status">'+esc(updateState)+'</div>'
+ );
  html+=section('🏰 Company Charter · Runtime Policy',
    '<div class="settings-grid">'+
    settingsField('Initial Trader bucket','companyInitialBucket',companyCfg.trader_initial_bucket||10,'number')+
@@ -520,6 +535,25 @@ async function saveMarketSelectionSettings(){
   renderSettings();
   const el=byId('marketSelectionStatus');if(el)el.textContent='✓ Selection mode saved · '+String(r.mode||mode).toUpperCase();
  }catch(e){if(status)status.textContent='Error: '+e.message;else alert(e.message)}
+}
+async function refreshUpdateSettings(){
+ settingsCache=await api('/api/settings');renderSettings();
+}
+async function checkForUpdates(){
+ const el=byId('updateStatus');if(el)el.textContent='Checking GitHub Releases...';
+ try{await api('/api/update/check',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await refreshUpdateSettings()}catch(e){if(el)el.textContent='Error: '+e.message}
+}
+async function downloadUpdate(){
+ const el=byId('updateStatus');if(el)el.textContent='Downloading and verifying update package...';
+ try{await api('/api/update/download',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await refreshUpdateSettings()}catch(e){if(el)el.textContent='Error: '+e.message}
+}
+async function installUpdate(){
+ if(!confirm('Install the verified C.A.O.S update now?\n\nThe Trade Company will close, replace its packaged executables, and relaunch automatically. Persistent Company state and Ollama models are preserved.'))return;
+ const el=byId('updateStatus');if(el)el.textContent='Scheduling update and shutdown...';
+ try{
+  const r=await api('/api/update/install',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  if(el)el.textContent=r.message||'Update scheduled. Trade Company is closing...';
+ }catch(e){if(el)el.textContent='Error: '+e.message}
 }
 async function refreshManagedOllama(){
  try{
@@ -1134,6 +1168,7 @@ def serve_company(
     settings_service=None,
     execution_service=None,
     chat_service=None,
+    update_service=None,
 ) -> ThreadingHTTPServer:
     mapper = CityPresentationMapper()
     cell = TradeCompanyCell(control)
@@ -1268,6 +1303,18 @@ def serve_company(
                     self._json(
                         200,
                         execution_service.list_proposals(),
+                    )
+                return
+            if path == "/api/update/status":
+                if update_service is None:
+                    self._json(
+                        200,
+                        {"enabled": False},
+                    )
+                else:
+                    self._json(
+                        200,
+                        update_service.status(),
                     )
                 return
             if path == "/api/chat/history":
@@ -1407,6 +1454,36 @@ def serve_company(
                         execution_service.reject_real(
                             str(payload["intent_id"])
                         ),
+                    )
+                    return
+                if path == "/api/update/check":
+                    if update_service is None:
+                        raise RuntimeError(
+                            "update_service_unavailable"
+                        )
+                    self._json(
+                        200,
+                        update_service.check(),
+                    )
+                    return
+                if path == "/api/update/download":
+                    if update_service is None:
+                        raise RuntimeError(
+                            "update_service_unavailable"
+                        )
+                    self._json(
+                        200,
+                        update_service.download(),
+                    )
+                    return
+                if path == "/api/update/install":
+                    if update_service is None:
+                        raise RuntimeError(
+                            "update_service_unavailable"
+                        )
+                    self._json(
+                        200,
+                        update_service.install_on_exit(),
                     )
                     return
                 if path == "/api/chat":

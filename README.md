@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.8.7 standalone Trade Company with autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. Windows installations default to **AUTO** market selection: the Scout Lodge pre-filters liquid Binance Spot USDT markets, compares multiple timeframes against every registered assignable strategy, and publishes the strongest market/timeframe/strategy combinations for Traders. The old configured targets remain only as a MANUAL/debug fallback. Production market exclusivity still prevents two Traders from occupying the same symbol.
+> Current milestone: **v0.8.8 standalone Trade Company with GitHub self-update, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. The new **Update Center** checks stable GitHub Releases, downloads a lightweight executable-only update package, verifies its SHA-256, applies it after the Trade Company exits, and relaunches automatically. Persistent Company state, launcher settings, Windows credentials, managed Ollama runtime and local models are not replaced by an in-place update.
 
 ## Why it is built this way
 
@@ -68,6 +68,32 @@ This means uninstalling/reinstalling the application does not automatically dele
 Broker credentials are intentionally **not stored by the installer or first-run wizard**. Binance profiles created later in the Broker Embassy store secrets in Windows Credential Manager. Production execution is available only through the local **REAL · MANUAL** gate and still requires a separate human confirmation for every submitted order.
 
 The current installer is unsigned, so Windows SmartScreen may show a warning until code signing is added.
+
+### GitHub self-update
+
+Starting with **v0.8.8**, the installed Windows application has **⚙ Settings → Update Center · GitHub Releases**.
+
+The updater:
+
+- checks the stable `latest` release of `baenreiiryn/C.A.O.S`;
+- downloads `CAOS-Update.zip`, not the full Ollama-bearing installer;
+- verifies the package against the SHA-256 in `CAOS-Update.json`;
+- refuses to install while the Company is not **STOPPED**, while a PAPER order/position is open, or while external/REAL execution is unresolved;
+- closes the Trade Company, backs up the currently installed executables, replaces `CAOS-Trade-Company.exe` and `caos.exe`, and relaunches;
+- rolls the two executables back if the replacement step fails.
+
+The update package deliberately does **not** replace:
+
+```text
+%LOCALAPPDATA%\CAOS\caos.db
+%LOCALAPPDATA%\CAOS\launcher.json
+%LOCALAPPDATA%\CAOS\ollama-models
+Windows Credential Manager
+```
+
+The portable Ollama runtime under the program directory is also left untouched by normal lightweight updates. The full `CAOS-Setup.exe` remains attached to every GitHub Release for cases where the bundled runtime itself must be refreshed.
+
+**v0.8.8 is the one-time bridge release:** installations older than v0.8.8 must install v0.8.8 normally once. Future releases can then be pulled from GitHub by the application itself.
 
 ### Persistent settings after onboarding
 
