@@ -72,6 +72,16 @@ jobs:
           & .\ollama-runtime\ollama.exe --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Verify version consistency
+        shell: pwsh
+        run: |
+          $project = (Select-String -Path ".\pyproject.toml" -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+          $runtime = (Select-String -Path ".\src\caos\version.py" -Pattern '^__version__ = "([^"]+)"').Matches[0].Groups[1].Value
+          $installer = (Select-String -Path ".\installer\caos.iss" -Pattern '^#define MyAppVersion "([^"]+)"').Matches[0].Groups[1].Value
+          if ($project -ne $runtime -or $project -ne $installer) {
+            throw "Version mismatch: project=$project runtime=$runtime installer=$installer"
+          }
+
       - name: Build GUI executable
         shell: pwsh
         run: |
@@ -197,6 +207,11 @@ jobs:
         shell: bash
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha')"
+            if [ "$TAG_SHA" != "$GITHUB_SHA" ]; then
+              echo "Release $TAG already belongs to $TAG_SHA, not $GITHUB_SHA. Bump the project version before publishing another release."
+              exit 1
+            fi
             gh release upload "$TAG" \
               release-assets/CAOS-Setup.exe \
               release-assets/CAOS-Update.zip \
