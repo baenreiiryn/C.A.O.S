@@ -486,6 +486,21 @@ async function saveLLMSettings(){
   settingsCache=await api('/api/settings');renderSettings();
  }catch(e){alert(e.message)}
 }
+async function saveCompanyPolicySettings(){
+ const status=byId('companyPolicyStatus');
+ try{
+  const payload={
+   trader_initial_bucket:Number(byId('companyInitialBucket').value),
+   trader_stop_floor:Number(byId('companyStopFloor').value),
+   default_trader_max_exposure_pct:Number(byId('companyDefaultExposure').value),
+   company_max_drawdown_pct:Number(byId('companyMaxDrawdown').value)
+  };
+  const r=await api('/api/settings/company/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  settingsCache=await api('/api/settings');
+  renderSettings();
+  const el=byId('companyPolicyStatus');if(el)el.textContent='✓ Company policy saved · state '+String(r.operational_state||'stopped');
+ }catch(e){if(status)status.textContent='Error: '+e.message;else alert(e.message)}
+}
 async function refreshManagedOllama(){
  try{
   settingsCache=await api('/api/settings');
@@ -931,7 +946,9 @@ function renderTraderChart(chart){
  const pendingCard=pending?'<div class="pending-order-card"><strong>🟠 OPEN PAPER ORDER · '+esc(String(pending.side||'').toUpperCase())+' '+esc(String(pending.order_type||'').toUpperCase())+'</strong>Trigger <b>'+esc(price(pending.trigger_price))+'</b> · notional <b>'+esc(money(pending.notional))+'</b> · waiting <b>'+esc(String(pending.age_bars||0))+' candle(s)</b><br>Strategy '+esc(pending.strategy||'—')+' · plan <code>'+esc(String(pending.plan_id||'').slice(0,24))+'</code></div>':'';
  const orderHistory=orderEvents.length?'<div class="order-history">'+orderEvents.slice(-6).reverse().map(function(o){const icon=o.kind==='opened'?'🟠':(o.kind==='filled'?'✅':'✕');return '<div class="order-history-row"><b>'+icon+' '+esc(String(o.kind||'order').toUpperCase())+' '+esc(String(o.side||'').toUpperCase())+'</b> · '+esc(price(o.trigger_price))+' · '+esc(new Date(Number(o.ts)).toLocaleString())+(o.reason?' · '+esc(o.reason):'')+'</div>'}).join('')+'</div>':'';
  const headOrder=pending?'<br>Open '+esc(String(pending.side||'').toUpperCase())+' @ '+esc(price(pending.trigger_price)):'';
- return '<div class="trader-chart-shell"><div class="trader-chart-head"><div><div class="trader-chart-title">'+title+' · PAPER</div>'+phaseHtml+'</div><div class="trader-chart-meta">Last '+bars.length+' candles<br>Price '+esc(price(position.current_price))+(position.avg_price?'<br>Avg entry '+esc(price(position.avg_price))+' · PnL '+esc(pnl):'')+headOrder+'</div></div><svg class="trader-chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="PAPER candlestick chart for '+title+'">'+svg+'</svg>'+pendingCard+'<div class="chart-legend"><span><b>MA7</b> gold</span><span><b>MA25</b> violet</span><span><b>MA99</b> cyan</span><span><b style="color:#ffae42">OPEN</b> pending limit order</span><span><b>B</b> PAPER buy</span><span><b>S</b> PAPER sell/reduce</span>'+(position.avg_price?'<span><b>AVG</b> active position average</span>':'')+'</div>'+(events?'<div class="chart-events">'+events+'</div>':'')+orderHistory+'</div>';
+ const liveLabel=chart&&chart.live?('LIVE '+String(chart.chart_interval||'1m')):'STRATEGY FEED';
+ const liveWarning=chart&&chart.live_error?'<div class="pending-order-card"><strong>⚠ LIVE FEED FALLBACK</strong>'+esc(chart.live_error)+'</div>':'';
+ return '<div class="trader-chart-shell"><div class="trader-chart-head"><div><div class="trader-chart-title">'+title+' · '+esc(liveLabel)+'</div>'+phaseHtml+'</div><div class="trader-chart-meta">Last '+bars.length+' candles · refresh '+esc(String(chart.live_refresh_seconds||'—'))+'s<br>Price '+esc(price(position.current_price))+(position.avg_price?'<br>Avg entry '+esc(price(position.avg_price))+' · PnL '+esc(pnl):'')+headOrder+'</div></div><svg class="trader-chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="PAPER candlestick chart for '+title+'">'+svg+'</svg>'+liveWarning+pendingCard+'<div class="chart-legend"><span><b>MA7</b> gold</span><span><b>MA25</b> violet</span><span><b>MA99</b> cyan</span><span><b style="color:#79c7ff">LIVE 1m</b> visual market feed</span><span><b style="color:#ffae42">OPEN</b> pending limit order</span><span><b>B</b> PAPER buy</span><span><b>S</b> PAPER sell/reduce</span>'+(position.avg_price?'<span><b>AVG</b> active position average</span>':'')+'</div>'+(events?'<div class="chart-events">'+events+'</div>':'')+orderHistory+'</div>';
 }
 async function refreshTraderChart(id){
  const slot=byId('traderLiveChart');
@@ -961,7 +978,7 @@ async function openTrader(id){
  if(t.status==='active')actions='<button class="btn" onclick="pauseTrader(\''+esc(id)+'\')">Pause Adventurer</button>';
  if(t.status==='paused')actions='<button class="btn" onclick="resumeTrader(\''+esc(id)+'\')">Resume Adventurer</button>';
  const exposureControls='<div class="control-row"><label>Chosen size % <input id="traderSizeInput" type="number" min="0.01" step="0.01" value="'+esc(requested)+'"></label><label>Max seal % <input id="traderMaxInput" type="number" min="0.01" max="100" step="0.01" value="'+esc(t.max_trade_exposure_pct)+'"></label><button class="btn" onclick="setTraderExposure(\''+esc(id)+'\')">Apply</button></div>';
- drawerBody.innerHTML='<div class="story">'+traderAvatar(t.status)+' This adventurer is '+esc(t.status)+'. The chart below uses the same live market candles and PAPER fills used by the Company.</div>'+
+ drawerBody.innerHTML='<div class="story">'+traderAvatar(t.status)+' This adventurer is '+esc(t.status)+'. The chart uses a dedicated LIVE 1-minute Binance visual feed while strategy decisions continue to use the Company\'s configured strategy timeframe.</div>'+
  section('Live PAPER Chart','<div id="traderLiveChart"><div class="trader-chart-shell"><div class="empty" style="padding:20px">Loading market chart…</div></div></div>')+
  section('Current Quest','<div class="metric-grid">'+metric('Market',t.market||'none')+metric('Direction',t.direction||'—')+metric('Strategy',t.strategy_id||'—')+metric('Mode',t.mode)+'</div>')+
  section('Capital & Risk Seal','<div class="metric-grid">'+metric('Realized capital',money(bal))+metric('Open exposure',money(exp))+metric('Chosen sizing',pct(requested))+metric('Maximum exposure',pct(t.max_trade_exposure_pct))+metric('Requested notional',money(requestedNotional))+metric('Maximum notional',money(maxNotional))+'</div>')+
@@ -1027,6 +1044,36 @@ async function setTraderExposure(id){
  }catch(e){alert(e.message)}
 }
 
+function renderChatMessages(rows){
+ rows=rows||[];
+ if(!rows.length){chatMessages.innerHTML='<div class="chat-empty">Ask about the Company, Traders, risk, strategies, news context or what the agents are doing.</div>';return}
+ chatMessages.innerHTML=rows.map(function(m){return '<div class="chat-msg '+(m.role==='user'?'user':'assistant')+'">'+esc(m.content)+'</div>'}).join('');
+ chatMessages.scrollTop=chatMessages.scrollHeight;
+}
+async function openChat(){
+ closeDrawer();
+ chatPanel.classList.add('open');chatPanel.setAttribute('aria-hidden','false');
+ try{const r=await api('/api/chat/history');renderChatMessages(r.messages||[])}catch(e){renderChatMessages([{role:'assistant',content:'Chat unavailable: '+e.message}])}
+ setTimeout(function(){chatInput.focus()},80);
+}
+function closeChat(){chatPanel.classList.remove('open');chatPanel.setAttribute('aria-hidden','true')}
+async function sendChatMessage(){
+ const message=chatInput.value.trim();if(!message)return;
+ chatInput.value='';chatSend.disabled=true;
+ try{
+  const history=(await api('/api/chat/history')).messages||[];
+  renderChatMessages(history.concat([{role:'user',content:message},{role:'assistant',content:'Thinking…'}]));
+  const r=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:message})});
+  renderChatMessages(r.history||[]);
+ }catch(e){
+  const history=(await api('/api/chat/history').catch(function(){return {messages:[]}})).messages||[];
+  renderChatMessages(history.concat([{role:'assistant',content:'Error: '+e.message}]));
+ }finally{chatSend.disabled=false;chatInput.focus()}
+}
+async function clearChatMessages(){
+ try{await api('/api/chat/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});renderChatMessages([])}catch(e){alert(e.message)}
+}
+
 async function tick(){
  try{
   const pair=await Promise.all([api('/api/company/status'),api('/api/company/city'),api('/api/execution/status')]);
@@ -1041,12 +1088,17 @@ async function tick(){
 
 document.querySelectorAll('.place').forEach(function(el){el.addEventListener('click',function(){openLocation(el.dataset.location)})});
 settingsBtn.addEventListener('click',openSettings);
+chatBtn.addEventListener('click',openChat);
+chatClose.addEventListener('click',closeChat);
+chatSend.addEventListener('click',sendChatMessage);
+chatClear.addEventListener('click',clearChatMessages);
+chatInput.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChatMessage()}});
 modeRune.addEventListener('click',openExecution);
 startOpsBtn.addEventListener('click',startOperations);
 stopOpsBtn.addEventListener('click',stopOperations);
 emergencyOpsBtn.addEventListener('click',emergencyStopOperations);
 drawerClose.addEventListener('click',closeDrawer);drawerBackdrop.addEventListener('click',closeDrawer);
-document.addEventListener('keydown',function(e){if(e.key==='Escape')closeDrawer()});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'){closeDrawer();closeChat()}});
 tick();setInterval(tick,2000);
 </script>
 </body>
