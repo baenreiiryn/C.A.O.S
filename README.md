@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.8.8 standalone Trade Company with GitHub self-update, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. The new **Update Center** checks stable GitHub Releases, downloads a lightweight executable-only update package, verifies its SHA-256, applies it after the Trade Company exits, and relaunches automatically. Persistent Company state, launcher settings, Windows credentials, managed Ollama runtime and local models are not replaced by an in-place update.
+> Current milestone: **v0.8.9 standalone Trade Company with managed Forecast/Sentiment Oracles, GitHub self-update, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. The Arcane Nexus can now configure Kronos-small and Chronos-2 forecast specialists plus ModernFinBERT sentiment through a separate managed runtime. Forecast evidence may conservatively reduce AUTO rankings when it contradicts a long setup; it never creates an order or increases exposure by itself. ModernFinBERT feeds the existing News Intelligence sentiment path when loaded.
 
 ## Why it is built this way
 
