@@ -72,7 +72,7 @@ def _json_request(
             timeout=timeout,
         ) as response:
             return json.loads(
-                response.read().decode("utf-8")
+                response.read().decode("utf-8-sig")
             )
     except (
         urllib.error.URLError,
