@@ -54,6 +54,23 @@ class FakeMarketRuntime:
         return self.market_selection_status()
 
 
+class FakeUpdateRuntime:
+    def status(self):
+        return {
+            "enabled": True,
+            "repository": "baenreiiryn/C.A.O.S",
+            "current_version": "0.8.8",
+            "latest_version": "0.8.9",
+            "update_available": True,
+            "checking": False,
+            "downloaded": False,
+            "install_supported": True,
+            "install_blockers": [],
+            "can_install": False,
+            "last_error": None,
+        }
+
+
 class FakeManagedOllama:
     base_url = "http://127.0.0.1:11435"
 
@@ -101,6 +118,7 @@ def make_service(
     recovery_required=0,
     ollama_runtime=None,
     market_runtime=None,
+    update_runtime=None,
 ):
     config = {
         "version": 1,
@@ -134,6 +152,7 @@ def make_service(
         vault,
         ollama_runtime,
         market_runtime,
+        update_runtime,
     )
     return service, caos, config, persisted, vault
 
@@ -313,6 +332,26 @@ class RuntimeLLMSettingsTests(unittest.TestCase):
         self.assertEqual(
             kwargs["headers"]["Authorization"],
             "Bearer vault-key",
+        )
+
+
+class UpdateSettingsTests(unittest.TestCase):
+    def test_updater_status_is_exposed_without_network_call(self):
+        service, *_ = make_service(
+            update_runtime=FakeUpdateRuntime()
+        )
+        updates = service.get_settings()["updates"]
+        self.assertTrue(updates["enabled"])
+        self.assertTrue(
+            updates["update_available"]
+        )
+        self.assertEqual(
+            updates["current_version"],
+            "0.8.8",
+        )
+        self.assertEqual(
+            updates["latest_version"],
+            "0.8.9",
         )
 
 
