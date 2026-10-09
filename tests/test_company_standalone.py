@@ -88,6 +88,14 @@ class FakeSettingsService:
     def get_settings(self):
         return {
             "version": "settings/v1",
+            "company": {
+                "trader_initial_bucket": 10.0,
+                "trader_stop_floor": 3.0,
+                "default_trader_max_exposure_pct": 20.0,
+                "company_max_drawdown_pct": 30.0,
+                "operational_state": "stopped",
+                "note": "test",
+            },
             "llm": {
                 "provider": "ollama",
                 "model": "qwen3:8b",
@@ -216,6 +224,12 @@ class FakeSettingsService:
             "api_key_configured": bool(
                 kwargs.get("api_key")
             ),
+        }
+
+    def save_company_policy(self, **kwargs):
+        return {
+            **kwargs,
+            "operational_state": "stopped",
         }
 
     def save_news_sources(self, sources):
