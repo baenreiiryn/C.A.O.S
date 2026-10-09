@@ -63,6 +63,20 @@ font-family:system-ui,sans-serif;font-size:11px}
 .execution-proposal .proposal-meta{color:var(--muted);line-height:1.45}
 .settings-btn{border:1px solid var(--line);background:rgba(45,34,64,.82);color:var(--gold2);border-radius:999px;padding:6px 11px;cursor:pointer;font:11px system-ui,sans-serif}
 .settings-btn:hover{background:#3a2d50}
+.chat-btn{border:1px solid rgba(121,199,255,.4);background:rgba(22,39,58,.9);color:#cbe9ff;border-radius:999px;padding:6px 11px;cursor:pointer;font:11px system-ui,sans-serif}
+.chat-btn:hover{background:#213d58}
+.chat-panel{position:fixed;right:0;top:0;bottom:0;width:min(420px,96vw);z-index:70;background:linear-gradient(165deg,#0c1723,#151126);border-left:1px solid rgba(121,199,255,.28);box-shadow:-22px 0 70px rgba(0,0,0,.5);transform:translateX(104%);transition:transform .24s ease;display:flex;flex-direction:column}
+.chat-panel.open{transform:translateX(0)}
+.chat-head{padding:15px 16px;border-bottom:1px solid var(--line);background:rgba(10,17,27,.95);position:relative}
+.chat-head b{display:block;color:#d8edff;font:800 17px system-ui,sans-serif}.chat-head small{color:var(--muted);font:10px system-ui,sans-serif}
+.chat-close{position:absolute;right:12px;top:12px;border:1px solid var(--line);background:#1a2635;border-radius:7px;padding:6px 9px;cursor:pointer}
+.chat-messages{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:9px}
+.chat-msg{max-width:92%;padding:9px 11px;border-radius:11px;font:12px/1.45 system-ui,sans-serif;white-space:pre-wrap;word-break:break-word}
+.chat-msg.user{align-self:flex-end;background:#263b52;color:#eef8ff}.chat-msg.assistant{align-self:flex-start;background:#241d34;border:1px solid rgba(233,189,99,.2);color:#f2e7cf}
+.chat-empty{margin:auto;color:var(--muted);font:12px system-ui,sans-serif;text-align:center;max-width:270px}
+.chat-compose{border-top:1px solid var(--line);padding:10px;background:rgba(9,15,24,.96)}
+.chat-compose textarea{width:100%;min-height:76px;max-height:180px;resize:vertical;background:#0b1420;border:1px solid rgba(121,199,255,.3);border-radius:9px;color:#fff;padding:9px;font:12px system-ui,sans-serif}
+.chat-actions{display:flex;justify-content:space-between;align-items:center;margin-top:7px}.chat-actions small{color:var(--muted);font:9px system-ui,sans-serif}
 .op-btn{border:1px solid var(--line);border-radius:999px;padding:6px 11px;cursor:pointer;font:700 11px system-ui,sans-serif;background:#192431}
 .op-btn.start{color:var(--green);border-color:rgba(107,226,161,.45)}
 .op-btn.stop{color:var(--amber);border-color:rgba(255,200,102,.45)}
@@ -254,6 +268,7 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
     <button id="startOpsBtn" class="op-btn start" type="button">▶ Start</button>
     <button id="stopOpsBtn" class="op-btn stop" type="button">■ Stop</button>
     <button id="emergencyOpsBtn" class="op-btn emergency" type="button">⚠ Emergency</button>
+    <button id="chatBtn" class="chat-btn" type="button">💬 Chat</button>
     <button id="settingsBtn" class="settings-btn" type="button">⚙ Settings</button>
   </div>
 </header>
@@ -302,6 +317,19 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
   <div id="drawerBody" class="drawer-body"></div>
 </aside>
 
+<aside id="chatPanel" class="chat-panel" aria-hidden="true">
+  <div class="chat-head">
+    <button id="chatClose" class="chat-close">✕</button>
+    <b>🔮 Arcane Nexus Chat</b>
+    <small>Read-only natural language · uses the configured LLM</small>
+  </div>
+  <div id="chatMessages" class="chat-messages"><div class="chat-empty">Ask about the Company, Traders, risk, strategies, news context or what the agents are doing.</div></div>
+  <div class="chat-compose">
+    <textarea id="chatInput" placeholder="Fale com o LLM em linguagem natural…"></textarea>
+    <div class="chat-actions"><small>Enter sends · Shift+Enter creates a new line</small><div><button id="chatClear" class="btn">Clear</button><button id="chatSend" class="btn">Send</button></div></div>
+  </div>
+</aside>
+
 <script>
 let currentStatus=null;
 let currentCity=null;
@@ -316,6 +344,7 @@ const hudEquity=byId('hudEquity'),hudReserve=byId('hudReserve'),hudTraders=byId(
 const healthRune=byId('healthRune'),modeRune=byId('modeRune'),operationRune=byId('operationRune'),alertRune=byId('alertRune'),cityWorld=byId('cityWorld');
 const cityMoodTitle=byId('cityMoodTitle'),cityMoodText=byId('cityMoodText'),alertText=byId('alertText'),guildAdventurers=byId('guildAdventurers');
 const drawer=byId('drawer'),drawerBackdrop=byId('drawerBackdrop'),drawerTitle=byId('drawerTitle'),drawerTech=byId('drawerTech'),drawerBody=byId('drawerBody'),drawerClose=byId('drawerClose'),settingsBtn=byId('settingsBtn');
+const chatBtn=byId('chatBtn'),chatPanel=byId('chatPanel'),chatClose=byId('chatClose'),chatMessages=byId('chatMessages'),chatInput=byId('chatInput'),chatSend=byId('chatSend'),chatClear=byId('chatClear');
 const startOpsBtn=byId('startOpsBtn'),stopOpsBtn=byId('stopOpsBtn'),emergencyOpsBtn=byId('emergencyOpsBtn');
 
 const money=function(v){return '$'+Number(v||0).toFixed(4)};
@@ -342,9 +371,20 @@ function settingsSelect(label,id,value,options){
  return '<label for="'+esc(id)+'">'+esc(label)+'</label><select id="'+esc(id)+'">'+options.map(function(o){const v=(typeof o==='string'?o:o.value),t=(typeof o==='string'?o:o.label);return '<option value="'+esc(v)+'"'+(String(v)===String(value)?' selected':'')+'>'+esc(t)+'</option>'}).join('')+'</select>';
 }
 function renderSettings(){
- const st=settingsCache||{},llm=st.llm||{},managed=st.ollama_runtime||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
+ const st=settingsCache||{},companyCfg=st.company||{},llm=st.llm||{},managed=st.ollama_runtime||{},brokers=st.brokers||{},profiles=brokers.profiles||[],supported=brokers.supported||{},news=st.news||{},newsSources=news.sources||[];
  const providerOpts=['static','ollama','openai-compatible'];
  let html='<div class="story">Settings remain available after the Founding Charter. Saving the LLM swaps only the runtime provider; Treasury, Traders, PAPER state and research remain intact.</div>';
+ html+=section('🏰 Company Charter · Runtime Policy',
+   '<div class="settings-grid">'+
+   settingsField('Initial Trader bucket','companyInitialBucket',companyCfg.trader_initial_bucket||10,'number')+
+   settingsField('Trader stop floor','companyStopFloor',companyCfg.trader_stop_floor||3,'number')+
+   settingsField('Default max exposure %','companyDefaultExposure',companyCfg.default_trader_max_exposure_pct||20,'number')+
+   settingsField('Company max drawdown %','companyMaxDrawdown',companyCfg.company_max_drawdown_pct||30,'number')+
+   '</div>'+
+   '<div class="settings-note">'+esc(companyCfg.note||'')+' Changes require the Company to be STOPPED. Existing Trader balances are not resized when the initial bucket changes; existing Trader exposure limits remain individually configurable in each Trader drawer.</div>'+
+   '<div class="control-row"><button class="btn" onclick="saveCompanyPolicySettings()">Save Company Policy</button></div>'+
+   '<div id="companyPolicyStatus" class="settings-status">Operational state: '+esc(companyCfg.operational_state||'unknown')+'</div>'
+ );
  html+=section('🔮 Arcane Nexus · LLM Configuration',
    '<div class="settings-grid">'+
    settingsSelect('Provider','settingsProvider',llm.provider||'static',providerOpts)+
