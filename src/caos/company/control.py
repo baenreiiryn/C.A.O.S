@@ -245,6 +245,25 @@ class CompanyControlPort:
     def set_operational_trader_limit(self, limit: int) -> dict:
         return self.set_effective_trader_limit(limit)
 
+    def update_company_policy(
+        self,
+        *,
+        trader_initial_bucket: float,
+        trader_stop_floor: float,
+        default_trader_max_exposure_pct: float,
+        company_max_drawdown_pct: float,
+    ) -> dict:
+        return self.company.update_policy(
+            trader_initial_bucket=trader_initial_bucket,
+            trader_stop_floor=trader_stop_floor,
+            default_trader_max_exposure_pct=(
+                default_trader_max_exposure_pct
+            ),
+            company_max_drawdown_pct=(
+                company_max_drawdown_pct
+            ),
+        )
+
     def configure_trader_exposure(
         self,
         trader_id: str,
