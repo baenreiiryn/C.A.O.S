@@ -157,6 +157,28 @@ caos --provider ollama --model qwen3:8b chat "analise o regime de DEMOUSDT"
 
 External Ollama defaults to `http://127.0.0.1:11434`; the Trade Company managed runtime uses `http://127.0.0.1:11435`.
 
+## Managed Forecast / Sentiment Oracles
+
+Windows v0.8.9 adds **⚙ Settings → Arcane Nexus · Oracles**.
+
+Available specialists:
+
+- **Kronos-small** — finance-specific OHLCV/K-line forecast evidence; recommended.
+- **Chronos-2** — independent general time-series baseline; optional.
+- **ModernFinBERT** — financial-news sentiment; recommended.
+
+The specialist runtime is isolated from the main application and runs on localhost port `11436`. The runtime uses CPU/RAM by default so the managed LLM can retain GPU VRAM. Model weights are cached under:
+
+```text
+%LOCALAPPDATA%\CAOS\expert-models
+```
+
+Fresh launcher configurations enable Kronos + FinBERT by default, while Chronos-2 remains optional. Enabling an oracle only configures it; **Download / Load Enabled** explicitly downloads/loads model weights for that session. If FinBERT is not loaded, Company News Intelligence falls back to its existing deterministic heuristic. If forecast oracles are not loaded, AUTO selection continues using technical/backtest/news evidence normally.
+
+When forecast oracles are loaded, the Scout consults them only for a small set of top AUTO candidates. A bearish forecast ensemble may reduce an opportunity score; bullish oracle evidence does not create an opportunity, increase the requested position, bypass technical validation, or bypass any risk/execution gate.
+
+The full v0.8.9 installer contains the expert sidecar. Users updating from v0.8.8 through the lightweight updater can install the sidecar separately from the same GitHub Release using **Install Expert Runtime**, without reinstalling C.A.O.S.
+
 ## OpenAI-compatible local server
 
 ```bash
