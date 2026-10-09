@@ -71,6 +71,74 @@ class FakeUpdateRuntime:
         }
 
 
+class FakeExpertRuntime:
+    def __init__(self):
+        self.installed_flag = False
+        self.running = False
+        self.configured = ["kronos", "finbert"]
+        self.loaded = []
+
+    def status(self):
+        return {
+            "enabled": True,
+            "installed": self.installed_flag,
+            "running": self.running,
+            "base_url": "http://127.0.0.1:11436",
+            "runtime_dir": "C:/CAOS/experts-runtime",
+            "models_dir": "C:/CAOS/expert-models",
+            "log_path": "C:/CAOS/experts-runtime.log",
+            "configured": list(self.configured),
+            "loaded": list(self.loaded),
+            "errors": {},
+            "device": "cuda" if self.running else None,
+            "catalog": {
+                "kronos": {
+                    "label": "Kronos-small",
+                    "role": "financial OHLCV forecast",
+                    "recommended": True,
+                },
+                "chronos2": {
+                    "label": "Chronos-2",
+                    "role": "general time-series baseline",
+                    "recommended": False,
+                },
+                "finbert": {
+                    "label": "ModernFinBERT",
+                    "role": "financial news sentiment",
+                    "recommended": True,
+                },
+            },
+        }
+
+    def install(self):
+        self.installed_flag = True
+        return self.status()
+
+    def start(self):
+        if not self.installed_flag:
+            raise RuntimeError("expert_runtime_not_installed")
+        self.running = True
+        return self.status()
+
+    def stop(self):
+        self.running = False
+        self.loaded = []
+        return self.status()
+
+    def load_enabled(self):
+        self.start()
+        self.loaded = list(self.configured)
+        return self.status()
+
+    def unload(self):
+        self.loaded = []
+        return self.status()
+
+    def configure(self, enabled):
+        self.configured = list(enabled)
+        return self.status()
+
+
 class FakeManagedOllama:
     base_url = "http://127.0.0.1:11435"
 
@@ -119,6 +187,7 @@ def make_service(
     ollama_runtime=None,
     market_runtime=None,
     update_runtime=None,
+    expert_runtime=None,
 ):
     config = {
         "version": 1,
@@ -153,6 +222,7 @@ def make_service(
         ollama_runtime,
         market_runtime,
         update_runtime,
+        expert_runtime,
     )
     return service, caos, config, persisted, vault
 
@@ -332,6 +402,45 @@ class RuntimeLLMSettingsTests(unittest.TestCase):
         self.assertEqual(
             kwargs["headers"]["Authorization"],
             "Bearer vault-key",
+        )
+
+
+class ExpertSettingsTests(unittest.TestCase):
+    def test_expert_runtime_status_and_configuration_are_exposed(self):
+        runtime = FakeExpertRuntime()
+        service, caos, config, persisted, _ = make_service(
+            expert_runtime=runtime
+        )
+        status = service.get_settings()["experts"]
+        self.assertEqual(
+            status["configured"],
+            ["kronos", "finbert"],
+        )
+        self.assertFalse(status["installed"])
+
+        installed = service.install_expert_runtime()
+        self.assertTrue(installed["installed"])
+        loaded = service.load_enabled_experts()
+        self.assertTrue(loaded["running"])
+        self.assertEqual(
+            set(loaded["loaded"]),
+            {"kronos", "finbert"},
+        )
+
+        saved = service.save_experts(
+            ["chronos2"]
+        )
+        self.assertEqual(
+            saved["configured"],
+            ["chronos2"],
+        )
+        self.assertEqual(
+            config["experts_enabled"],
+            ["chronos2"],
+        )
+        self.assertEqual(
+            persisted[-1]["experts_enabled"],
+            ["chronos2"],
         )
 
 
