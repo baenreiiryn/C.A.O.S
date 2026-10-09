@@ -8,6 +8,9 @@ C.A.O.S v0.8.9 ships a self-contained Windows installer for the standalone Trade
 %LOCALAPPDATA%\Programs\CAOS\
 ├─ CAOS-Trade-Company.exe
 ├─ caos.exe
+├─ experts-runtime\
+│  ├─ caos-experts.exe
+│  └─ LICENSE-Kronos.txt
 └─ ollama\
    ├─ ollama.exe
    └─ ...portable GPU/runtime libraries
@@ -109,9 +112,11 @@ Arcane Trading City
 The updater checks the repository's latest stable GitHub Release. Each release publishes:
 
 ```text
-CAOS-Setup.exe       full installer
-CAOS-Update.zip      lightweight in-place application update
-CAOS-Update.json     version + SHA-256 manifest
+CAOS-Setup.exe               full installer
+CAOS-Update.zip              lightweight in-place application update
+CAOS-Update.json             version + SHA-256 manifest
+CAOS-Experts-Runtime.zip     optional managed oracle sidecar
+CAOS-Experts-Runtime.json    oracle-runtime SHA-256 manifest
 ```
 
 The program downloads and verifies `CAOS-Update.zip`. Installation is allowed only when the Company is fully **STOPPED**, all PAPER positions/orders are flat, and no external/REAL execution remains unresolved. The update is then scheduled for process exit. A detached PowerShell helper waits for the running application to terminate, backs up both installed executables, replaces them, and relaunches the Trade Company. If replacement fails, the previous executables are restored.
@@ -119,6 +124,41 @@ The program downloads and verifies `CAOS-Update.zip`. Installation is allowed on
 Persistent data and secrets remain outside the update payload. Normal updates preserve `caos.db`, `launcher.json`, the managed Ollama model store, Windows Credential Manager entries, and the installed portable Ollama runtime.
 
 The first version that contains the updater is **v0.8.8**, so older installations need one final manual installation of v0.8.8. After that, later releases can be installed from inside the application.
+
+## Managed Forecast / Sentiment Oracles
+
+From **v0.8.9**, Settings contains **Arcane Nexus · Oracles**.
+
+The main application remains dependency-light. Torch, Transformers, Chronos and the pinned Kronos model source are packaged into a separate local sidecar:
+
+```text
+caos-experts.exe
+http://127.0.0.1:11436
+```
+
+The runtime is CPU-first so Ollama/your local LLM can keep the RTX GPU VRAM. Model weights are not embedded in C.A.O.S; Hugging Face downloads are cached under:
+
+```text
+%LOCALAPPDATA%\CAOS\expert-models\
+```
+
+Default configuration:
+
+```text
+Kronos-small      enabled / recommended
+ModernFinBERT     enabled / recommended
+Chronos-2         disabled / optional baseline
+```
+
+Controls:
+
+- **Install Expert Runtime** — for lightweight-updated installations that do not yet have the sidecar;
+- **Save Oracles** — persists enabled specialists;
+- **Start Runtime / Stop Runtime** — controls the local sidecar process;
+- **Download / Load Enabled** — explicitly loads enabled model weights;
+- **Unload Models** — frees the sidecar's loaded model memory without changing configuration.
+
+The Oracles are advisory. ModernFinBERT feeds the news-sentiment path when loaded. Loaded forecast models may only penalize a top AUTO candidate when their ensemble contradicts a long setup. They cannot create an order, raise position sizing, change PAPER/REAL mode, or bypass risk/compliance gates.
 
 ### Execution Gate
 
