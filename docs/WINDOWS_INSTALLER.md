@@ -1,6 +1,6 @@
 # Windows Installer
 
-C.A.O.S v0.8.6 ships a self-contained Windows installer for the standalone Trade Company with managed Ollama, live 1-minute Trader charts, editable post-onboarding Company policy, a read-only lateral LLM chat, explicit Start / graceful Stop / Emergency Stop controls, and a local execution gate for PAPER, Binance Spot TESTNET, and human-confirmed Binance production orders.
+C.A.O.S v0.8.7 ships a self-contained Windows installer for the standalone Trade Company with managed Ollama, autonomous market/timeframe/strategy selection, live 1-minute Trader charts, editable post-onboarding Company policy, a read-only lateral LLM chat, explicit Start / graceful Stop / Emergency Stop controls, and a local execution gate for PAPER, Binance Spot TESTNET, and human-confirmed Binance production orders.
 
 ## What gets installed
 
