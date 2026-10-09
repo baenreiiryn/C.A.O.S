@@ -486,6 +486,16 @@ class CAOS:
                     if self.sentiment_expert is not None
                     else None
                 ),
+                "runtime": (
+                    getattr(self, "expert_runtime").status()
+                    if getattr(
+                        self,
+                        "expert_runtime",
+                        None,
+                    )
+                    is not None
+                    else None
+                ),
             },
             "news": {
                 "configured": self.news_analyzer is not None,
