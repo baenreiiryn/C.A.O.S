@@ -75,6 +75,16 @@ class ExpertHost:
                 )
                 raise
 
+    def get_loaded(self, key: str):
+        key = str(key).strip().lower()
+        with self._lock:
+            expert = self.loaded.get(key)
+        if expert is None:
+            raise RuntimeError(
+                f"expert_not_loaded:{key}"
+            )
+        return expert
+
     def unload(self) -> None:
         with self._lock:
             self.loaded.clear()
@@ -225,7 +235,7 @@ def serve(
                         raise ValueError(
                             "forecast_expert_required"
                         )
-                    expert = runtime.load(key)
+                    expert = runtime.get_loaded(key)
                     result = expert.forecast(
                         str(payload["symbol"]),
                         _bars(payload["bars"]),
@@ -238,7 +248,7 @@ def serve(
                     return
 
                 if self.path == "/sentiment":
-                    expert = runtime.load(
+                    expert = runtime.get_loaded(
                         "finbert"
                     )
                     result = expert.classify(
