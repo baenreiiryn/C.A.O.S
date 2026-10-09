@@ -19,6 +19,11 @@ from .app_settings import (
 from .cli import build_caos
 from .news import default_news_sources, normalize_news_sources
 from .ollama_runtime import ManagedOllamaRuntime
+from .expert_runtime import (
+    DEFAULT_EXPERTS,
+    EXPERT_KEYS,
+    ManagedExpertRuntime,
+)
 from .runtime_execution import RuntimeExecutionService
 from .updater import GitHubUpdateService
 from .version import __version__
@@ -82,6 +87,7 @@ def default_launcher_config(
         "broker_profiles": [],
         "active_broker_profile": None,
         "news_sources": default_news_sources(),
+        "experts_enabled": list(DEFAULT_EXPERTS),
         "company_capital": 10.0,
         "trader_bucket": 10.0,
         "stop_floor": 3.0,
@@ -264,6 +270,24 @@ def validate_launcher_config(
             active_broker_profile
         ).strip() or None
 
+    raw_experts = merged.get(
+        "experts_enabled",
+        list(DEFAULT_EXPERTS),
+    )
+    if not isinstance(raw_experts, list):
+        raise WindowsAppError(
+            "experts_enabled_must_be_list"
+        )
+    experts_enabled: list[str] = []
+    for raw in raw_experts:
+        key = str(raw).strip().lower()
+        if key not in EXPERT_KEYS:
+            raise WindowsAppError(
+                f"unsupported_expert:{key}"
+            )
+        if key not in experts_enabled:
+            experts_enabled.append(key)
+
     market_selection_mode = str(
         merged.get(
             "market_selection_mode",
@@ -286,6 +310,7 @@ def validate_launcher_config(
         "broker_profiles": broker_profiles,
         "active_broker_profile": active_broker_profile,
         "news_sources": news_sources,
+        "experts_enabled": experts_enabled,
         "company_capital": _float_between(
             merged["company_capital"],
             name="company_capital",
@@ -522,6 +547,21 @@ class CompanyRuntimeHost:
             application_install_dir(),
             app_data_dir(),
         )
+        self.expert_runtime = ManagedExpertRuntime(
+            self.caos,
+            app_data_dir(),
+            app_version=__version__,
+            bundled_runtime_dir=(
+                application_install_dir()
+                / "experts-runtime"
+            ),
+        )
+        self.expert_runtime.configure(
+            self.config.get(
+                "experts_enabled",
+                list(DEFAULT_EXPERTS),
+            )
+        )
         self.execution = RuntimeExecutionService(
             self.company,
             self.config,
@@ -577,6 +617,7 @@ class CompanyRuntimeHost:
             self.ollama_runtime,
             self.daemon,
             self.updater,
+            self.expert_runtime,
         )
         self.chat = CompanyChatService(
             self.caos,
@@ -632,9 +673,24 @@ class CompanyRuntimeHost:
         self.daemon_thread.start()
         self.server_thread.start()
         self.updater.check_in_background()
+        if (
+            self.config.get("experts_enabled")
+            and self.expert_runtime.installed()
+        ):
+            threading.Thread(
+                target=self._start_experts_safely,
+                name="caos-expert-runtime-start",
+                daemon=True,
+            ).start()
 
     def request_shutdown(self) -> None:
         self.shutdown_requested.set()
+
+    def _start_experts_safely(self) -> None:
+        try:
+            self.expert_runtime.start()
+        except Exception:
+            pass
 
     def open_city(self) -> None:
         webbrowser.open(self.city_url)
@@ -643,6 +699,10 @@ class CompanyRuntimeHost:
         self.stop_event.set()
         try:
             self.ollama_runtime.stop()
+        except Exception:
+            pass
+        try:
+            self.expert_runtime.stop()
         except Exception:
             pass
         if self.server is not None:

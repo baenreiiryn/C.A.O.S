@@ -275,6 +275,7 @@ class RuntimeSettingsService:
     ollama_runtime: object | None = None
     market_runtime: object | None = None
     update_runtime: object | None = None
+    expert_runtime: object | None = None
 
     def __post_init__(self) -> None:
         """Drop legacy unsupported broker profiles from runtime metadata.
@@ -482,6 +483,20 @@ class RuntimeSettingsService:
                 ),
             },
             "ollama_runtime": self.ollama_status(),
+            "experts": (
+                self.expert_runtime.status()
+                if self.expert_runtime is not None
+                else {
+                    "enabled": False,
+                    "installed": False,
+                    "running": False,
+                    "configured": [],
+                    "loaded": [],
+                    "errors": {},
+                    "device": None,
+                    "catalog": {},
+                }
+            ),
             "updates": (
                 self.update_runtime.status()
                 if self.update_runtime is not None
@@ -618,6 +633,82 @@ class RuntimeSettingsService:
             "llm": llm,
             "ollama_runtime": self.ollama_status(),
         }
+
+    def install_expert_runtime(self) -> dict:
+        if self.expert_runtime is None:
+            raise SettingsError(
+                "expert_runtime_unavailable"
+            )
+        try:
+            return self.expert_runtime.install()
+        except Exception as exc:
+            raise SettingsError(str(exc)) from exc
+
+    def start_expert_runtime(self) -> dict:
+        if self.expert_runtime is None:
+            raise SettingsError(
+                "expert_runtime_unavailable"
+            )
+        try:
+            return self.expert_runtime.start()
+        except Exception as exc:
+            raise SettingsError(str(exc)) from exc
+
+    def stop_expert_runtime(self) -> dict:
+        if self.expert_runtime is None:
+            raise SettingsError(
+                "expert_runtime_unavailable"
+            )
+        try:
+            return self.expert_runtime.stop()
+        except Exception as exc:
+            raise SettingsError(str(exc)) from exc
+
+    def load_enabled_experts(self) -> dict:
+        if self.expert_runtime is None:
+            raise SettingsError(
+                "expert_runtime_unavailable"
+            )
+        try:
+            return self.expert_runtime.load_enabled()
+        except Exception as exc:
+            raise SettingsError(str(exc)) from exc
+
+    def unload_experts(self) -> dict:
+        if self.expert_runtime is None:
+            raise SettingsError(
+                "expert_runtime_unavailable"
+            )
+        try:
+            return self.expert_runtime.unload()
+        except Exception as exc:
+            raise SettingsError(str(exc)) from exc
+
+    def save_experts(
+        self,
+        enabled,
+    ) -> dict:
+        if self.expert_runtime is None:
+            raise SettingsError(
+                "expert_runtime_unavailable"
+            )
+        try:
+            status = self.expert_runtime.configure(
+                list(enabled or [])
+            )
+        except Exception as exc:
+            raise SettingsError(str(exc)) from exc
+        self._save_config(
+            {
+                "experts_enabled": list(
+                    status.get(
+                        "configured",
+                        [],
+                    )
+                )
+            }
+        )
+        return status
 
     def discover_models(
         self,

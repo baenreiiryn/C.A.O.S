@@ -1,5 +1,5 @@
 #define MyAppName "C.A.O.S Trade Company"
-#define MyAppVersion "0.8.8"
+#define MyAppVersion "0.8.9"
 #define MyAppPublisher "C.A.O.S"
 #define MyAppExeName "CAOS-Trade-Company.exe"
 
@@ -33,6 +33,8 @@ Source: "..\dist\CAOS-Trade-Company.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\caos.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\ollama-runtime\*"; DestDir: "{app}\ollama"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "THIRD_PARTY_OLLAMA_LICENSE.txt"; DestDir: "{app}\ollama"; DestName: "LICENSE-ollama.txt"; Flags: ignoreversion
+Source: "..\dist\caos-experts.exe"; DestDir: "{app}\experts-runtime"; Flags: ignoreversion
+Source: "..\third-party\Kronos\LICENSE"; DestDir: "{app}\experts-runtime"; DestName: "LICENSE-Kronos.txt"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\C.A.O.S Trade Company"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

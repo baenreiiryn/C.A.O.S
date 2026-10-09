@@ -111,6 +111,10 @@ class AutonomousMarketScanner:
             self.company.strategies.strategies.items()
         )
         rankings: list[dict] = []
+        bars_cache: dict[
+            tuple[str, str],
+            list,
+        ] = {}
 
         for market in markets:
             symbol = str(market["symbol"]).upper()
@@ -126,6 +130,9 @@ class AutonomousMarketScanner:
                     continue
                 if len(bars) < 60:
                     continue
+                bars_cache[
+                    (symbol, timeframe)
+                ] = bars
                 regime = market_regime(bars)
 
                 for strategy_id, spec in strategies:
@@ -196,6 +203,114 @@ class AutonomousMarketScanner:
                         best = row
             if best is not None:
                 rankings.append(best)
+
+        rankings.sort(
+            key=lambda row: (
+                row["score"],
+                row["quote_volume"],
+            ),
+            reverse=True,
+        )
+
+        caos = self.company.engine.caos
+        runtime = getattr(
+            caos,
+            "expert_runtime",
+            None,
+        )
+        loaded = set()
+        if runtime is not None:
+            try:
+                loaded = set(
+                    runtime.status().get(
+                        "loaded",
+                        [],
+                    )
+                )
+            except Exception:
+                loaded = set()
+        forecast_names = [
+            name
+            for name in sorted(
+                caos.forecast_experts
+            )
+            if name in loaded
+        ]
+        for row in rankings[: min(
+            self.publish_limit,
+            3,
+        )]:
+            row["oracle_evidence"] = None
+            row["oracle_errors"] = {}
+            if not forecast_names:
+                continue
+            bars = bars_cache.get(
+                (
+                    str(row["symbol"]),
+                    str(row["timeframe"]),
+                )
+            )
+            if not bars:
+                continue
+            forecasts = []
+            for name in forecast_names:
+                try:
+                    forecasts.append(
+                        caos.forecast_experts[
+                            name
+                        ].forecast(
+                            str(row["symbol"]),
+                            bars,
+                            3,
+                        )
+                    )
+                except Exception as exc:
+                    row["oracle_errors"][
+                        name
+                    ] = (
+                        f"{type(exc).__name__}: "
+                        f"{exc}"
+                    )
+            if forecasts:
+                outlook = (
+                    caos.expert_ensemble.combine(
+                        forecasts
+                    )
+                )
+                evidence = outlook.to_dict()
+                row["oracle_evidence"] = (
+                    evidence
+                )
+                if (
+                    evidence.get("direction")
+                    == "bearish"
+                ):
+                    agreement = float(
+                        evidence.get(
+                            "agreement_score",
+                            0.0,
+                        )
+                    )
+                    penalty = min(
+                        15.0,
+                        5.0
+                        + 10.0
+                        * max(
+                            0.0,
+                            min(
+                                1.0,
+                                agreement,
+                            ),
+                        ),
+                    )
+                    row["score"] = max(
+                        0.0,
+                        float(row["score"])
+                        - penalty,
+                    )
+                    row[
+                        "oracle_penalty"
+                    ] = penalty
 
         rankings.sort(
             key=lambda row: (
@@ -289,6 +404,21 @@ class AutonomousMarketScanner:
                         row["backtest"]
                     ),
                     "news_context": news_context,
+                    "oracle_evidence": row.get(
+                        "oracle_evidence"
+                    ),
+                    "oracle_errors": dict(
+                        row.get(
+                            "oracle_errors",
+                            {},
+                        )
+                    ),
+                    "oracle_penalty": float(
+                        row.get(
+                            "oracle_penalty",
+                            0.0,
+                        )
+                    ),
                 },
             )
             self.company.opportunities.add(

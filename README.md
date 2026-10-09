@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.8.8 standalone Trade Company with GitHub self-update, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. The new **Update Center** checks stable GitHub Releases, downloads a lightweight executable-only update package, verifies its SHA-256, applies it after the Trade Company exits, and relaunches automatically. Persistent Company state, launcher settings, Windows credentials, managed Ollama runtime and local models are not replaced by an in-place update.
+> Current milestone: **v0.8.9 standalone Trade Company with managed Forecast/Sentiment Oracles, GitHub self-update, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. The Arcane Nexus can now configure Kronos-small and Chronos-2 forecast specialists plus ModernFinBERT sentiment through a separate managed runtime. Forecast evidence may conservatively reduce AUTO rankings when it contradicts a long setup; it never creates an order or increases exposure by itself. ModernFinBERT feeds the existing News Intelligence sentiment path when loaded.
 
 ## Why it is built this way
 
@@ -156,6 +156,28 @@ caos --provider ollama --model qwen3:8b chat "analise o regime de DEMOUSDT"
 ```
 
 External Ollama defaults to `http://127.0.0.1:11434`; the Trade Company managed runtime uses `http://127.0.0.1:11435`.
+
+## Managed Forecast / Sentiment Oracles
+
+Windows v0.8.9 adds **⚙ Settings → Arcane Nexus · Oracles**.
+
+Available specialists:
+
+- **Kronos-small** — finance-specific OHLCV/K-line forecast evidence; recommended.
+- **Chronos-2** — independent general time-series baseline; optional.
+- **ModernFinBERT** — financial-news sentiment; recommended.
+
+The specialist runtime is isolated from the main application and runs on localhost port `11436`. The runtime uses CPU/RAM by default so the managed LLM can retain GPU VRAM. Model weights are cached under:
+
+```text
+%LOCALAPPDATA%\CAOS\expert-models
+```
+
+Fresh launcher configurations enable Kronos + FinBERT by default, while Chronos-2 remains optional. Enabling an oracle only configures it; **Download / Load Enabled** explicitly downloads/loads model weights for that session. If FinBERT is not loaded, Company News Intelligence falls back to its existing deterministic heuristic. If forecast oracles are not loaded, AUTO selection continues using technical/backtest/news evidence normally.
+
+When forecast oracles are loaded, the Scout consults them only for a small set of top AUTO candidates. A bearish forecast ensemble may reduce an opportunity score; bullish oracle evidence does not create an opportunity, increase the requested position, bypass technical validation, or bypass any risk/execution gate.
+
+The full v0.8.9 installer contains the expert sidecar. Users updating from v0.8.8 through the lightweight updater can install the sidecar separately from the same GitHub Release using **Install Expert Runtime**, without reinstalling C.A.O.S.
 
 ## OpenAI-compatible local server
 
