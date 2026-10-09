@@ -134,6 +134,7 @@ class ManagedExpertRuntime:
         *,
         app_version: str,
         repository: str = "baenreiiryn/C.A.O.S",
+        bundled_runtime_dir: Path | None = None,
         base_url: str = (
             f"http://127.0.0.1:{EXPERT_RUNTIME_PORT}"
         ),
@@ -146,6 +147,11 @@ class ManagedExpertRuntime:
         self.runtime_dir = (
             self.data_dir / "experts-runtime"
         )
+        self.bundled_runtime_dir = (
+            Path(bundled_runtime_dir)
+            if bundled_runtime_dir is not None
+            else None
+        )
         self.models_dir = (
             self.data_dir / "expert-models"
         )
@@ -156,12 +162,23 @@ class ManagedExpertRuntime:
             self.data_dir / "experts-runtime.log"
         )
         self.enabled: list[str] = []
+        self.autostart = True
         self.process: subprocess.Popen | None = None
         self._lock = threading.RLock()
 
     @property
     def executable(self) -> Path:
-        return self.runtime_dir / "caos-experts.exe"
+        local = self.runtime_dir / "caos-experts.exe"
+        if local.exists():
+            return local
+        if self.bundled_runtime_dir is not None:
+            bundled = (
+                self.bundled_runtime_dir
+                / "caos-experts.exe"
+            )
+            if bundled.exists():
+                return bundled
+        return local
 
     def installed(self) -> bool:
         return self.executable.exists()
@@ -328,6 +345,7 @@ class ManagedExpertRuntime:
             raise ExpertRuntimeError(
                 "expert_runtime_not_installed"
             )
+        self.autostart = True
         self.models_dir.mkdir(
             parents=True,
             exist_ok=True,
@@ -401,6 +419,7 @@ class ManagedExpertRuntime:
                 )
         except Exception:
             pass
+        self.autostart = False
         with self._lock:
             process = self.process
             self.process = None
@@ -419,6 +438,10 @@ class ManagedExpertRuntime:
         timeout: float = 120.0,
     ) -> dict:
         if not self._alive():
+            if not self.autostart:
+                raise ExpertRuntimeError(
+                    "expert_runtime_stopped"
+                )
             self.start()
         response = _json_http(
             self.base_url + path,
@@ -515,7 +538,11 @@ class ManagedExpertRuntime:
             "installed": self.installed(),
             "running": remote is not None,
             "base_url": self.base_url,
-            "runtime_dir": str(self.runtime_dir),
+            "runtime_dir": str(
+                self.executable.parent
+                if self.installed()
+                else self.runtime_dir
+            ),
             "models_dir": str(self.models_dir),
             "log_path": str(self.log_path),
             "configured": list(self.enabled),
