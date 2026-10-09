@@ -357,6 +357,54 @@ class FakeSettingsService:
         }
 
 
+class FakeUpdateService:
+    def __init__(self):
+        self.checked = False
+        self.downloaded = False
+        self.installed = False
+
+    def status(self):
+        return {
+            "enabled": True,
+            "repository": "baenreiiryn/C.A.O.S",
+            "current_version": "0.8.8",
+            "latest_version": (
+                "0.8.9" if self.checked else None
+            ),
+            "update_available": self.checked,
+            "checking": False,
+            "downloaded": self.downloaded,
+            "downloaded_path": (
+                "C:/CAOS/updates/v0.8.9/CAOS-Update.zip"
+                if self.downloaded
+                else None
+            ),
+            "release_url": None,
+            "published_at": None,
+            "install_supported": True,
+            "install_blockers": [],
+            "can_install": self.downloaded,
+            "last_error": None,
+        }
+
+    def check(self):
+        self.checked = True
+        return self.status()
+
+    def download(self):
+        self.checked = True
+        self.downloaded = True
+        return self.status()
+
+    def install_on_exit(self):
+        self.installed = True
+        return {
+            **self.status(),
+            "scheduled": True,
+            "message": "Update scheduled.",
+        }
+
+
 class StandaloneConfigTests(unittest.TestCase):
     def test_parse_scan_targets(self):
         targets = parse_scan_targets(
@@ -1128,12 +1176,14 @@ class CompanyDashboardTests(unittest.TestCase):
             )
             control = CompanyControlPort(company)
             settings_service = FakeSettingsService()
+            update_service = FakeUpdateService()
             server = serve_company(
                 control,
                 host="127.0.0.1",
                 port=0,
                 open_browser=False,
                 settings_service=settings_service,
+                update_service=update_service,
             )
             thread = threading.Thread(
                 target=server.serve_forever,
@@ -1227,6 +1277,44 @@ class CompanyDashboardTests(unittest.TestCase):
                 )
                 self.assertFalse(
                     settings["ollama_runtime"]["running"]
+                )
+
+                update_check = urllib.request.Request(
+                    base + "/api/update/check",
+                    data=b"{}",
+                    headers={
+                        "Content-Type": "application/json"
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(
+                    update_check,
+                    timeout=2,
+                ) as response:
+                    checked_update = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertTrue(
+                    checked_update["update_available"]
+                )
+
+                update_download = urllib.request.Request(
+                    base + "/api/update/download",
+                    data=b"{}",
+                    headers={
+                        "Content-Type": "application/json"
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(
+                    update_download,
+                    timeout=2,
+                ) as response:
+                    downloaded_update = json.loads(
+                        response.read().decode("utf-8")
+                    )
+                self.assertTrue(
+                    downloaded_update["downloaded"]
                 )
 
                 save_market_selection = urllib.request.Request(
@@ -1407,6 +1495,14 @@ class CompanyDashboardTests(unittest.TestCase):
                 )
                 self.assertIn(
                     "Market & Timeframe Selection",
+                    html,
+                )
+                self.assertIn(
+                    "Update Center · GitHub Releases",
+                    html,
+                )
+                self.assertIn(
+                    "downloadUpdate",
                     html,
                 )
                 self.assertIn(
