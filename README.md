@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.8.9 standalone Trade Company with managed Forecast/Sentiment Oracles, GitHub self-update, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. The Arcane Nexus can now configure Kronos-small and Chronos-2 forecast specialists plus ModernFinBERT sentiment through a separate managed runtime. Forecast evidence may conservatively reduce AUTO rankings when it contradicts a long setup; it never creates an order or increases exposure by itself. ModernFinBERT feeds the existing News Intelligence sentiment path when loaded.
+> Current milestone: **v0.8.10 standalone Trade Company with managed Forecast/Sentiment Oracles, GitHub self-update, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. v0.8.10 fixes the Windows bundled Oracle runtime startup path so the installed `experts-runtime\\caos-experts.exe` launches from its actual directory instead of an unused `%LOCALAPPDATA%\\CAOS\\experts-runtime` path. Kronos-small, Chronos-2 and ModernFinBERT remain evidence-only specialists and cannot bypass strategy/risk/execution gates.
 
 ## Why it is built this way
 
