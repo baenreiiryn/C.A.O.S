@@ -29,7 +29,7 @@ permissions:
 jobs:
   build-windows-installer:
     permissions:
-      contents: read
+      contents: write
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -278,67 +278,46 @@ jobs:
             throw "Update package checksum mismatch"
           }
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: CAOS-Windows-Installer
-          path: |
-            installer-output/CAOS-Setup.exe
-            installer-output/CAOS-Update.zip
-            installer-output/CAOS-Update.json
-            installer-output/CAOS-Experts-Runtime.zip
-            installer-output/CAOS-Experts-Runtime.json
-          if-no-files-found: error
-
-  publish-release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build-windows-installer
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: CAOS-Windows-Installer
-          path: release-assets
-
-      - name: Read release version
-        id: version
-        shell: bash
-        run: |
-          VERSION="$(python -c 'import json; print(json.load(open("release-assets/CAOS-Update.json", encoding="utf-8-sig"))["version"])')"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Publish stable GitHub Release
+      - name: Publish stable GitHub Release directly
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
-        shell: bash
+        shell: pwsh
         run: |
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha')"
-            if [ "$TAG_SHA" != "$GITHUB_SHA" ]; then
-              echo "Release $TAG already belongs to $TAG_SHA, not $GITHUB_SHA. Bump the project version before publishing another release."
-              exit 1
-            fi
-            gh release upload "$TAG" \
-              release-assets/CAOS-Setup.exe \
-              release-assets/CAOS-Update.zip \
-              release-assets/CAOS-Update.json \
-              release-assets/CAOS-Experts-Runtime.zip \
-              release-assets/CAOS-Experts-Runtime.json \
-              --clobber \
-              --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$TAG" \
-              release-assets/CAOS-Setup.exe \
-              release-assets/CAOS-Update.zip \
-              release-assets/CAOS-Update.json \
-              release-assets/CAOS-Experts-Runtime.zip \
-              release-assets/CAOS-Experts-Runtime.json \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "C.A.O.S v$VERSION" \
+          $manifest = Get-Content ".\installer-output\CAOS-Update.json" -Raw | ConvertFrom-Json
+          $version = [string]$manifest.version
+          $tag = "v$version"
+          $repo = $env:GITHUB_REPOSITORY
+          $sha = $env:GITHUB_SHA
+
+          gh release view $tag --repo $repo *> $null
+          $exists = ($LASTEXITCODE -eq 0)
+
+          if ($exists) {
+            $tagSha = (gh api "repos/$repo/git/ref/tags/$tag" --jq ".object.sha").Trim()
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ($tagSha -ne $sha) {
+              throw "Release $tag already belongs to $tagSha, not $sha. Bump the project version before publishing another release."
+            }
+            gh release upload $tag `
+              ".\installer-output\CAOS-Setup.exe" `
+              ".\installer-output\CAOS-Update.zip" `
+              ".\installer-output\CAOS-Update.json" `
+              ".\installer-output\CAOS-Experts-Runtime.zip" `
+              ".\installer-output\CAOS-Experts-Runtime.json" `
+              --clobber `
+              --repo $repo
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            gh release create $tag `
+              ".\installer-output\CAOS-Setup.exe" `
+              ".\installer-output\CAOS-Update.zip" `
+              ".\installer-output\CAOS-Update.json" `
+              ".\installer-output\CAOS-Experts-Runtime.zip" `
+              ".\installer-output\CAOS-Experts-Runtime.json" `
+              --repo $repo `
+              --target $sha `
+              --title "C.A.O.S v$version" `
               --generate-notes
-          fi
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
