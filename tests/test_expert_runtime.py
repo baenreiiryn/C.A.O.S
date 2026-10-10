@@ -1,4 +1,5 @@
 import tempfile
+from unittest.mock import patch
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -148,6 +149,58 @@ class ExpertRuntimeTests(unittest.TestCase):
             result.signed_score,
             -0.9,
         )
+
+    def test_start_uses_actual_bundled_executable_directory_as_cwd(self):
+        caos = SimpleNamespace(
+            forecast_experts={},
+            sentiment_expert=None,
+            news_analyzer=None,
+        )
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            bundled = root / "app" / "experts-runtime"
+            bundled.mkdir(parents=True)
+            exe = bundled / "caos-experts.exe"
+            exe.write_bytes(b"exe")
+
+            runtime = ManagedExpertRuntime(
+                caos,
+                root / "data",
+                app_version="0.8.10",
+                bundled_runtime_dir=bundled,
+            )
+
+            alive_calls = {"count": 0}
+
+            def fake_alive():
+                alive_calls["count"] += 1
+                return alive_calls["count"] >= 2
+
+            runtime._alive = fake_alive
+
+            class FakeProcess:
+                def poll(self):
+                    return None
+
+            with patch(
+                "caos.expert_runtime.subprocess.Popen",
+                return_value=FakeProcess(),
+            ) as popen:
+                runtime.start()
+
+            kwargs = popen.call_args.kwargs
+            self.assertEqual(
+                Path(kwargs["cwd"]),
+                bundled,
+            )
+            self.assertEqual(
+                Path(popen.call_args.args[0][0]),
+                exe,
+            )
+            self.assertNotEqual(
+                Path(kwargs["cwd"]),
+                runtime.runtime_dir,
+            )
 
     def test_bundled_runtime_is_detected_without_copying(self):
         caos = SimpleNamespace(
