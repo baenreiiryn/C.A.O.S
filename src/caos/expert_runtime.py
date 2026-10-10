@@ -377,16 +377,26 @@ class ManagedExpertRuntime:
                 0,
             )
         )
+        executable = self.executable
+        working_dir = executable.parent
+        if not executable.exists():
+            raise ExpertRuntimeError(
+                "expert_runtime_not_installed"
+            )
+        if not working_dir.is_dir():
+            raise ExpertRuntimeError(
+                "expert_runtime_working_directory_missing"
+            )
         with self._lock:
             self.process = subprocess.Popen(
                 [
-                    str(self.executable),
+                    str(executable),
                     "--host",
                     "127.0.0.1",
                     "--port",
                     str(EXPERT_RUNTIME_PORT),
                 ],
-                cwd=str(self.runtime_dir),
+                cwd=str(working_dir),
                 env=env,
                 stdout=log,
                 stderr=log,
