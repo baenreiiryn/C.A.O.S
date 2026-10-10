@@ -384,7 +384,7 @@ function renderSettings(){
    metric('Package',updates.downloaded?'VERIFIED':'not downloaded')+
    metric('Install',updates.can_install?'READY':(updateBlockers.length?'BLOCKED':'waiting'))+
    '</div>'+
-   '<div class="settings-note">Updates come from the official GitHub Release for '+esc(updates.repository||'baenreiiryn/C.A.O.S')+'. The package contains only the C.A.O.S executables, so your database, launcher settings, Windows credentials, Ollama runtime and local models are preserved. Installation is blocked while the Company is not STOPPED or any PAPER/REAL execution is still open.</div>'+
+   '<div class="settings-note">Updates come from the official GitHub Release for '+esc(updates.repository||'baenreiiryn/C.A.O.S')+'. The package contains only the C.A.O.S executables, so your database, launcher settings, Windows credentials, Ollama runtime and local models are preserved. Installation is allowed while STOPPED, or while EMERGENCY STOPPED if every PAPER/REAL position, pending order and external execution is fully flat/resolved.</div>'+
    (updateBlockers.length?'<div class="execution-warning"><b>UPDATE BLOCKED</b><br>'+updateBlockers.map(esc).join('<br>')+'</div>':'')+
    (updates.last_error?'<div class="execution-warning"><b>LAST UPDATE ERROR</b><br>'+esc(updates.last_error)+'</div>':'')+
    '<div class="control-row"><button class="btn" onclick="checkForUpdates()">Check GitHub</button>'+(updates.update_available?'<button class="btn" onclick="downloadUpdate()">Download & Verify</button>':'')+(updates.downloaded?'<button class="btn'+(updates.can_install?'':' danger')+'" '+(updates.can_install?'':'disabled')+' onclick="installUpdate()">Install Update</button>':'')+'</div>'+
