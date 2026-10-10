@@ -774,6 +774,62 @@ class RuntimeExecutionService:
                 rejected.append(row["intent_id"])
         return rejected
 
+    def reset_emergency(
+        self,
+        *,
+        confirmation: str,
+    ) -> dict:
+        if confirmation != "RESET EMERGENCY":
+            raise RuntimeExecutionError(
+                "explicit_emergency_reset_confirmation_required"
+            )
+        if (
+            self.company.operational_state()
+            != "emergency_stopped"
+        ):
+            raise RuntimeExecutionError(
+                "company_is_not_emergency_stopped"
+            )
+
+        pending = self.list_proposals(
+            statuses=(
+                "prepared",
+                "submitting",
+                "acknowledged",
+                "uncertain",
+            )
+        )
+        if pending:
+            raise RuntimeExecutionError(
+                "emergency_reset_blocked_by_external_execution"
+            )
+        if self.real_open_positions():
+            raise RuntimeExecutionError(
+                "emergency_reset_blocked_by_real_position"
+            )
+        if not self._all_positions_flat():
+            raise RuntimeExecutionError(
+                "emergency_reset_blocked_by_open_position"
+            )
+        if any(
+            self.company.paper.has_pending_order(
+                trader_id
+            )
+            for trader_id in self.company.paper.accounts
+        ):
+            raise RuntimeExecutionError(
+                "emergency_reset_blocked_by_pending_paper_order"
+            )
+
+        result = self.company.reset_emergency_stop(
+            human_confirmation=True
+        )
+        return {
+            **result,
+            "execution_mode": self.mode,
+            "requires_start": True,
+        }
+
     def emergency_stop(self) -> dict:
         if self.mode != "real-manual":
             return self.company.emergency_stop()
