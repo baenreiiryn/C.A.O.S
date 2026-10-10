@@ -711,6 +711,67 @@ class TradeCompany:
         self._save()
         return result
 
+    def reset_emergency_stop(
+        self,
+        *,
+        human_confirmation: bool,
+    ) -> dict:
+        if not human_confirmation:
+            raise TradeCompanyError(
+                "human_confirmation_required"
+            )
+        if not self.operations_paused:
+            raise TradeCompanyError(
+                "company_must_be_paused_for_emergency_reset"
+            )
+
+        blockers: list[str] = []
+        for trader_id in list(
+            self.paper.accounts
+        ):
+            if not self.paper.positions_flat(
+                trader_id
+            ):
+                blockers.append(
+                    f"open_position:{trader_id}"
+                )
+            if self.paper.has_pending_order(
+                trader_id
+            ):
+                blockers.append(
+                    f"pending_paper_order:{trader_id}"
+                )
+        if blockers:
+            raise TradeCompanyError(
+                "emergency_reset_blocked:"
+                + ",".join(blockers)
+            )
+
+        self.risk.reset_human_only(
+            human_confirmation=True
+        )
+        self.engine.reset_kill_switch_human_only()
+        self.operations_paused = True
+        self._save()
+        if self.store is not None:
+            self.store.event(
+                "trade_company_emergency_reset",
+                {
+                    "operations_paused": True,
+                    "operational_state": (
+                        self.operational_state()
+                    ),
+                },
+            )
+        return {
+            "company_kill_switch": False,
+            "caos_kill_switch": False,
+            "operations_paused": True,
+            "operational_state": (
+                self.operational_state()
+            ),
+        }
+
     def emergency_stop(self) -> dict:
         self.operations_paused = True
         cancelled_orders: list[str] = []
