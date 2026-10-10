@@ -182,6 +182,53 @@ class GitHubUpdateServiceTests(unittest.TestCase):
                 "0.8.8",
             )
 
+    def test_latest_endpoint_failure_falls_back_to_release_list(self):
+        with tempfile.TemporaryDirectory() as d:
+            payload = b"verified update payload"
+            sha = hashlib.sha256(payload).hexdigest()
+            release, manifest = release_payload(
+                "0.8.9",
+                sha,
+            )
+            service = self.make_service(d)
+            with patch(
+                "caos.updater._json_request",
+                side_effect=[
+                    UpdateError(
+                        "update_request_failed:HTTP Error 404: Not Found"
+                    ),
+                    [release],
+                    manifest,
+                ],
+            ):
+                status = service.check()
+            self.assertTrue(status["update_available"])
+            self.assertEqual(
+                status["latest_version"],
+                "0.8.9",
+            )
+
+    def test_emergency_stopped_is_update_safe_when_everything_is_flat(self):
+        with tempfile.TemporaryDirectory() as d:
+            service = self.make_service(
+                d,
+                company=FakeCompany(
+                    state="emergency_stopped",
+                    open_position=False,
+                    pending=False,
+                ),
+                execution=FakeExecution(
+                    unresolved=0,
+                    real_open_positions={},
+                ),
+                platform_name="nt",
+                frozen=True,
+            )
+            self.assertEqual(
+                service.install_blockers(),
+                [],
+            )
+
     def test_download_requires_matching_sha256(self):
         with tempfile.TemporaryDirectory() as d:
             good_payload = b"good-update"
