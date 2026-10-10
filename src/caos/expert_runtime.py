@@ -361,10 +361,6 @@ class ManagedExpertRuntime:
         env["CAOS_EXPERT_MODELS_DIR"] = str(
             self.models_dir
         )
-        log = self.log_path.open(
-            "ab",
-            buffering=0,
-        )
         flags = (
             getattr(
                 subprocess,
@@ -377,21 +373,38 @@ class ManagedExpertRuntime:
                 0,
             )
         )
-        with self._lock:
-            self.process = subprocess.Popen(
-                [
-                    str(self.executable),
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    str(EXPERT_RUNTIME_PORT),
-                ],
-                cwd=str(self.runtime_dir),
-                env=env,
-                stdout=log,
-                stderr=log,
-                creationflags=flags,
+        executable = self.executable
+        working_dir = executable.parent
+        if not executable.exists():
+            raise ExpertRuntimeError(
+                "expert_runtime_not_installed"
             )
+        if not working_dir.is_dir():
+            raise ExpertRuntimeError(
+                "expert_runtime_working_directory_missing"
+            )
+        log = self.log_path.open(
+            "ab",
+            buffering=0,
+        )
+        try:
+            with self._lock:
+                self.process = subprocess.Popen(
+                    [
+                        str(executable),
+                        "--host",
+                        "127.0.0.1",
+                        "--port",
+                        str(EXPERT_RUNTIME_PORT),
+                    ],
+                    cwd=str(working_dir),
+                    env=env,
+                    stdout=log,
+                    stderr=log,
+                    creationflags=flags,
+                )
+        finally:
+            log.close()
         deadline = time.monotonic() + 45.0
         while time.monotonic() < deadline:
             if self._alive():
