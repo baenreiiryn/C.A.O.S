@@ -1,6 +1,6 @@
 # Windows Installer
 
-C.A.O.S v0.8.10 ships a self-contained Windows installer for the standalone Trade Company with managed Ollama, managed Forecast/Sentiment Oracles, GitHub self-update, autonomous market/timeframe/strategy selection, live 1-minute Trader charts, editable post-onboarding Company policy, a read-only lateral LLM chat, explicit Start / graceful Stop / Emergency Stop controls, and a local execution gate for PAPER, Binance Spot TESTNET, and human-confirmed Binance production orders. v0.8.10 corrects the working directory used to launch the bundled Oracle runtime on Windows.
+C.A.O.S v0.8.11 ships a self-contained Windows installer for the standalone Trade Company with managed Ollama, managed Forecast/Sentiment Oracles, GitHub self-update, autonomous market/timeframe/strategy selection, live 1-minute Trader charts, editable post-onboarding Company policy, a read-only lateral LLM chat, explicit Start / graceful Stop / Emergency Stop / Reset Emergency controls, and a local execution gate for PAPER, Binance Spot TESTNET, and human-confirmed Binance production orders. Reset Emergency is human-only, requires all PAPER/REAL execution to be flat/resolved, and returns to STOPPED without automatically restarting trading.
 
 ## What gets installed
 

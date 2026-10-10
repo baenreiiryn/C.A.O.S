@@ -137,3 +137,17 @@ class CAOSAdapter:
 
     def emergency_kill(self) -> dict:
         return self.caos.tool_kill()
+
+    def reset_kill_switch_human_only(self) -> dict:
+        risk = getattr(self.caos, "risk", None)
+        if risk is None:
+            raise RuntimeError("risk_engine_unavailable")
+        risk.reset_kill_switch_human_only(
+            human_confirmation=True
+        )
+        self.caos.checkpoint()
+        return {
+            "kill_switch": bool(
+                risk.state.kill_switch
+            )
+        }

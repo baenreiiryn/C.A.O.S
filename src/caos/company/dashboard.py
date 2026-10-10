@@ -268,6 +268,7 @@ border-radius:9px;padding:9px;max-height:260px;overflow:auto;font:11px ui-monosp
     <button id="startOpsBtn" class="op-btn start" type="button">▶ Start</button>
     <button id="stopOpsBtn" class="op-btn stop" type="button">■ Stop</button>
     <button id="emergencyOpsBtn" class="op-btn emergency" type="button">⚠ Emergency</button>
+    <button id="resetEmergencyBtn" class="op-btn stop" type="button" style="display:none">↺ Reset Emergency</button>
     <button id="chatBtn" class="chat-btn" type="button">💬 Chat</button>
     <button id="settingsBtn" class="settings-btn" type="button">⚙ Settings</button>
   </div>
@@ -345,7 +346,7 @@ const healthRune=byId('healthRune'),modeRune=byId('modeRune'),operationRune=byId
 const cityMoodTitle=byId('cityMoodTitle'),cityMoodText=byId('cityMoodText'),alertText=byId('alertText'),guildAdventurers=byId('guildAdventurers');
 const drawer=byId('drawer'),drawerBackdrop=byId('drawerBackdrop'),drawerTitle=byId('drawerTitle'),drawerTech=byId('drawerTech'),drawerBody=byId('drawerBody'),drawerClose=byId('drawerClose'),settingsBtn=byId('settingsBtn');
 const chatBtn=byId('chatBtn'),chatPanel=byId('chatPanel'),chatClose=byId('chatClose'),chatMessages=byId('chatMessages'),chatInput=byId('chatInput'),chatSend=byId('chatSend'),chatClear=byId('chatClear');
-const startOpsBtn=byId('startOpsBtn'),stopOpsBtn=byId('stopOpsBtn'),emergencyOpsBtn=byId('emergencyOpsBtn');
+const startOpsBtn=byId('startOpsBtn'),stopOpsBtn=byId('stopOpsBtn'),emergencyOpsBtn=byId('emergencyOpsBtn'),resetEmergencyBtn=byId('resetEmergencyBtn');
 
 const money=function(v){return '$'+Number(v||0).toFixed(4)};
 const pct=function(v){return Number(v||0).toFixed(2)+'%'};
@@ -383,7 +384,7 @@ function renderSettings(){
    metric('Package',updates.downloaded?'VERIFIED':'not downloaded')+
    metric('Install',updates.can_install?'READY':(updateBlockers.length?'BLOCKED':'waiting'))+
    '</div>'+
-   '<div class="settings-note">Updates come from the official GitHub Release for '+esc(updates.repository||'baenreiiryn/C.A.O.S')+'. The package contains only the C.A.O.S executables, so your database, launcher settings, Windows credentials, Ollama runtime and local models are preserved. Installation is blocked while the Company is not STOPPED or any PAPER/REAL execution is still open.</div>'+
+   '<div class="settings-note">Updates come from the official GitHub Release for '+esc(updates.repository||'baenreiiryn/C.A.O.S')+'. The package contains only the C.A.O.S executables, so your database, launcher settings, Windows credentials, Ollama runtime and local models are preserved. Installation is allowed while STOPPED, or while EMERGENCY STOPPED if every PAPER/REAL position, pending order and external execution is fully flat/resolved.</div>'+
    (updateBlockers.length?'<div class="execution-warning"><b>UPDATE BLOCKED</b><br>'+updateBlockers.map(esc).join('<br>')+'</div>':'')+
    (updates.last_error?'<div class="execution-warning"><b>LAST UPDATE ERROR</b><br>'+esc(updates.last_error)+'</div>':'')+
    '<div class="control-row"><button class="btn" onclick="checkForUpdates()">Check GitHub</button>'+(updates.update_available?'<button class="btn" onclick="downloadUpdate()">Download & Verify</button>':'')+(updates.downloaded?'<button class="btn'+(updates.can_install?'':' danger')+'" '+(updates.can_install?'':'disabled')+' onclick="installUpdate()">Install Update</button>':'')+'</div>'+
@@ -864,6 +865,8 @@ function updateHud(){
  startOpsBtn.disabled=(opState==='running'||opState==='emergency_stopped'||!!(currentExecution&&currentExecution.resume_blocked_reason));
  stopOpsBtn.disabled=(opState==='stopping'||opState==='stopped'||opState==='emergency_stopped');
  emergencyOpsBtn.disabled=(opState==='emergency_stopped');
+ resetEmergencyBtn.style.display=(opState==='emergency_stopped')?'inline-block':'none';
+ resetEmergencyBtn.disabled=(opState!=='emergency_stopped');
  const messages={
   healthy:['The Arcane Trading City prospers.','Wards stable. Guilds and institutions are operating normally.'],
   attention:['The city watch requests attention.','One or more institutions have raised an operational warning.'],
@@ -905,7 +908,7 @@ function locationDetails(id){
  if(id==='citadel'){
    body+=section('City State','<div class="metric-grid">'+metric('Audit',s.audit&&s.audit.status)+metric('Alerts',(s.audit&&s.audit.alerts||[]).length)+metric('Effective guild limit',s.effective_trader_limit)+metric('Configured cap',s.policy&&s.policy.operational_trader_cap)+'</div>');
    body+=section('Royal Charter','<div class="metric-grid">'+metric('Initial bucket',money(s.policy&&s.policy.trader_initial_bucket))+metric('Stop floor',money(s.policy&&s.policy.trader_stop_floor))+metric('Default max exposure',pct(s.policy&&s.policy.default_trader_max_exposure_pct))+metric('Company max drawdown',pct(s.policy&&s.policy.company_max_drawdown_pct))+'</div>');
-   body+=section('Safe command seal','<div class="control-row"><label>Effective Trader limit <input id="limitInput" type="number" min="1" max="'+esc(s.policy&&s.policy.operational_trader_cap)+'" value="'+esc(s.effective_trader_limit)+'"></label><button class="btn" onclick="setLimit()">Apply</button><button class="btn danger" onclick="emergencyStop()">Emergency Stop</button></div><div class="list-sub">No raw order, broker credential, LIVE arm or kill-switch reset is exposed here.</div>');
+   body+=section('Safe command seal','<div class="control-row"><label>Effective Trader limit <input id="limitInput" type="number" min="1" max="'+esc(s.policy&&s.policy.operational_trader_cap)+'" value="'+esc(s.effective_trader_limit)+'"></label><button class="btn" onclick="setLimit()">Apply</button><button class="btn danger" onclick="emergencyStop()">Emergency Stop</button>'+(s.operational_state==='emergency_stopped'?'<button class="btn" onclick="resetEmergencyOperations()">Reset Emergency</button>':'')+'</div><div class="list-sub">Emergency reset is human-only, requires all PAPER/REAL execution to be flat and returns the Company to STOPPED. It never starts trading automatically.</div>');
  }
  if(id==='treasury'){
    const tr=s.treasury||{};
@@ -1125,6 +1128,18 @@ async function emergencyStopOperations(){
   if(failed.length)alert('Emergency Stop active. Could not flatten: '+failed.join(', '));
  }catch(e){alert(e.message)}
 }
+async function resetEmergencyOperations(){
+ if(!confirm('RESET EMERGENCY STOP?\n\nThis only clears the emergency kill switches after all PAPER/REAL positions and pending executions are flat. The Company will remain STOPPED and will NOT resume trading until you press Start.'))return;
+ try{
+  await api('/api/company/emergency-reset',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({confirmation:'RESET EMERGENCY'})
+  });
+  await tick();
+  if(activeLocation)openLocation(activeLocation);
+ }catch(e){alert(e.message)}
+}
 
 async function activateRelease(id){
  try{
@@ -1211,6 +1226,7 @@ modeRune.addEventListener('click',openExecution);
 startOpsBtn.addEventListener('click',startOperations);
 stopOpsBtn.addEventListener('click',stopOperations);
 emergencyOpsBtn.addEventListener('click',emergencyStopOperations);
+resetEmergencyBtn.addEventListener('click',resetEmergencyOperations);
 drawerClose.addEventListener('click',closeDrawer);drawerBackdrop.addEventListener('click',closeDrawer);
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){closeDrawer();closeChat()}});
 tick();setInterval(tick,2000);
@@ -1468,6 +1484,24 @@ def serve_company(
                             execution_service.emergency_stop()
                             if execution_service is not None
                             else control.emergency_stop()
+                        ),
+                    )
+                    return
+                if path == "/api/company/emergency-reset":
+                    if execution_service is None:
+                        raise RuntimeError(
+                            "runtime_execution_unavailable"
+                        )
+                    payload = self._read_json()
+                    self._json(
+                        200,
+                        execution_service.reset_emergency(
+                            confirmation=str(
+                                payload.get(
+                                    "confirmation",
+                                    "",
+                                )
+                            )
                         ),
                     )
                     return

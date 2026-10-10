@@ -83,6 +83,72 @@ def build_company(tmpdir):
     return store, caos, company
 
 
+class RuntimeExecutionEmergencyTests(unittest.TestCase):
+    def test_human_reset_returns_emergency_to_stopped_only(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, caos, company = build_company(d)
+            service = RuntimeExecutionService(
+                company,
+                {},
+                MemoryCredentialVault(),
+            )
+            result = service.emergency_stop()
+            self.assertEqual(
+                result["operational_state"],
+                "emergency_stopped",
+            )
+            self.assertTrue(
+                company.risk.state.kill_switch
+            )
+            self.assertTrue(
+                caos.risk.state.kill_switch
+            )
+
+            with self.assertRaises(RuntimeExecutionError):
+                service.reset_emergency(
+                    confirmation="RESET"
+                )
+
+            reset = service.reset_emergency(
+                confirmation="RESET EMERGENCY"
+            )
+            self.assertEqual(
+                reset["operational_state"],
+                "stopped",
+            )
+            self.assertTrue(reset["requires_start"])
+            self.assertTrue(company.operations_paused)
+            self.assertFalse(
+                company.risk.state.kill_switch
+            )
+            self.assertFalse(
+                caos.risk.state.kill_switch
+            )
+            store.close()
+
+    def test_emergency_reset_is_blocked_by_external_execution(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, _caos, company = build_company(d)
+            service = RuntimeExecutionService(
+                company,
+                {},
+                MemoryCredentialVault(),
+            )
+            service.emergency_stop()
+            service.list_proposals = lambda **kwargs: [
+                {"status": "uncertain"}
+            ]
+            with self.assertRaises(RuntimeExecutionError):
+                service.reset_emergency(
+                    confirmation="RESET EMERGENCY"
+                )
+            self.assertEqual(
+                company.operational_state(),
+                "emergency_stopped",
+            )
+            store.close()
+
+
 class RuntimeExecutionTests(unittest.TestCase):
     def test_real_mode_is_runtime_only_and_requires_explicit_arm(self):
         with tempfile.TemporaryDirectory() as d:

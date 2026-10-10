@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.8.10 standalone Trade Company with managed Forecast/Sentiment Oracles, GitHub self-update, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. v0.8.10 fixes the Windows bundled Oracle runtime startup path so the installed `experts-runtime\\caos-experts.exe` launches from its actual directory instead of an unused `%LOCALAPPDATA%\\CAOS\\experts-runtime` path. Kronos-small, Chronos-2 and ModernFinBERT remain evidence-only specialists and cannot bypass strategy/risk/execution gates.
+> Current milestone: **v0.8.11 standalone Trade Company with recoverable Emergency Stop, GitHub self-update, managed Forecast/Sentiment Oracles, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. Emergency Stop now has an explicit human-only reset that is allowed only after PAPER/REAL exposure and pending execution are flat; reset returns to STOPPED and never resumes trading automatically. The updater also accepts a fully-flat EMERGENCY_STOPPED state and falls back to the stable release list if GitHub `/releases/latest` temporarily fails.
 
 ## Why it is built this way
 

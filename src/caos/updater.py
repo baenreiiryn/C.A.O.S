@@ -196,6 +196,56 @@ class GitHubUpdateService:
         )
 
     @property
+    def releases_url(self) -> str:
+        return (
+            "https://api.github.com/repos/"
+            f"{self.repository}/releases?per_page=20"
+        )
+
+    def _latest_stable_release(self) -> dict:
+        primary_error = None
+        try:
+            release = _json_request(
+                self.api_url
+            )
+            if (
+                isinstance(release, dict)
+                and not release.get("draft")
+                and not release.get("prerelease")
+            ):
+                return release
+        except Exception as exc:
+            primary_error = exc
+
+        try:
+            rows = _json_request(
+                self.releases_url
+            )
+        except Exception:
+            if primary_error is not None:
+                raise primary_error
+            raise
+
+        if not isinstance(rows, list):
+            if primary_error is not None:
+                raise primary_error
+            raise UpdateError(
+                "unexpected_release_list_response"
+            )
+        for row in rows:
+            if (
+                isinstance(row, dict)
+                and not row.get("draft")
+                and not row.get("prerelease")
+            ):
+                return row
+        if primary_error is not None:
+            raise primary_error
+        raise UpdateError(
+            "no_stable_release_available"
+        )
+
+    @property
     def updates_dir(self) -> Path:
         return self.data_dir / "updates"
 
@@ -300,16 +350,7 @@ class GitHubUpdateService:
             self._checking = True
             self._last_error = None
         try:
-            release = _json_request(
-                self.api_url
-            )
-            if (
-                release.get("draft")
-                or release.get("prerelease")
-            ):
-                raise UpdateError(
-                    "latest_release_is_not_stable"
-                )
+            release = self._latest_stable_release()
             manifest = self._fetch_manifest(
                 release
             )
@@ -430,7 +471,10 @@ class GitHubUpdateService:
         state = str(
             self.company.operational_state()
         )
-        if state != "stopped":
+        if state not in {
+            "stopped",
+            "emergency_stopped",
+        }:
             blockers.append(
                 f"company_state:{state}"
             )
