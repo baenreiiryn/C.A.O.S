@@ -56,14 +56,20 @@ def _json_request(
     url: str,
     *,
     timeout: float = 15.0,
+    token: str | None = None,
 ) -> dict:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "CAOS-Trade-Company-Updater",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = (
+            f"Bearer {str(token).strip()}"
+        )
     request = urllib.request.Request(
         url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "CAOS-Trade-Company-Updater",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers=headers,
         method="GET",
     )
     try:
@@ -88,14 +94,20 @@ def _asset_json_request(
     url: str,
     *,
     timeout: float = 30.0,
+    token: str | None = None,
 ) -> dict:
+    headers = {
+        "Accept": "application/octet-stream",
+        "User-Agent": "CAOS-Trade-Company-Updater",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = (
+            f"Bearer {str(token).strip()}"
+        )
     request = urllib.request.Request(
         url,
-        headers={
-            "Accept": "application/octet-stream",
-            "User-Agent": "CAOS-Trade-Company-Updater",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers=headers,
         method="GET",
     )
     try:
@@ -121,13 +133,19 @@ def _download(
     target: Path,
     *,
     timeout: float = 180.0,
+    token: str | None = None,
 ) -> None:
+    headers = {
+        "Accept": "application/octet-stream",
+        "User-Agent": "CAOS-Trade-Company-Updater",
+    }
+    if token:
+        headers["Authorization"] = (
+            f"Bearer {str(token).strip()}"
+        )
     request = urllib.request.Request(
         url,
-        headers={
-            "Accept": "application/octet-stream",
-            "User-Agent": "CAOS-Trade-Company-Updater",
-        },
+        headers=headers,
         method="GET",
     )
     target.parent.mkdir(
@@ -186,6 +204,10 @@ class GitHubUpdateService:
         process_id: int | None = None,
         platform_name: str | None = None,
         frozen: bool | None = None,
+        token_getter: Callable[
+            [],
+            str | None,
+        ] | None = None,
     ):
         self.current_version = (
             _stable_release_version(
@@ -215,10 +237,25 @@ class GitHubUpdateService:
             if frozen is not None
             else bool(getattr(sys, "frozen", False))
         )
+        self.token_getter = token_getter
         self._latest: dict | None = None
         self._last_error: str | None = None
         self._checking = False
         self._lock = threading.RLock()
+
+    def _token(self) -> str | None:
+        if self.token_getter is None:
+            return None
+        try:
+            value = self.token_getter()
+        except Exception:
+            return None
+        value = (
+            str(value).strip()
+            if value is not None
+            else ""
+        )
+        return value or None
 
     @property
     def api_url(self) -> str:
@@ -238,7 +275,8 @@ class GitHubUpdateService:
         primary_error = None
         try:
             release = _json_request(
-                self.api_url
+                self.api_url,
+                token=self._token(),
             )
             if (
                 isinstance(release, dict)
@@ -251,9 +289,14 @@ class GitHubUpdateService:
 
         try:
             rows = _json_request(
-                self.releases_url
+                self.releases_url,
+                token=self._token(),
             )
-        except Exception:
+        except Exception as fallback_error:
+            if self._token() is None:
+                raise UpdateError(
+                    "github_private_repository_token_required"
+                ) from fallback_error
             if primary_error is not None:
                 raise primary_error
             raise
@@ -317,14 +360,16 @@ class GitHubUpdateService:
         if api_url:
             try:
                 manifest = _asset_json_request(
-                    api_url
+                    api_url,
+                    token=self._token(),
                 )
             except Exception as exc:
                 errors.append(str(exc))
         if manifest is None and browser_url:
             try:
                 manifest = _json_request(
-                    browser_url
+                    browser_url,
+                    token=self._token(),
                 )
             except Exception as exc:
                 errors.append(str(exc))
@@ -535,6 +580,7 @@ class GitHubUpdateService:
                     _download(
                         url,
                         target,
+                        token=self._token(),
                     )
                     last_error = None
                     break
@@ -669,6 +715,9 @@ class GitHubUpdateService:
         return {
             "enabled": True,
             "repository": self.repository,
+            "github_token_configured": bool(
+                self._token()
+            ),
             "current_version": self.current_version,
             "latest_version": (
                 latest.get("version")
