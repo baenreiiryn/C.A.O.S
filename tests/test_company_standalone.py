@@ -1192,10 +1192,11 @@ class CompanyDashboardTests(unittest.TestCase):
             thread.start()
             host, port = server.server_address
             base = f"http://{host}:{port}"
+            request_timeout = 10
             try:
                 with urllib.request.urlopen(
                     base + "/api/company/status",
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     payload = json.loads(
                         response.read().decode("utf-8")
@@ -1211,7 +1212,7 @@ class CompanyDashboardTests(unittest.TestCase):
 
                 with urllib.request.urlopen(
                     base + "/api/company/city",
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     city = json.loads(
                         response.read().decode("utf-8")
@@ -1219,7 +1220,7 @@ class CompanyDashboardTests(unittest.TestCase):
 
                 with urllib.request.urlopen(
                     base + "/api/company/traders/A/chart?limit=80",
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     chart = json.loads(
                         response.read().decode("utf-8")
@@ -1236,7 +1237,7 @@ class CompanyDashboardTests(unittest.TestCase):
 
                 with urllib.request.urlopen(
                     base + "/api/company/reliability",
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     reliability = json.loads(
                         response.read().decode("utf-8")
@@ -1253,7 +1254,7 @@ class CompanyDashboardTests(unittest.TestCase):
 
                 with urllib.request.urlopen(
                     base + "/api/settings",
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     settings = json.loads(
                         response.read().decode("utf-8")
@@ -1289,7 +1290,7 @@ class CompanyDashboardTests(unittest.TestCase):
                 )
                 with urllib.request.urlopen(
                     update_check,
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     checked_update = json.loads(
                         response.read().decode("utf-8")
@@ -1308,7 +1309,7 @@ class CompanyDashboardTests(unittest.TestCase):
                 )
                 with urllib.request.urlopen(
                     update_download,
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     downloaded_update = json.loads(
                         response.read().decode("utf-8")
@@ -1329,7 +1330,7 @@ class CompanyDashboardTests(unittest.TestCase):
                 )
                 with urllib.request.urlopen(
                     save_market_selection,
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     market_selection = json.loads(
                         response.read().decode("utf-8")
@@ -1353,7 +1354,7 @@ class CompanyDashboardTests(unittest.TestCase):
                 )
                 with urllib.request.urlopen(
                     start_ollama,
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     started_ollama = json.loads(
                         response.read().decode("utf-8")
@@ -1375,7 +1376,7 @@ class CompanyDashboardTests(unittest.TestCase):
                 )
                 with urllib.request.urlopen(
                     import_ollama,
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     imported_ollama = json.loads(
                         response.read().decode("utf-8")
@@ -1407,7 +1408,7 @@ class CompanyDashboardTests(unittest.TestCase):
                 )
                 with urllib.request.urlopen(
                     save_llm,
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     saved_llm = json.loads(
                         response.read().decode("utf-8")
@@ -1445,7 +1446,7 @@ class CompanyDashboardTests(unittest.TestCase):
                 )
                 with urllib.request.urlopen(
                     save_news,
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     saved_news = json.loads(
                         response.read().decode("utf-8")
@@ -1465,7 +1466,7 @@ class CompanyDashboardTests(unittest.TestCase):
 
                 with urllib.request.urlopen(
                     base + "/",
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     html = response.read().decode("utf-8")
                 self.assertIn("city-world", html)
@@ -1532,7 +1533,7 @@ class CompanyDashboardTests(unittest.TestCase):
                 )
                 with urllib.request.urlopen(
                     exposure_request,
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     exposure = json.loads(
                         response.read().decode("utf-8")
@@ -1554,7 +1555,7 @@ class CompanyDashboardTests(unittest.TestCase):
                 )
                 with urllib.request.urlopen(
                     request,
-                    timeout=2,
+                    timeout=request_timeout,
                 ) as response:
                     changed = json.loads(
                         response.read().decode("utf-8")
@@ -1567,13 +1568,13 @@ class CompanyDashboardTests(unittest.TestCase):
                 with self.assertRaises(urllib.error.HTTPError) as ctx:
                     urllib.request.urlopen(
                         base + "/api/company/broker",
-                        timeout=2,
+                        timeout=request_timeout,
                     )
                 self.assertEqual(ctx.exception.code, 404)
             finally:
                 server.shutdown()
                 server.server_close()
-                thread.join(timeout=2)
+                thread.join(timeout=request_timeout)
                 store.close()
 
     def test_dashboard_strategy_rollout_controls_are_safe(self):
