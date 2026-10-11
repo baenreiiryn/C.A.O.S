@@ -607,6 +607,9 @@ class CompanyRuntimeHost:
             company=self.company,
             execution_service=self.execution,
             shutdown_callback=self.request_shutdown,
+            token_getter=lambda: self.vault.get(
+                "updates:github:token"
+            ),
         )
         self.settings = RuntimeSettingsService(
             self.caos,
