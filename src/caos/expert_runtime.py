@@ -33,20 +33,27 @@ def _json_http(
     method: str = "GET",
     payload: dict | None = None,
     timeout: float = 30.0,
+    token: str | None = None,
+    accept: str = "application/json",
 ) -> dict:
     data = (
         json.dumps(payload).encode("utf-8")
         if payload is not None
         else None
     )
+    headers = {
+        "User-Agent": "CAOS-Expert-Runtime",
+        "Content-Type": "application/json",
+        "Accept": str(accept),
+    }
+    if token:
+        headers["Authorization"] = (
+            f"Bearer {str(token).strip()}"
+        )
     req = urllib.request.Request(
         url,
         data=data,
-        headers={
-            "User-Agent": "CAOS-Expert-Runtime",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
+        headers=headers,
         method=method,
     )
     try:
@@ -138,6 +145,7 @@ class ManagedExpertRuntime:
         base_url: str = (
             f"http://127.0.0.1:{EXPERT_RUNTIME_PORT}"
         ),
+        token_getter=None,
     ):
         self.caos = caos
         self.data_dir = Path(data_dir)
@@ -163,6 +171,7 @@ class ManagedExpertRuntime:
         )
         self.enabled: list[str] = []
         self.autostart = True
+        self.token_getter = token_getter
         self.process: subprocess.Popen | None = None
         self._lock = threading.RLock()
 
@@ -183,6 +192,20 @@ class ManagedExpertRuntime:
     def installed(self) -> bool:
         return self.executable.exists()
 
+    def _token(self) -> str | None:
+        if self.token_getter is None:
+            return None
+        try:
+            value = self.token_getter()
+        except Exception:
+            return None
+        value = (
+            str(value).strip()
+            if value is not None
+            else ""
+        )
+        return value or None
+
     def _release_url(self) -> str:
         return (
             "https://api.github.com/repos/"
@@ -194,6 +217,7 @@ class ManagedExpertRuntime:
         release = _json_http(
             self._release_url(),
             timeout=20.0,
+            token=self._token(),
         )
         return {
             str(row.get("name")): dict(row)
@@ -214,13 +238,18 @@ class ManagedExpertRuntime:
             raise ExpertRuntimeError(
                 "expert_runtime_release_assets_missing"
             )
+        manifest_url = str(
+            manifest_asset.get("url")
+            or manifest_asset.get(
+                "browser_download_url",
+                "",
+            )
+        )
         manifest = _json_http(
-            str(
-                manifest_asset[
-                    "browser_download_url"
-                ]
-            ),
+            manifest_url,
             timeout=30.0,
+            token=self._token(),
+            accept="application/octet-stream",
         )
         if (
             int(manifest.get("schema", 0)) != 1
@@ -261,16 +290,25 @@ class ManagedExpertRuntime:
             exist_ok=True,
         )
         partial = target.with_suffix(".part")
+        runtime_url = str(
+            runtime_asset.get("url")
+            or runtime_asset.get(
+                "browser_download_url",
+                "",
+            )
+        )
+        headers = {
+            "User-Agent": "CAOS-Expert-Runtime",
+            "Accept": "application/octet-stream",
+        }
+        token = self._token()
+        if token:
+            headers["Authorization"] = (
+                f"Bearer {token}"
+            )
         req = urllib.request.Request(
-            str(
-                runtime_asset[
-                    "browser_download_url"
-                ]
-            ),
-            headers={
-                "User-Agent": "CAOS-Expert-Runtime",
-                "Accept": "application/octet-stream",
-            },
+            runtime_url,
+            headers=headers,
         )
         try:
             with urllib.request.urlopen(

@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.8.12 standalone Trade Company with a hardened GitHub updater, recoverable Emergency Stop, managed Forecast/Sentiment Oracles, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. The updater now resolves release assets through the GitHub asset API first and falls back to browser download URLs, avoiding the HTTP 404 seen when `CAOS-Update.json` was fetched through a release browser URL on some installations. Emergency Stop remains human-resettable only after PAPER/REAL exposure and pending execution are flat.
+> Current milestone: **v0.8.13 standalone Trade Company with authenticated private-repository updates, recoverable Emergency Stop, managed Forecast/Sentiment Oracles, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. Because the C.A.O.S repository is private, the Update Center now accepts a fine-grained GitHub read token stored only in Windows Credential Manager. The same credential is reused for private updater and expert-runtime release assets; it is never written to launcher.json, the Company database or LLM context.
 
 ## Why it is built this way
 

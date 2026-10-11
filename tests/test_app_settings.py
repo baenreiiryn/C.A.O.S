@@ -55,10 +55,18 @@ class FakeMarketRuntime:
 
 
 class FakeUpdateRuntime:
+    def __init__(self):
+        self.checked = 0
+
+    def check(self):
+        self.checked += 1
+        return self.status()
+
     def status(self):
         return {
             "enabled": True,
             "repository": "baenreiiryn/C.A.O.S",
+            "github_token_configured": False,
             "current_version": "0.8.8",
             "latest_version": "0.8.9",
             "update_available": True,
@@ -443,6 +451,35 @@ class ExpertSettingsTests(unittest.TestCase):
             ["chronos2"],
         )
 
+
+class UpdateTokenSettingsTests(unittest.TestCase):
+    def test_update_token_is_vaulted_and_not_persisted(self):
+        runtime = FakeUpdateRuntime()
+        service, _caos, config, persisted, vault = make_service(
+            update_runtime=runtime
+        )
+        result = service.save_update_token(
+            "github-secret-token"
+        )
+        self.assertEqual(
+            vault.get("updates:github:token"),
+            "github-secret-token",
+        )
+        self.assertNotIn(
+            "github-secret-token",
+            str(config),
+        )
+        self.assertNotIn(
+            "github-secret-token",
+            str(persisted),
+        )
+        self.assertEqual(runtime.checked, 1)
+        self.assertTrue(result["enabled"])
+
+        service.clear_update_token()
+        self.assertIsNone(
+            vault.get("updates:github:token")
+        )
 
 class UpdateSettingsTests(unittest.TestCase):
     def test_updater_status_is_exposed_without_network_call(self):
