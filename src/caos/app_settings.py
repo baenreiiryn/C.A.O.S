@@ -317,6 +317,9 @@ class RuntimeSettingsService:
     def _llm_key(self) -> str:
         return "llm:openai-compatible:api_key"
 
+    def _update_token_key(self) -> str:
+        return "updates:github:token"
+
     def _broker_key(
         self,
         profile_id: str,
@@ -887,6 +890,45 @@ class RuntimeSettingsService:
             }
         )
         return self.get_settings()["llm"]
+
+    def save_update_token(
+        self,
+        token: str,
+    ) -> dict:
+        if self.update_runtime is None:
+            raise SettingsError(
+                "update_runtime_unavailable"
+            )
+        token = str(token).strip()
+        if not token:
+            raise SettingsError(
+                "github_update_token_required"
+            )
+
+        key = self._update_token_key()
+        previous = self.vault.get(key)
+        self.vault.set(key, token)
+        try:
+            return self.update_runtime.check()
+        except Exception as exc:
+            if previous is None:
+                self.vault.delete(key)
+            else:
+                self.vault.set(key, previous)
+            raise SettingsError(
+                f"github_update_token_invalid_or_unauthorized:{exc}"
+            ) from exc
+
+    def clear_update_token(self) -> dict:
+        self.vault.delete(
+            self._update_token_key()
+        )
+        if self.update_runtime is None:
+            return {
+                "enabled": False,
+                "github_token_configured": False,
+            }
+        return self.update_runtime.status()
 
     def save_market_selection(
         self,
