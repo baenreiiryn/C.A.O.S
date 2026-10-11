@@ -219,7 +219,8 @@ class GitHubUpdateServiceTests(unittest.TestCase):
 
             self.assertTrue(status["update_available"])
             asset_request.assert_called_once_with(
-                release["assets"][0]["url"]
+                release["assets"][0]["url"],
+                token=None,
             )
             self.assertEqual(
                 json_request.call_count,
