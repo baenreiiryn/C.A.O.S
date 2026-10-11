@@ -122,6 +122,7 @@ class GitHubUpdateServiceTests(unittest.TestCase):
         execution=None,
         platform_name="posix",
         frozen=False,
+        token_getter=None,
     ):
         return GitHubUpdateService(
             current_version=version,
@@ -134,6 +135,7 @@ class GitHubUpdateServiceTests(unittest.TestCase):
             platform_name=platform_name,
             frozen=frozen,
             process_id=12345,
+            token_getter=token_getter,
         )
 
     def test_version_comparison_is_semver_numeric(self):
@@ -165,6 +167,37 @@ class GitHubUpdateServiceTests(unittest.TestCase):
             ):
                 with self.assertRaises(UpdateError):
                     service.check()
+
+    def test_private_repository_token_is_forwarded_to_release_and_asset_requests(self):
+        with tempfile.TemporaryDirectory() as d:
+            payload = b"verified update payload"
+            sha = hashlib.sha256(payload).hexdigest()
+            release, manifest = release_payload(
+                "0.8.9",
+                sha,
+            )
+            service = self.make_service(
+                d,
+                token_getter=lambda: "secret-read-token",
+            )
+            with patch(
+                "caos.updater._json_request",
+                return_value=release,
+            ) as json_request, patch(
+                "caos.updater._asset_json_request",
+                return_value=manifest,
+            ) as asset_request:
+                status = service.check()
+
+            self.assertTrue(status["github_token_configured"])
+            self.assertEqual(
+                json_request.call_args.kwargs["token"],
+                "secret-read-token",
+            )
+            self.assertEqual(
+                asset_request.call_args.kwargs["token"],
+                "secret-read-token",
+            )
 
     def test_manifest_uses_asset_api_before_browser_download_url(self):
         with tempfile.TemporaryDirectory() as d:
@@ -222,6 +255,21 @@ class GitHubUpdateServiceTests(unittest.TestCase):
                 status["current_version"],
                 "0.8.8",
             )
+
+    def test_private_repository_without_token_reports_clear_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            service = self.make_service(d)
+            with patch(
+                "caos.updater._json_request",
+                side_effect=UpdateError(
+                    "update_request_failed:HTTP Error 404: Not Found"
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    UpdateError,
+                    "github_private_repository_token_required",
+                ):
+                    service.check()
 
     def test_latest_endpoint_failure_falls_back_to_release_list(self):
         with tempfile.TemporaryDirectory() as d:
