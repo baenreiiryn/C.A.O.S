@@ -384,10 +384,15 @@ function renderSettings(){
    metric('Package',updates.downloaded?'VERIFIED':'not downloaded')+
    metric('Install',updates.can_install?'READY':(updateBlockers.length?'BLOCKED':'waiting'))+
    '</div>'+
-   '<div class="settings-note">Updates come from the official GitHub Release for '+esc(updates.repository||'baenreiiryn/C.A.O.S')+'. The package contains only the C.A.O.S executables, so your database, launcher settings, Windows credentials, Ollama runtime and local models are preserved. Installation is allowed while STOPPED, or while EMERGENCY STOPPED if every PAPER/REAL position, pending order and external execution is fully flat/resolved.</div>'+
+   '<div class="settings-note">Updates come from the official GitHub Release for '+esc(updates.repository||'baenreiiryn/C.A.O.S')+'. Because this repository is private, configure a read-only GitHub token below. The token is stored only in Windows Credential Manager and is never written to launcher.json, the Company database or the LLM context.</div>'+
+   '<div class="settings-grid">'+
+   settingsField('GitHub read token','githubUpdateToken','','password')+
+   '<label>Token status</label><div><b>'+(updates.github_token_configured?'CONFIGURED':'NOT CONFIGURED')+'</b></div>'+
+   '</div>'+
+   '<div class="settings-note">Use a fine-grained Personal Access Token restricted to this repository with Contents: Read-only. Installation is allowed while STOPPED, or while EMERGENCY STOPPED if every PAPER/REAL position, pending order and external execution is fully flat/resolved.</div>'+
    (updateBlockers.length?'<div class="execution-warning"><b>UPDATE BLOCKED</b><br>'+updateBlockers.map(esc).join('<br>')+'</div>':'')+
    (updates.last_error?'<div class="execution-warning"><b>LAST UPDATE ERROR</b><br>'+esc(updates.last_error)+'</div>':'')+
-   '<div class="control-row"><button class="btn" onclick="checkForUpdates()">Check GitHub</button>'+(updates.update_available?'<button class="btn" onclick="downloadUpdate()">Download & Verify</button>':'')+(updates.downloaded?'<button class="btn'+(updates.can_install?'':' danger')+'" '+(updates.can_install?'':'disabled')+' onclick="installUpdate()">Install Update</button>':'')+'</div>'+
+   '<div class="control-row"><button class="btn" onclick="saveGitHubUpdateToken()">Save / Test Token</button>'+(updates.github_token_configured?'<button class="btn danger" onclick="clearGitHubUpdateToken()">Clear Token</button>':'')+'<button class="btn" onclick="checkForUpdates()">Check GitHub</button>'+(updates.update_available?'<button class="btn" onclick="downloadUpdate()">Download & Verify</button>':'')+(updates.downloaded?'<button class="btn'+(updates.can_install?'':' danger')+'" '+(updates.can_install?'':'disabled')+' onclick="installUpdate()">Install Update</button>':'')+'</div>'+
    '<div id="updateStatus" class="settings-status">'+esc(updateState)+'</div>'
  );
  html+=section('🏰 Company Charter · Runtime Policy',
@@ -565,6 +570,31 @@ async function saveMarketSelectionSettings(){
 }
 async function refreshUpdateSettings(){
  settingsCache=await api('/api/settings');renderSettings();
+}
+async function saveGitHubUpdateToken(){
+ const el=byId('updateStatus');if(el)el.textContent='Saving token and testing private repository access...';
+ try{
+  const token=byId('githubUpdateToken').value.trim();
+  if(!token)throw new Error('GitHub read token is required');
+  await api('/api/settings/update-token/save',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({token:token})
+  });
+  await refreshUpdateSettings();
+ }catch(e){if(el)el.textContent='Error: '+e.message}
+}
+async function clearGitHubUpdateToken(){
+ if(!confirm('Clear the GitHub updater token from Windows Credential Manager?'))return;
+ const el=byId('updateStatus');
+ try{
+  await api('/api/settings/update-token/clear',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:'{}'
+  });
+  await refreshUpdateSettings();
+ }catch(e){if(el)el.textContent='Error: '+e.message}
 }
 async function checkForUpdates(){
  const el=byId('updateStatus');if(el)el.textContent='Checking GitHub Releases...';
@@ -1606,6 +1636,25 @@ def serve_company(
                             "runtime_settings_unavailable"
                         )
                     payload = self._read_json()
+                    if path == "/api/settings/update-token/save":
+                        self._json(
+                            200,
+                            settings_service.save_update_token(
+                                str(
+                                    payload.get(
+                                        "token",
+                                        "",
+                                    )
+                                )
+                            ),
+                        )
+                        return
+                    if path == "/api/settings/update-token/clear":
+                        self._json(
+                            200,
+                            settings_service.clear_update_token(),
+                        )
+                        return
                     if path == "/api/settings/experts/install":
                         self._json(
                             200,
