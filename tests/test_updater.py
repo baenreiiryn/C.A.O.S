@@ -79,6 +79,10 @@ def release_payload(version, sha256):
         "assets": [
             {
                 "name": "CAOS-Update.json",
+                "url": (
+                    "https://api.github.com/repos/"
+                    "baenreiiryn/C.A.O.S/releases/assets/1"
+                ),
                 "browser_download_url": (
                     "https://example.invalid/"
                     "CAOS-Update.json"
@@ -86,6 +90,10 @@ def release_payload(version, sha256):
             },
             {
                 "name": "CAOS-Update.zip",
+                "url": (
+                    "https://api.github.com/repos/"
+                    "baenreiiryn/C.A.O.S/releases/assets/2"
+                ),
                 "browser_download_url": (
                     "https://example.invalid/"
                     "CAOS-Update.zip"
@@ -150,10 +158,40 @@ class GitHubUpdateServiceTests(unittest.TestCase):
             service = self.make_service(d)
             with patch(
                 "caos.updater._json_request",
-                side_effect=[release, manifest],
+                return_value=release,
+            ), patch(
+                "caos.updater._asset_json_request",
+                return_value=manifest,
             ):
                 with self.assertRaises(UpdateError):
                     service.check()
+
+    def test_manifest_uses_asset_api_before_browser_download_url(self):
+        with tempfile.TemporaryDirectory() as d:
+            payload = b"verified update payload"
+            sha = hashlib.sha256(payload).hexdigest()
+            release, manifest = release_payload(
+                "0.8.9",
+                sha,
+            )
+            service = self.make_service(d)
+            with patch(
+                "caos.updater._json_request",
+                return_value=release,
+            ) as json_request, patch(
+                "caos.updater._asset_json_request",
+                return_value=manifest,
+            ) as asset_request:
+                status = service.check()
+
+            self.assertTrue(status["update_available"])
+            asset_request.assert_called_once_with(
+                release["assets"][0]["url"]
+            )
+            self.assertEqual(
+                json_request.call_count,
+                1,
+            )
 
     def test_check_detects_new_stable_release(self):
         with tempfile.TemporaryDirectory() as d:
@@ -166,7 +204,10 @@ class GitHubUpdateServiceTests(unittest.TestCase):
             service = self.make_service(d)
             with patch(
                 "caos.updater._json_request",
-                side_effect=[release, manifest],
+                return_value=release,
+            ), patch(
+                "caos.updater._asset_json_request",
+                return_value=manifest,
             ):
                 status = service.check()
 
@@ -198,8 +239,10 @@ class GitHubUpdateServiceTests(unittest.TestCase):
                         "update_request_failed:HTTP Error 404: Not Found"
                     ),
                     [release],
-                    manifest,
                 ],
+            ), patch(
+                "caos.updater._asset_json_request",
+                return_value=manifest,
             ):
                 status = service.check()
             self.assertTrue(status["update_available"])
@@ -251,7 +294,10 @@ class GitHubUpdateServiceTests(unittest.TestCase):
 
             with patch(
                 "caos.updater._json_request",
-                side_effect=[release, manifest],
+                return_value=release,
+            ), patch(
+                "caos.updater._asset_json_request",
+                return_value=manifest,
             ), patch(
                 "caos.updater._download",
                 side_effect=fake_download,
@@ -275,7 +321,10 @@ class GitHubUpdateServiceTests(unittest.TestCase):
             )
             with patch(
                 "caos.updater._json_request",
-                side_effect=[release, manifest],
+                return_value=release,
+            ), patch(
+                "caos.updater._asset_json_request",
+                return_value=manifest,
             ), patch(
                 "caos.updater._download",
                 side_effect=fake_download,
@@ -348,7 +397,10 @@ class GitHubUpdateServiceTests(unittest.TestCase):
 
             with patch(
                 "caos.updater._json_request",
-                side_effect=[release, manifest],
+                return_value=release,
+            ), patch(
+                "caos.updater._asset_json_request",
+                return_value=manifest,
             ), patch(
                 "caos.updater._download",
                 side_effect=fake_download,
@@ -400,7 +452,10 @@ class GitHubUpdateServiceTests(unittest.TestCase):
             service = self.make_service(d)
             with patch(
                 "caos.updater._json_request",
-                side_effect=[release, manifest],
+                return_value=release,
+            ), patch(
+                "caos.updater._asset_json_request",
+                return_value=manifest,
             ):
                 status = service.check()
             self.assertFalse(
