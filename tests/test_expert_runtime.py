@@ -202,6 +202,38 @@ class ExpertRuntimeTests(unittest.TestCase):
                 runtime.runtime_dir,
             )
 
+    def test_release_requests_use_private_repo_token(self):
+        caos = SimpleNamespace(
+            forecast_experts={},
+            sentiment_expert=None,
+            news_analyzer=None,
+        )
+        with tempfile.TemporaryDirectory() as d:
+            runtime = ManagedExpertRuntime(
+                caos,
+                Path(d),
+                app_version="0.8.13",
+                token_getter=lambda: "github-read-token",
+            )
+            release = {
+                "assets": [
+                    {
+                        "name": "CAOS-Experts-Runtime.json",
+                        "url": "https://api.github.com/assets/1",
+                    }
+                ]
+            }
+            with patch(
+                "caos.expert_runtime._json_http",
+                return_value=release,
+            ) as request:
+                runtime._release_assets()
+
+            self.assertEqual(
+                request.call_args.kwargs["token"],
+                "github-read-token",
+            )
+
     def test_bundled_runtime_is_detected_without_copying(self):
         caos = SimpleNamespace(
             forecast_experts={},
