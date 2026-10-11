@@ -555,6 +555,9 @@ class CompanyRuntimeHost:
                 application_install_dir()
                 / "experts-runtime"
             ),
+            token_getter=lambda: self.vault.get(
+                "updates:github:token"
+            ),
         )
         self.expert_runtime.configure(
             self.config.get(
