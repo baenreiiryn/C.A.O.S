@@ -1,6 +1,6 @@
 # Windows Installer
 
-C.A.O.S v0.8.12 ships a self-contained Windows installer for the standalone Trade Company with managed Ollama, managed Forecast/Sentiment Oracles, a hardened GitHub self-updater, autonomous market/timeframe/strategy selection, live 1-minute Trader charts, editable post-onboarding Company policy, a read-only lateral LLM chat, explicit Start / graceful Stop / Emergency Stop / Reset Emergency controls, and a local execution gate for PAPER, Binance Spot TESTNET, and human-confirmed Binance production orders. v0.8.12 switches updater manifest/package resolution to the GitHub release asset API first, with browser URL fallback, to avoid release-asset HTTP 404 failures.
+C.A.O.S v0.8.13 ships a self-contained Windows installer for the standalone Trade Company with managed Ollama, managed Forecast/Sentiment Oracles, authenticated GitHub self-update for the private repository, autonomous market/timeframe/strategy selection, live 1-minute Trader charts, editable post-onboarding Company policy, a read-only lateral LLM chat, explicit Start / graceful Stop / Emergency Stop / Reset Emergency controls, and a local execution gate for PAPER, Binance Spot TESTNET, and human-confirmed Binance production orders. A fine-grained GitHub token with read-only access to this repository can be stored in Windows Credential Manager from the Update Center and is reused for private release assets.
 
 ## What gets installed
 
