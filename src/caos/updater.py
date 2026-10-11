@@ -84,6 +84,38 @@ def _json_request(
         ) from exc
 
 
+def _asset_json_request(
+    url: str,
+    *,
+    timeout: float = 30.0,
+) -> dict:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/octet-stream",
+            "User-Agent": "CAOS-Trade-Company-Updater",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=timeout,
+        ) as response:
+            return json.loads(
+                response.read().decode("utf-8-sig")
+            )
+    except (
+        urllib.error.URLError,
+        TimeoutError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise UpdateError(
+            f"update_asset_request_failed:{url}:{exc}"
+        ) from exc
+
+
 def _download(
     url: str,
     target: Path,
@@ -270,14 +302,37 @@ class GitHubUpdateService:
             raise UpdateError(
                 "update_manifest_asset_missing"
             )
-        url = str(
+        api_url = str(
+            asset.get("url", "")
+        ).strip()
+        browser_url = str(
             asset.get("browser_download_url", "")
         ).strip()
-        if not url:
+        if not api_url and not browser_url:
             raise UpdateError(
                 "update_manifest_url_missing"
             )
-        manifest = _json_request(url)
+        manifest = None
+        errors: list[str] = []
+        if api_url:
+            try:
+                manifest = _asset_json_request(
+                    api_url
+                )
+            except Exception as exc:
+                errors.append(str(exc))
+        if manifest is None and browser_url:
+            try:
+                manifest = _json_request(
+                    browser_url
+                )
+            except Exception as exc:
+                errors.append(str(exc))
+        if manifest is None:
+            raise UpdateError(
+                "update_manifest_fetch_failed:"
+                + " | ".join(errors)
+            )
         if int(manifest.get("schema", 0)) != UPDATE_SCHEMA:
             raise UpdateError(
                 "unsupported_update_manifest"
@@ -326,18 +381,31 @@ class GitHubUpdateService:
             )
         download_url = str(
             update_asset.get(
+                "url",
+                "",
+            )
+        ).strip()
+        browser_download_url = str(
+            update_asset.get(
                 "browser_download_url",
                 "",
             )
         ).strip()
-        if not download_url:
+        if not download_url and not browser_download_url:
             raise UpdateError(
                 "update_package_url_missing"
             )
         return {
             **manifest,
             "version": version,
-            "download_url": download_url,
+            "download_url": (
+                download_url
+                or browser_download_url
+            ),
+            "browser_download_url": (
+                browser_download_url
+                or None
+            ),
             "release_url": release.get("html_url"),
             "release_name": release.get("name"),
             "published_at": release.get(
@@ -441,20 +509,50 @@ class GitHubUpdateService:
             target = self._downloaded_path(
                 str(manifest["version"])
             )
-            try:
-                _download(
-                    str(manifest["download_url"]),
-                    target,
-                )
-            except Exception as exc:
-                target.unlink(missing_ok=True)
+            urls = [
+                str(
+                    manifest.get(
+                        "download_url",
+                        "",
+                    )
+                ).strip(),
+                str(
+                    manifest.get(
+                        "browser_download_url",
+                        "",
+                    )
+                ).strip(),
+            ]
+            urls = [
+                url
+                for index, url in enumerate(urls)
+                if url
+                and url not in urls[:index]
+            ]
+            last_error = None
+            for url in urls:
+                try:
+                    _download(
+                        url,
+                        target,
+                    )
+                    last_error = None
+                    break
+                except Exception as exc:
+                    target.unlink(
+                        missing_ok=True
+                    )
+                    last_error = exc
+            if last_error is not None:
                 with self._lock:
                     self._last_error = (
-                        f"{type(exc).__name__}: {exc}"
+                        f"{type(last_error).__name__}: "
+                        f"{last_error}"
                     )
                 raise UpdateError(
-                    f"update_download_failed:{exc}"
-                ) from exc
+                    "update_download_failed:"
+                    + str(last_error)
+                ) from last_error
             actual = _sha256(target)
             expected = str(
                 manifest["sha256"]

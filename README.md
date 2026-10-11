@@ -4,7 +4,7 @@
 
 The design goal is **"fazer igual, mas não copiar"**: reproduce useful observable architectural ideas (specialized desks, deterministic quantitative tools, hard risk/compliance gates, paper execution and expected-vs-real supervision) with original code and a different internal architecture.
 
-> Current milestone: **v0.8.11 standalone Trade Company with recoverable Emergency Stop, GitHub self-update, managed Forecast/Sentiment Oracles, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. Emergency Stop now has an explicit human-only reset that is allowed only after PAPER/REAL exposure and pending execution are flat; reset returns to STOPPED and never resumes trading automatically. The updater also accepts a fully-flat EMERGENCY_STOPPED state and falls back to the stable release list if GitHub `/releases/latest` temporarily fails.
+> Current milestone: **v0.8.12 standalone Trade Company with a hardened GitHub updater, recoverable Emergency Stop, managed Forecast/Sentiment Oracles, autonomous market/timeframe/strategy selection, live Trader charts, editable Company policy, lateral natural-language LLM chat, managed Ollama and human-confirmed REAL execution**. The updater now resolves release assets through the GitHub asset API first and falls back to browser download URLs, avoiding the HTTP 404 seen when `CAOS-Update.json` was fetched through a release browser URL on some installations. Emergency Stop remains human-resettable only after PAPER/REAL exposure and pending execution are flat.
 
 ## Why it is built this way
 
